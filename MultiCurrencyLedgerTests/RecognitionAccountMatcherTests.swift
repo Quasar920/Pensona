@@ -128,4 +128,78 @@ final class RecognitionAccountMatcherTests: XCTestCase {
             .unmatched
         )
     }
+
+    func testMatchesFinalFourDigitsOfFullCardNumber() {
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "6225880000001234",
+                currency: .CNY,
+                options: options
+            ),
+            .matched(walletID: cnyID)
+        )
+    }
+
+    func testDoesNotUsePhoneNumberInAccountNoteAsTailEvidence() {
+        let phoneNote = RecognitionAccountOption(
+            walletID: cnyID,
+            accountName: "现金账户",
+            accountNote: "预留手机 13800123456",
+            currencyCode: "CNY"
+        )
+
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "1380",
+                currency: .CNY,
+                options: [phoneNote]
+            ),
+            .unmatched
+        )
+    }
+
+    func testDoesNotTreatFourDigitsEmbeddedInLongerRunAsTail() {
+        let embeddedPrefix = RecognitionAccountOption(
+            walletID: cnyID,
+            accountName: "备用账户 9912",
+            accountNote: nil,
+            currencyCode: "CNY"
+        )
+
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "99123488",
+                currency: .CNY,
+                options: [embeddedPrefix]
+            ),
+            .unmatched
+        )
+    }
+
+    func testConflictingCandidateTailsDoNotSelectWallet() {
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+        let candidates = [
+            RecognitionAccountOption(
+                walletID: cnyID,
+                accountName: "招商银行 1234",
+                accountNote: nil,
+                currencyCode: "CNY"
+            ),
+            RecognitionAccountOption(
+                walletID: secondID,
+                accountName: "招商银行 5678",
+                accountNote: nil,
+                currencyCode: "CNY"
+            )
+        ]
+
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "招行 尾号1234 尾号5678",
+                currency: .CNY,
+                options: candidates
+            ),
+            .unmatched
+        )
+    }
 }
