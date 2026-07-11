@@ -33,7 +33,8 @@ struct RecognitionContextBuilder {
                 }
             }
             .sorted {
-                ($0.accountName, $0.currencyCode) < ($1.accountName, $1.currencyCode)
+                ($0.accountName, $0.currencyCode, $0.walletID.uuidString)
+                    < ($1.accountName, $1.currencyCode, $1.walletID.uuidString)
             }
         let categoryOptions = categories
             .sorted { ($0.typeRawValue, $0.sortOrder, $0.name) < ($1.typeRawValue, $1.sortOrder, $1.name) }
