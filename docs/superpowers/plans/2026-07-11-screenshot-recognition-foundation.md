@@ -19,7 +19,7 @@
 - Only ordinary `expense` and explicitly allowed ordinary `income` candidates may become auto-entry eligible. Transfers, exchanges, refunds, repayments, recharges, investment movements, failures, pending transactions, and ambiguous multi-amount results require confirmation.
 - Model-returned account and category names must match request candidates; never invent a local account, wallet, currency, or category.
 - Use Chinese user-facing error copy consistent with the existing app.
-- The current workspace is not a Git repository. Before executing this plan, restore the intended repository metadata or explicitly initialize Git. Do not attempt worktrees or the commit steps until that prerequisite is satisfied.
+- Execute only in the isolated `feature/screenshot-recognition-foundation` worktree and keep each task in its own reviewed commit range.
 
 ---
 
