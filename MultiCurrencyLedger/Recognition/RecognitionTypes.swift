@@ -55,6 +55,7 @@ enum RecognitionDecisionReason: String, Error, Equatable {
     case invalidAmount
     case unsupportedCurrency
     case invalidDate
+    case futureDate
     case amountNotVisibleInOCR
     case amountRelationshipMismatch
     case riskyStatusText
