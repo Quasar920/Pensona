@@ -1,0 +1,17 @@
+.DS_Store
+.build/
+.worktrees/
+.superpowers/
+
+# Xcode local state
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Local configuration and credentials
+.env
+.env.*
+Secrets.xcconfig
+*.pem
+*.p12

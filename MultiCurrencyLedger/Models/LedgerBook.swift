@@ -1,0 +1,29 @@
+import Foundation
+import SwiftData
+
+@Model
+final class LedgerBook {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var sortOrder: Int
+    var createdAt: Date
+    var updatedAt: Date
+
+    @Relationship(deleteRule: .nullify, inverse: \Account.book)
+    var accounts: [Account]
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        sortOrder: Int = 0,
+        createdAt: Date = .now,
+        updatedAt: Date = .now
+    ) {
+        self.id = id
+        self.name = name
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        accounts = []
+    }
+}

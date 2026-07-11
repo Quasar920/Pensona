@@ -1,0 +1,139 @@
+import Foundation
+
+struct MonthlySummary: Equatable {
+    let monthStart: Date
+    let currencyCode: String
+    let income: Decimal
+    let expense: Decimal
+    let budget: Decimal?
+    let missingCodes: Set<String>
+
+    var remainingBudget: Decimal? {
+        budget.map { $0 - expense }
+    }
+
+    var isOverBudget: Bool {
+        remainingBudget.map { $0 < 0 } ?? false
+    }
+
+    var incomeProgress: Double {
+        relativeProgress(for: income)
+    }
+
+    var expenseProgress: Double {
+        relativeProgress(for: expense)
+    }
+
+    var budgetProgress: Double {
+        guard let budget, budget > 0 else { return 0 }
+        let rawValue = NSDecimalNumber(decimal: expense / budget).doubleValue
+        return min(max(rawValue, 0), 1)
+    }
+
+    var remainingBudgetProgress: Double? {
+        guard let budget, budget > 0 else { return nil }
+        let rawValue = NSDecimalNumber(decimal: (budget - expense) / budget).doubleValue
+        return min(max(rawValue, 0), 1)
+    }
+
+    var hasCompleteConversion: Bool {
+        missingCodes.isEmpty
+    }
+
+    private var largestCashFlow: Decimal {
+        max(income, expense)
+    }
+
+    private func relativeProgress(for value: Decimal) -> Double {
+        guard value > 0, largestCashFlow > 0 else { return 0 }
+        let rawValue = NSDecimalNumber(decimal: value / largestCashFlow).doubleValue
+        return min(max(rawValue, 0), 1)
+    }
+}
+
+typealias MonthlySummaryResult = MonthlySummary
+
+struct MonthlySummaryService {
+    let baseCurrencyCode: String
+    let rates: [ExchangeRate]
+    var calendar: Calendar = .current
+
+    func summary(
+        for transactions: [LedgerTransaction],
+        month date: Date,
+        budget: Decimal? = nil
+    ) -> MonthlySummary {
+        let interval = calendar.dateInterval(of: .month, for: date)
+        let monthStart = interval?.start ?? calendar.startOfDay(for: date)
+        let monthEnd = interval?.end
+            ?? calendar.date(byAdding: .month, value: 1, to: monthStart)
+            ?? .distantFuture
+        let valuation = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
+        var income = Decimal.zero
+        var expense = Decimal.zero
+        var missingCodes = Set<String>()
+
+        for transaction in transactions
+        where transaction.date >= monthStart && transaction.date < monthEnd {
+            let principal = transaction.sourceAmount ?? transaction.amount ?? 0
+            let principalCode = transaction.sourceCurrencyCode
+                ?? transaction.currencyCode
+                ?? baseCurrencyCode
+
+            switch transaction.type {
+            case .income:
+                add(
+                    principal,
+                    currencyCode: principalCode,
+                    to: &income,
+                    missingCodes: &missingCodes,
+                    valuation: valuation
+                )
+            case .expense:
+                add(
+                    principal,
+                    currencyCode: principalCode,
+                    to: &expense,
+                    missingCodes: &missingCodes,
+                    valuation: valuation
+                )
+            case .transfer, .exchange, .adjustment:
+                break
+            }
+
+            if let fee = transaction.feeAmount, fee != 0 {
+                add(
+                    fee,
+                    currencyCode: transaction.feeCurrencyCode ?? principalCode,
+                    to: &expense,
+                    missingCodes: &missingCodes,
+                    valuation: valuation
+                )
+            }
+        }
+
+        return MonthlySummary(
+            monthStart: monthStart,
+            currencyCode: baseCurrencyCode,
+            income: income,
+            expense: expense,
+            budget: budget.flatMap { $0 > 0 ? $0 : nil },
+            missingCodes: missingCodes
+        )
+    }
+
+    private func add(
+        _ amount: Decimal,
+        currencyCode: String,
+        to total: inout Decimal,
+        missingCodes: inout Set<String>,
+        valuation: ValuationService
+    ) {
+        guard amount != 0 else { return }
+        if let converted = valuation.value(amount, currencyCode: currencyCode) {
+            total += converted
+        } else {
+            missingCodes.insert(currencyCode)
+        }
+    }
+}
