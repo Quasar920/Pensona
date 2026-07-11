@@ -220,4 +220,42 @@ final class RecognitionAccountMatcherTests: XCTestCase {
             .unmatched
         )
     }
+
+    func testMismatchingExplicitTailDoesNotFallBackToBankAlias() {
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "招行尾号9999",
+                currency: .CNY,
+                options: options
+            ),
+            .unmatched
+        )
+    }
+
+    func testMismatchingCurrencyReportsMismatchOnlyWhenSameTailExistsElsewhere() {
+        let foreignTailID = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+        let candidates = [
+            RecognitionAccountOption(
+                walletID: cnyID,
+                accountName: "招商银行 1234",
+                accountNote: nil,
+                currencyCode: "CNY"
+            ),
+            RecognitionAccountOption(
+                walletID: foreignTailID,
+                accountName: "招商银行 9999",
+                accountNote: nil,
+                currencyCode: "USD"
+            )
+        ]
+
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "招行尾号9999",
+                currency: .CNY,
+                options: candidates
+            ),
+            .currencyMismatch
+        )
+    }
 }

@@ -70,6 +70,7 @@ struct RecognitionAccountMatcher {
             if !tailMatches.isEmpty {
                 return result(for: tailMatches)
             }
+            return nil
         case .conflicting:
             return nil
         case .none:
