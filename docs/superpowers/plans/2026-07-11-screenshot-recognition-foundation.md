@@ -102,7 +102,7 @@ Run:
 
 ```bash
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B' \
   -only-testing:MultiCurrencyLedgerTests/RecognitionResponseParserTests
 ```
 
@@ -238,7 +238,7 @@ Run the command from Step 2, then:
 
 ```bash
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B'
 ```
 
 Expected: parser tests pass; all existing tests pass.
@@ -299,7 +299,7 @@ final class RecognitionContextBuilderTests: XCTestCase {
 
 ```bash
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B' \
   -only-testing:MultiCurrencyLedgerTests/RecognitionContextBuilderTests
 ```
 
@@ -419,7 +419,7 @@ final class ScreenshotOCRServiceTests: XCTestCase {
 
 ```bash
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B' \
   -only-testing:MultiCurrencyLedgerTests/ScreenshotOCRServiceTests
 ```
 
@@ -545,7 +545,7 @@ final class RecognitionAccountMatcherTests: XCTestCase {
 
 ```bash
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B' \
   -only-testing:MultiCurrencyLedgerTests/RecognitionAccountMatcherTests
 ```
 
@@ -722,7 +722,7 @@ final class RecognitionSafetyEvaluatorTests: XCTestCase {
 
 ```bash
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B' \
   -only-testing:MultiCurrencyLedgerTests/RecognitionSafetyEvaluatorTests
 ```
 
@@ -996,7 +996,7 @@ private final class StubRecognitionAPIClient: RecognitionAPIClient {
 
 ```bash
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B' \
   -only-testing:MultiCurrencyLedgerTests/ScreenshotRecognitionCoordinatorTests
 ```
 
@@ -1297,11 +1297,11 @@ This corpus validates OCR-to-decision behavior without storing personal financia
 
 ```bash
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B' \
   -only-testing:MultiCurrencyLedgerTests/RecognitionFixtureAcceptanceTests
 
 xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'
+  -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B'
 ```
 
 Expected: eight fixtures pass and the complete suite passes.
