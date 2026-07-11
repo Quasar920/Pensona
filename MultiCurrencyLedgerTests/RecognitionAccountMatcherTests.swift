@@ -202,4 +202,22 @@ final class RecognitionAccountMatcherTests: XCTestCase {
             .unmatched
         )
     }
+
+    func testDoesNotTreatYearInChineseDateAsTail() {
+        let yearAccount = RecognitionAccountOption(
+            walletID: cnyID,
+            accountName: "备用账户 2026",
+            accountNote: nil,
+            currencyCode: "CNY"
+        )
+
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "2026年07月11日",
+                currency: .CNY,
+                options: [yearAccount]
+            ),
+            .unmatched
+        )
+    }
 }

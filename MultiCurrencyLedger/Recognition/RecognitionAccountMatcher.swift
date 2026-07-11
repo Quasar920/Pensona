@@ -118,7 +118,7 @@ struct RecognitionAccountMatcher {
     }
 
     private func isPartOfDate(_ range: Range<String.Index>, in text: String) -> Bool {
-        let separators: Set<Character> = ["-", "/", "."]
+        let separators: Set<Character> = ["-", "/", ".", "年", "月", "日"]
 
         if range.lowerBound > text.startIndex {
             let previous = text.index(before: range.lowerBound)
