@@ -59,6 +59,7 @@ enum RecognitionDecisionReason: String, Error, Equatable {
     case amountNotVisibleInOCR
     case amountRelationshipMismatch
     case riskyStatusText
+    case feeRequiresConfirmation
     case accountUnmatched
     case accountAmbiguous
     case currencyWalletMismatch

@@ -37,6 +37,9 @@ struct RecognitionSafetyEvaluator {
         if riskyTerms.contains(where: ocrText.contains) {
             return .needsConfirmation(reason: .riskyStatusText, candidate: candidate)
         }
+        guard candidate.feeAmount == 0 else {
+            return .needsConfirmation(reason: .feeRequiresConfirmation, candidate: candidate)
+        }
         guard containsAmount(candidate.paidAmount, in: ocrText) else {
             return .needsConfirmation(reason: .amountNotVisibleInOCR, candidate: candidate)
         }
@@ -49,8 +52,10 @@ struct RecognitionSafetyEvaluator {
         }
 
         let confidence = candidate.confidence
-        guard [confidence.type, confidence.paidAmount, confidence.currencyCode,
-               confidence.account, confidence.category].allSatisfy({ $0 >= minimumConfidence }) else {
+        let values = [confidence.type, confidence.paidAmount, confidence.currencyCode,
+                      confidence.account, confidence.category]
+        guard minimumConfidence.isFinite, (0...1).contains(minimumConfidence),
+              values.allSatisfy({ $0.isFinite && (0...1).contains($0) && $0 >= minimumConfidence }) else {
             return .needsConfirmation(reason: .lowConfidence, candidate: candidate)
         }
         guard let category = candidate.categoryCandidate,
@@ -73,11 +78,29 @@ struct RecognitionSafetyEvaluator {
     }
 
     private func containsAmount(_ amount: Decimal, in text: String) -> Bool {
-        let pattern = #"(?<![0-9.])(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?(?![0-9.])"#
+        // Treat every contiguous ASCII digit/period/comma run as one span. Currency
+        // text may touch the span, but an adjacent sign is deliberately rejected.
+        let pattern = #"[0-9.,]+"#
+        let validToken = try? NSRegularExpression(
+            pattern: #"^(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?$"#
+        )
         guard let expression = try? NSRegularExpression(pattern: pattern) else { return false }
         let range = NSRange(text.startIndex..., in: text)
         return expression.matches(in: text, range: range).contains { match in
-            guard let tokenRange = Range(match.range, in: text) else { return false }
+            guard let tokenRange = Range(match.range, in: text), let validToken else { return false }
+            if tokenRange.lowerBound > text.startIndex {
+                let previous = text[text.index(before: tokenRange.lowerBound)]
+                if previous == "+" || previous == "-" { return false }
+            }
+            if tokenRange.upperBound < text.endIndex {
+                let next = text[tokenRange.upperBound]
+                if next == "+" || next == "-" { return false }
+            }
+            let rawToken = String(text[tokenRange])
+            let fullRange = NSRange(rawToken.startIndex..., in: rawToken)
+            guard validToken.firstMatch(in: rawToken, range: fullRange)?.range == fullRange else {
+                return false
+            }
             let token = text[tokenRange].replacingOccurrences(of: ",", with: "")
             return Decimal(string: token, locale: Locale(identifier: "en_US_POSIX")) == amount
         }

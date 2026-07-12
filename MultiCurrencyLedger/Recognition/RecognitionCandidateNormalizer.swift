@@ -52,10 +52,8 @@ struct RecognitionCandidateNormalizer {
     }
 
     private func strictAmount(_ text: String) -> Decimal? {
-        let normalized = text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: ",", with: ".")
-        guard normalized.range(of: #"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$"#,
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.range(of: #"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$"#,
                                options: .regularExpression) != nil else {
             return nil
         }

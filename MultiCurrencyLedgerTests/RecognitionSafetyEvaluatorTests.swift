@@ -33,7 +33,7 @@ final class RecognitionSafetyEvaluatorTests: XCTestCase {
     }
 
     func testPresentMalformedOptionalAmountsAreRejected() {
-        for malformed in ["abc", "--", "85x"] {
+        for malformed in ["abc", "--", "85x", "+85", "-85", "085", ".85", "85.", "1,000", "85,00"] {
             XCTAssertEqual(reason(evaluator().evaluate(
                 candidate(original: malformed), ocrText: "支付成功 CNY 85",
                 context: context, allowIncomeAutoEntry: false
@@ -49,6 +49,40 @@ final class RecognitionSafetyEvaluatorTests: XCTestCase {
         }
     }
 
+    func testAmountsUseCanonicalUnsignedASCIIDecimalGrammar() {
+        for valid in ["85", "85.00", " 85.00\n"] {
+            guard case .autoEligible = evaluator().evaluate(
+                candidate(paid: valid, original: nil, discount: nil),
+                ocrText: "支付成功 CNY 85.00", context: context, allowIncomeAutoEntry: false
+            ) else { return XCTFail("Expected canonical amount to be accepted: \(valid.debugDescription)") }
+        }
+
+        for invalid in ["+85", "-85", "085", ".85", "85.", "1,000", "85,00", "1.2,3", "８５"] {
+            XCTAssertEqual(reason(evaluator().evaluate(
+                candidate(paid: invalid, original: nil, discount: nil),
+                ocrText: "支付成功 CNY 85", context: context, allowIncomeAutoEntry: false
+            )), .invalidAmount, "Expected invalid amount: \(invalid)")
+        }
+    }
+
+    func testAmountFieldSignRulesRemainStrict() {
+        XCTAssertEqual(reason(evaluator().evaluate(
+            candidate(paid: "0", original: nil, discount: nil),
+            ocrText: "支付成功 CNY 0", context: context, allowIncomeAutoEntry: false
+        )), .invalidAmount)
+        for (field, value) in [("original", "0"), ("discount", "-1"), ("fee", "-1")] {
+            let dto: RecognitionCandidateDTO
+            switch field {
+            case "original": dto = candidate(original: value)
+            case "discount": dto = candidate(discount: value)
+            default: dto = candidate(fee: value)
+            }
+            XCTAssertEqual(reason(evaluator().evaluate(
+                dto, ocrText: "支付成功 CNY 85", context: context, allowIncomeAutoEntry: false
+            )), .invalidAmount)
+        }
+    }
+
     func testAmountEvidenceUsesNumericBoundariesAndDecimalEquivalence() {
         XCTAssertEqual(reason(evaluator().evaluate(
             candidate(original: nil, discount: nil), ocrText: "支付成功 CNY 185 850 .85 85.00.1",
@@ -58,6 +92,30 @@ final class RecognitionSafetyEvaluatorTests: XCTestCase {
             candidate(original: nil, discount: nil), ocrText: "支付成功 CNY 85.00",
             context: context, allowIncomeAutoEntry: false
         ) else { return XCTFail("Equivalent decimal token should be visible") }
+    }
+
+    func testMalformedOCRNumericSpansCannotExposePaidAmountPrefix() {
+        for text in ["1,00", "1,0000", "85,00.1", "85.00,1", "85..1"] {
+            XCTAssertEqual(reason(evaluator().evaluate(
+                candidate(paid: "1", original: nil, discount: nil), ocrText: "支付成功 CNY \(text)",
+                context: context, allowIncomeAutoEntry: false
+            )), .amountNotVisibleInOCR, "Malformed span exposed a numeric prefix: \(text)")
+        }
+    }
+
+    func testOCRCurrencyAdjacencyIsAcceptedButSignAdjacencyRequiresConfirmation() {
+        for text in ["支付成功 ¥85", "支付成功 $85.00", "支付成功 CNY85"] {
+            guard case .autoEligible = evaluator().evaluate(
+                candidate(original: nil, discount: nil), ocrText: text,
+                context: context, allowIncomeAutoEntry: false
+            ) else { return XCTFail("Currency adjacency should be valid OCR evidence: \(text)") }
+        }
+        for text in ["支付成功 -85", "支付成功 +85", "支付成功 ¥-85", "支付成功 85-", "支付成功 85+"] {
+            XCTAssertEqual(reason(evaluator().evaluate(
+                candidate(original: nil, discount: nil), ocrText: text,
+                context: context, allowIncomeAutoEntry: false
+            )), .amountNotVisibleInOCR, "Signed OCR amounts must not auto-enter: \(text)")
+        }
     }
 
     func testFutureDateRequiresConfirmation() {
@@ -95,6 +153,51 @@ final class RecognitionSafetyEvaluatorTests: XCTestCase {
             candidate(confidence: low), ocrText: "支付成功 CNY 85",
             context: context, allowIncomeAutoEntry: false
         )), .lowConfidence)
+    }
+    func testConfidenceValuesAndThresholdMustBeFiniteUnitInterval() {
+        for invalid in [Double.nan, .infinity, -.infinity, -0.01, 1.01] {
+            for field in 0..<5 {
+                var values = Array(repeating: 0.99, count: 5)
+                values[field] = invalid
+                let confidence = RecognitionConfidenceDTO(
+                    type: values[0], paidAmount: values[1], currencyCode: values[2],
+                    account: values[3], category: values[4]
+                )
+                XCTAssertEqual(reason(evaluator().evaluate(
+                    candidate(confidence: confidence), ocrText: "支付成功 CNY 85",
+                    context: context, allowIncomeAutoEntry: false
+                )), .lowConfidence, "Invalid confidence field \(field): \(invalid)")
+            }
+        }
+        for invalidThreshold in [Double.nan, .infinity, -.infinity, -0.01, 1.01] {
+            let evaluator = RecognitionSafetyEvaluator(
+                minimumConfidence: invalidThreshold, now: { self.date("2026-07-11 23:59") }
+            )
+            XCTAssertEqual(reason(evaluator.evaluate(
+                candidate(), ocrText: "支付成功 CNY 85",
+                context: context, allowIncomeAutoEntry: false
+            )), .lowConfidence, "Invalid threshold: \(invalidThreshold)")
+        }
+        let belowThreshold = RecognitionConfidenceDTO(
+            type: 0.94, paidAmount: 0.99, currencyCode: 0.99, account: 0.99, category: 0.99
+        )
+        XCTAssertEqual(reason(RecognitionSafetyEvaluator(
+            minimumConfidence: 0.95, now: { self.date("2026-07-11 23:59") }
+        ).evaluate(
+            candidate(confidence: belowThreshold), ocrText: "支付成功 CNY 85",
+            context: context, allowIncomeAutoEntry: false
+        )), .lowConfidence)
+    }
+
+    func testPositiveFeeAlwaysRequiresConfirmationWhileZeroCanBeEligible() {
+        XCTAssertEqual(reason(evaluator().evaluate(
+            candidate(original: nil, discount: nil, fee: "0.01"), ocrText: "支付成功 CNY 85",
+            context: context, allowIncomeAutoEntry: false
+        )), .feeRequiresConfirmation)
+        guard case .autoEligible = evaluator().evaluate(
+            candidate(original: nil, discount: nil, fee: "0"), ocrText: "支付成功 CNY 85",
+            context: context, allowIncomeAutoEntry: false
+        ) else { return XCTFail("A zero fee should remain eligible") }
     }
 
     func testRiskStatusesNeverAutoEnter() {
@@ -138,13 +241,14 @@ final class RecognitionSafetyEvaluatorTests: XCTestCase {
 
     private func candidate(
         type: RecognizedTransactionType = .expense,
+        paid: String = "85",
         original: String? = "100", discount: String? = "15", fee: String? = "0",
         currency: String = "CNY", category: String? = "餐饮",
         accountHint: String? = "招商银行 1234",
         date: String = "2026-07-11",
         confidence: RecognitionConfidenceDTO = .init(type: 0.99, paidAmount: 0.99, currencyCode: 0.99, account: 0.99, category: 0.99)
     ) -> RecognitionCandidateDTO {
-        .init(type: type, paidAmount: "85", originalAmount: original,
+        .init(type: type, paidAmount: paid, originalAmount: original,
               discountAmount: discount, feeAmount: fee, currencyCode: currency,
               date: date, time: "12:30", merchantOrCounterparty: "星巴克",
               sourceAccountHint: accountHint, destinationAccountHint: nil,
