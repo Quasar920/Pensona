@@ -67,6 +67,27 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         }
     }
 
+    func testMultipleCandidatesDowngradesOnlyEligibleAndPreservesStricterReason() async throws {
+        let (book, category, _) = Self.makeScope()
+        let response = Data(#"{"results":[{"type":"expense","paidAmount":"85.00","originalAmount":"100","discountAmount":"15","feeAmount":"0","currencyCode":"CNY","date":"2026-07-11","time":"12:30","merchantOrCounterparty":"星巴克","sourceAccountHint":"招商银行 1234","destinationAccountHint":null,"categoryCandidate":"餐饮","note":null,"confidence":{"type":0.99,"paidAmount":0.99,"currencyCode":0.99,"account":0.99,"category":0.99}},{"type":"transfer","paidAmount":"85.00","originalAmount":null,"discountAmount":null,"feeAmount":"0","currencyCode":"CNY","date":"2026-07-11","time":"12:31","merchantOrCounterparty":"星巴克","sourceAccountHint":"招商银行 1234","destinationAccountHint":null,"categoryCandidate":"餐饮","note":null,"confidence":{"type":0.99,"paidAmount":0.99,"currencyCode":0.99,"account":0.99,"category":0.99}}]}"#.utf8)
+
+        let analysis = try await ScreenshotRecognitionCoordinator(
+            ocr: CountingOCR(), apiClient: StubRecognitionAPIClient(response: response)
+        ).analyze(
+            image: Self.onePixelImage(), book: book, categories: [category],
+            allowIncomeAutoEntry: false, now: Self.date("2026-07-11 23:59")
+        )
+
+        guard case let .needsConfirmation(firstReason, firstCandidate) = analysis.decisions[0],
+              case let .needsConfirmation(secondReason, secondCandidate) = analysis.decisions[1] else {
+            return XCTFail("Expected both mixed batch results to require confirmation")
+        }
+        XCTAssertEqual(firstReason, .multipleCandidates)
+        XCTAssertNotNil(firstCandidate)
+        XCTAssertEqual(secondReason, .unsupportedType)
+        XCTAssertNotNil(secondCandidate)
+    }
+
     func testCancellationAfterOCRPreventsAPITransmission() async {
         let (book, category, _) = Self.makeScope()
         let api = StubRecognitionAPIClient(response: validResponse)

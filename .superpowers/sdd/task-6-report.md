@@ -67,3 +67,14 @@ Full result: `** TEST SUCCEEDED **`; 65/65 tests passed.
 - A cancellation-ignoring API stub cancels its child analysis task and returns invalid JSON; the coordinator throws `CancellationError` before the parser can translate it to `invalidResponse`.
 - When a response contains multiple candidates, all candidates are still evaluated locally so normalized candidate data and stricter reasons are retained. Only `.autoEligible` results are downgraded to `.needsConfirmation(reason: .multipleCandidates, candidate: ...)`.
 - Re-reviewed the diff for one-pass behavior, error propagation, remote-payload minimization, and ledger mutation. No additional OCR/API calls, payload fields, persistence, or ledger writes were introduced.
+
+## Final re-review follow-up
+
+- Added a request preflight cancellation check directly after `RecognitionAPIRequest` construction and directly before `apiClient.recognize(request)`. The existing post-OCR and post-API checks remain.
+- Did not add an injected context-construction cancellation seam: context/request construction is synchronous on the main actor with no suspension point, so external cancellation cannot interleave during that block. Adding a test-only hook would unnecessarily pollute the production coordinator API.
+- Verified source adjacency with an `awk` audit requiring the line immediately before `apiClient.recognize(request)` to contain `try Task.checkCancellation()`; result: `adjacency_audit=clean`.
+- Added a mixed two-result characterization test. It proves an otherwise eligible result becomes `.multipleCandidates` with normalized data retained, while a transfer's stricter `.unsupportedType` reason and normalized data are preserved.
+- The mixed-result test passed before the adjacency-only production change, confirming the existing batch downgrade logic already had the requested selective behavior.
+- Focused coordinator suite: `** TEST SUCCEEDED **`, 10/10 passed.
+- Full suite: `** TEST SUCCEEDED **`, 66/66 passed.
+- Final self-review found no extra OCR/API pass, remote payload expansion, error translation, persistence, or ledger mutation.

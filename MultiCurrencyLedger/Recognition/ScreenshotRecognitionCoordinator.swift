@@ -77,6 +77,7 @@ struct ScreenshotRecognitionCoordinator {
             context: RecognitionRemoteContext(localContext: localContext),
             requestedAt: now
         )
+        try Task.checkCancellation()
         let data = try await apiClient.recognize(request)
         try Task.checkCancellation()
         let envelope = try parser.parse(data)
