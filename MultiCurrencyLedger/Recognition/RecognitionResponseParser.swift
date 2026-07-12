@@ -7,11 +7,12 @@ struct RecognitionResponseParser {
         }
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("```") {
-            guard let firstNewline = text.firstIndex(of: "\n") else {
+            guard text.hasSuffix("```"),
+                  let firstNewline = text.firstIndex(of: "\n") else {
                 throw RecognitionError.invalidResponse
             }
+            text.removeLast(3)
             text = String(text[text.index(after: firstNewline)...])
-            if text.hasSuffix("```") { text.removeLast(3) }
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         guard let cleaned = text.data(using: .utf8),

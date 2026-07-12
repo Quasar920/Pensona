@@ -22,4 +22,14 @@ final class RecognitionResponseParserTests: XCTestCase {
             XCTAssertEqual($0 as? RecognitionError, .invalidResponse)
         }
     }
+
+    func testRejectsMalformedMarkdownFences() {
+        let json = #"{"results":[{"type":"expense","paidAmount":"85.00","originalAmount":null,"discountAmount":"0","feeAmount":"0","currencyCode":"CNY","date":"2026-07-11","time":"12:30","merchantOrCounterparty":"示例商户","sourceAccountHint":"招商银行 1234","destinationAccountHint":null,"categoryCandidate":"餐饮","note":"","confidence":{"type":0.99,"paidAmount":0.99,"currencyCode":0.99,"account":0.99,"category":0.99}}]}"#
+
+        for malformed in ["```json\n\(json)", "```json", "```\n\(json)\n``` trailing"] {
+            XCTAssertThrowsError(try parser.parse(Data(malformed.utf8)), malformed) {
+                XCTAssertEqual($0 as? RecognitionError, .invalidResponse)
+            }
+        }
+    }
 }
