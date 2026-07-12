@@ -33,3 +33,37 @@ Implemented the screenshot recognition coordinator and injected API boundary. On
 ## Self-review
 
 Reviewed the complete Task 6 diff and found no ledger mutations or out-of-scope infrastructure. The API remains an injected protocol; this phase intentionally provides no concrete network client.
+
+## Batch-safety and cancellation follow-up
+
+### Exact RED evidence
+
+Command:
+
+```text
+xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B' -only-testing:MultiCurrencyLedgerTests/ScreenshotRecognitionCoordinatorTests
+```
+
+Result: `** TEST FAILED **` during test compilation with `Type 'RecognitionDecisionReason' has no member 'multipleCandidates'`. This established that the new batch-safety API and implementation did not exist before production changes.
+
+### Exact GREEN evidence
+
+Focused command: the same `xcodebuild` command above.
+
+Focused result: `** TEST SUCCEEDED **`; 9/9 coordinator tests passed, including two-candidate safety, single-candidate eligibility, cancellation after OCR, and cancellation after API.
+
+Full command:
+
+```text
+xcodebuild test -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger -destination 'platform=iOS Simulator,id=1574A408-CD08-49BD-B8EE-09FEBE34CD1B'
+```
+
+Full result: `** TEST SUCCEEDED **`; 65/65 tests passed.
+
+### Follow-up behavior and self-review
+
+- Added cancellation checks before OCR, after OCR and before building/transmitting the API request, and after API return and before parsing.
+- A cancellation-aware OCR stub cancels its child analysis task before returning; the coordinator throws `CancellationError` and the API call count remains zero.
+- A cancellation-ignoring API stub cancels its child analysis task and returns invalid JSON; the coordinator throws `CancellationError` before the parser can translate it to `invalidResponse`.
+- When a response contains multiple candidates, all candidates are still evaluated locally so normalized candidate data and stricter reasons are retained. Only `.autoEligible` results are downgraded to `.needsConfirmation(reason: .multipleCandidates, candidate: ...)`.
+- Re-reviewed the diff for one-pass behavior, error propagation, remote-payload minimization, and ledger mutation. No additional OCR/API calls, payload fields, persistence, or ledger writes were introduced.

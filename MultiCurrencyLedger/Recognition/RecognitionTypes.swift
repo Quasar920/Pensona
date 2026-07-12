@@ -65,6 +65,7 @@ enum RecognitionDecisionReason: String, Error, Equatable {
     case currencyWalletMismatch
     case categoryUnmatched
     case lowConfidence
+    case multipleCandidates
 }
 
 enum RecognitionDecision: Equatable {

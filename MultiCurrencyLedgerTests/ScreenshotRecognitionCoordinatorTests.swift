@@ -46,6 +46,69 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         XCTAssertEqual(reason, .futureDate)
     }
 
+    func testMultipleValidCandidatesAllRequireConfirmation() async throws {
+        let (book, category, _) = Self.makeScope()
+        let response = Data(#"{"results":[{"type":"expense","paidAmount":"85.00","originalAmount":"100","discountAmount":"15","feeAmount":"0","currencyCode":"CNY","date":"2026-07-11","time":"12:30","merchantOrCounterparty":"星巴克","sourceAccountHint":"招商银行 1234","destinationAccountHint":null,"categoryCandidate":"餐饮","note":"咖啡","confidence":{"type":0.99,"paidAmount":0.99,"currencyCode":0.99,"account":0.99,"category":0.99}},{"type":"expense","paidAmount":"85.00","originalAmount":"100","discountAmount":"15","feeAmount":"0","currencyCode":"CNY","date":"2026-07-11","time":"12:31","merchantOrCounterparty":"星巴克","sourceAccountHint":"招商银行 1234","destinationAccountHint":null,"categoryCandidate":"餐饮","note":null,"confidence":{"type":0.99,"paidAmount":0.99,"currencyCode":0.99,"account":0.99,"category":0.99}}]}"#.utf8)
+
+        let analysis = try await ScreenshotRecognitionCoordinator(
+            ocr: CountingOCR(), apiClient: StubRecognitionAPIClient(response: response)
+        ).analyze(
+            image: Self.onePixelImage(), book: book, categories: [category],
+            allowIncomeAutoEntry: false, now: Self.date("2026-07-11 23:59")
+        )
+
+        XCTAssertEqual(analysis.decisions.count, 2)
+        for decision in analysis.decisions {
+            guard case let .needsConfirmation(reason, candidate) = decision else {
+                return XCTFail("Multiple candidates must never be auto eligible")
+            }
+            XCTAssertEqual(reason, .multipleCandidates)
+            XCTAssertNotNil(candidate)
+        }
+    }
+
+    func testCancellationAfterOCRPreventsAPITransmission() async {
+        let (book, category, _) = Self.makeScope()
+        let api = StubRecognitionAPIClient(response: validResponse)
+        let task = Task {
+            try await ScreenshotRecognitionCoordinator(
+                ocr: CancelingReturningOCR(), apiClient: api
+            ).analyze(
+                image: Self.onePixelImage(), book: book, categories: [category],
+                allowIncomeAutoEntry: false
+            )
+        }
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(api.callCount, 0)
+    }
+
+    func testCancellationAfterAPIPreventsParsingAndEvaluation() async {
+        let (book, category, _) = Self.makeScope()
+        let api = CancelingReturningRecognitionAPIClient(response: Data("not json".utf8))
+        let task = Task {
+            try await ScreenshotRecognitionCoordinator(
+                ocr: CountingOCR(), apiClient: api
+            ).analyze(
+                image: Self.onePixelImage(), book: book, categories: [category],
+                allowIncomeAutoEntry: false
+            )
+        }
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected cancellation before parsing")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(api.callCount, 1)
+    }
+
     func testEncodedRequestContainsOnlyMinimalDeduplicatedOrderedRemoteContext() throws {
         let (book, category, _) = Self.makeScope(accountNote: "私密备注 NEVER_SEND")
         let duplicateAccount = Account(name: "招商银行 1234", type: .bankCard)
@@ -178,6 +241,16 @@ private struct ThrowingOCR: ScreenshotOCRServicing {
     func recognizeText(in image: CGImage) async throws -> OCRDocument { throw error }
 }
 
+private struct CancelingReturningOCR: ScreenshotOCRServicing {
+    func recognizeText(in image: CGImage) async throws -> OCRDocument {
+        withUnsafeCurrentTask { $0?.cancel() }
+        return OCRDocument(lines: [.init(
+            text: "支付成功 CNY 85.00",
+            boundingBox: .init(x: 0, y: 0, width: 1, height: 1)
+        )])
+    }
+}
+
 private final class StubRecognitionAPIClient: RecognitionAPIClient {
     let response: Data
     private(set) var callCount = 0
@@ -194,4 +267,15 @@ private final class ThrowingRecognitionAPIClient: RecognitionAPIClient {
     let error: Error
     init(error: Error) { self.error = error }
     func recognize(_ request: RecognitionAPIRequest) async throws -> Data { throw error }
+}
+
+private final class CancelingReturningRecognitionAPIClient: RecognitionAPIClient {
+    let response: Data
+    private(set) var callCount = 0
+    init(response: Data) { self.response = response }
+    func recognize(_ request: RecognitionAPIRequest) async throws -> Data {
+        callCount += 1
+        withUnsafeCurrentTask { $0?.cancel() }
+        return response
+    }
 }

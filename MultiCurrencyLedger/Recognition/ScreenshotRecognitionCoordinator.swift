@@ -68,7 +68,9 @@ struct ScreenshotRecognitionCoordinator {
         allowIncomeAutoEntry: Bool,
         now: Date = .now
     ) async throws -> RecognitionBatchAnalysis {
+        try Task.checkCancellation()
         let document = try await ocr.recognizeText(in: image)
+        try Task.checkCancellation()
         let localContext = contextBuilder.makeContext(book: book, categories: categories)
         let request = RecognitionAPIRequest(
             ocrText: document.fullText,
@@ -76,14 +78,21 @@ struct ScreenshotRecognitionCoordinator {
             requestedAt: now
         )
         let data = try await apiClient.recognize(request)
+        try Task.checkCancellation()
         let envelope = try parser.parse(data)
         var analysisEvaluator = evaluator
         analysisEvaluator.now = { now }
-        let decisions = envelope.results.map {
+        var decisions = envelope.results.map {
             analysisEvaluator.evaluate(
                 $0, ocrText: document.fullText, context: localContext,
                 allowIncomeAutoEntry: allowIncomeAutoEntry
             )
+        }
+        if decisions.count > 1 {
+            decisions = decisions.map { decision in
+                guard case let .autoEligible(_, candidate) = decision else { return decision }
+                return .needsConfirmation(reason: .multipleCandidates, candidate: candidate)
+            }
         }
         return RecognitionBatchAnalysis(document: document, decisions: decisions)
     }
