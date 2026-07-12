@@ -54,3 +54,23 @@ Result: no matches. The corpus contains generated OCR strings and JSON only; it 
 - Used an injected fixed evaluator clock (`2026-07-11 23:59 UTC`) so fixture eligibility does not depend on wall-clock time.
 - Preserved the eight fixture names, scenarios, and expected reasons from the brief. Fixture JSON conforms to the hardened parser's strict amount/date schema.
 - No production code changed. Self-review confirmed all Task 7 changes are limited to test fixtures, one acceptance test, privacy documentation, and this report.
+
+## Review-finding follow-up
+
+- Replaced the independent `expectsAutoEntry` and `expectedReason` fields with one exhaustive `RecognitionFixtureExpectation` enum. Eligible fixtures must declare an expected `SupportedCurrency`; all other fixtures must declare their exact fallback reason, so eligible metadata cannot drift to a non-eligible reason.
+- Added fixed CNY and USD wallet UUIDs and explicit assertions that eligible decisions route to the wallet associated with the fixture's expected currency.
+- Added an assertion that each parsed envelope contains exactly one result and replaced unchecked `[0]` indexing with a guarded `first` access.
+- Added an explicit assertion that each eligible normalized candidate's currency equals its declared wallet currency.
+
+### Follow-up RED evidence
+
+The updated acceptance test was written before the fixture expectation enum. The focused gate failed to compile with `Value of type 'RecognitionFixture' has no member 'expectation'`.
+
+After reaching green, the USD fixture's expected wallet currency was deliberately changed from `.USD` to `.CNY` and the focused gate was rerun. It produced `** TEST FAILED **` for `RecognitionFixtureAcceptanceTests.testSanitizedFixtureCorpusMatchesExpectedSafetyDecisions()`, proving the wallet-routing and candidate-currency assertions detect incorrect expected routing. The fixture was then restored to `.USD`.
+
+### Follow-up GREEN evidence and self-review
+
+- Restored focused fixture gate: `** TEST SUCCEEDED **`; all eight scenarios passed.
+- Full suite: `** TEST SUCCEEDED **`; 67/67 tests passed.
+- No fixture-name branching was added; routing is driven only by typed expectation metadata.
+- No production code, privacy policy, fixture payload, or scenario outcome changed.

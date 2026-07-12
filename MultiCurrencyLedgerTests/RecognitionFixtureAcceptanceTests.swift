@@ -3,8 +3,8 @@ import XCTest
 
 final class RecognitionFixtureAcceptanceTests: XCTestCase {
     func testSanitizedFixtureCorpusMatchesExpectedSafetyDecisions() throws {
-        let cnyID = UUID()
-        let usdID = UUID()
+        let cnyID = UUID(uuidString: "00000000-0000-0000-0000-000000001234")!
+        let usdID = UUID(uuidString: "00000000-0000-0000-0000-000000005678")!
         let context = RecognitionRequestContext(
             bookID: UUID(), bookName: "日常账本",
             accounts: [
@@ -19,20 +19,27 @@ final class RecognitionFixtureAcceptanceTests: XCTestCase {
             ]
         )
         let evaluator = RecognitionSafetyEvaluator(now: { Self.date("2026-07-11 23:59") })
+        let expectedWalletIDs: [SupportedCurrency: UUID] = [.CNY: cnyID, .USD: usdID]
 
         XCTAssertEqual(RecognitionFixtures.all.count, 8)
         for fixture in RecognitionFixtures.all {
-            let candidate = try RecognitionResponseParser()
-                .parse(Data(fixture.responseJSON.utf8)).results[0]
+            let envelope = try RecognitionResponseParser().parse(Data(fixture.responseJSON.utf8))
+            XCTAssertEqual(envelope.results.count, 1, fixture.name)
+            guard envelope.results.count == 1, let candidate = envelope.results.first else {
+                return XCTFail("\(fixture.name): expected exactly one parsed result")
+            }
             let decision = evaluator.evaluate(
                 candidate, ocrText: fixture.ocrText, context: context,
                 allowIncomeAutoEntry: false
             )
-            if fixture.expectsAutoEntry {
-                guard case .autoEligible = decision else {
+            switch fixture.expectation {
+            case let .autoEligible(walletCurrency):
+                guard case let .autoEligible(walletID, normalized) = decision else {
                     return XCTFail("\(fixture.name): expected auto entry, got \(decision)")
                 }
-            } else {
+                XCTAssertEqual(walletID, expectedWalletIDs[walletCurrency], fixture.name)
+                XCTAssertEqual(normalized.currency, walletCurrency, fixture.name)
+            case let .notAutoEligible(expectedReason):
                 let actual: RecognitionDecisionReason
                 switch decision {
                 case let .needsConfirmation(reason, _), let .rejected(reason):
@@ -40,7 +47,7 @@ final class RecognitionFixtureAcceptanceTests: XCTestCase {
                 case .autoEligible:
                     return XCTFail("\(fixture.name): unsafe auto entry")
                 }
-                XCTAssertEqual(actual, fixture.expectedReason, fixture.name)
+                XCTAssertEqual(actual, expectedReason, fixture.name)
             }
         }
     }

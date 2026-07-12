@@ -1,48 +1,52 @@
 import Foundation
 @testable import MultiCurrencyLedger
 
+enum RecognitionFixtureExpectation {
+    case autoEligible(walletCurrency: SupportedCurrency)
+    case notAutoEligible(reason: RecognitionDecisionReason)
+}
+
 struct RecognitionFixture {
     let name: String
     let ocrText: String
     let responseJSON: String
-    let expectedReason: RecognitionDecisionReason
-    let expectsAutoEntry: Bool
+    let expectation: RecognitionFixtureExpectation
 }
 
 enum RecognitionFixtures {
     static let all: [RecognitionFixture] = [
         fixture(
             "cny-expense", "支付成功 餐饮 CNY 28.00 招商银行1234",
-            "expense", "28", "CNY", "餐饮", .eligible, true
+            "expense", "28", "CNY", "餐饮", .autoEligible(walletCurrency: .CNY)
         ),
         fixture(
             "usd-expense", "Completed Coffee USD 6.50 招商银行1234",
-            "expense", "6.50", "USD", "餐饮", .eligible, true
+            "expense", "6.50", "USD", "餐饮", .autoEligible(walletCurrency: .USD)
         ),
         fixture(
             "income-opt-out", "工资到账 CNY 8000 招商银行1234",
-            "income", "8000", "CNY", "工资", .unsupportedType, false
+            "income", "8000", "CNY", "工资", .notAutoEligible(reason: .unsupportedType)
         ),
         fixture(
             "transfer", "转账成功 CNY 500 招商银行1234",
-            "transfer", "500", "CNY", "其他", .unsupportedType, false
+            "transfer", "500", "CNY", "其他", .notAutoEligible(reason: .unsupportedType)
         ),
         fixture(
             "refund", "退款成功 CNY 85 招商银行1234",
-            "refund", "85", "CNY", "退款", .unsupportedType, false
+            "refund", "85", "CNY", "退款", .notAutoEligible(reason: .unsupportedType)
         ),
         fixture(
             "pending", "处理中 CNY 30 招商银行1234",
-            "expense", "30", "CNY", "餐饮", .riskyStatusText, false
+            "expense", "30", "CNY", "餐饮", .notAutoEligible(reason: .riskyStatusText)
         ),
         fixture(
             "unknown-account", "支付成功 CNY 20 尾号9999",
-            "expense", "20", "CNY", "餐饮", .accountUnmatched, false,
+            "expense", "20", "CNY", "餐饮", .notAutoEligible(reason: .accountUnmatched),
             accountHint: "尾号9999"
         ),
         fixture(
             "bad-discount", "原价100 优惠10 实付85 CNY 招商银行1234",
-            "expense", "85", "CNY", "餐饮", .amountRelationshipMismatch, false,
+            "expense", "85", "CNY", "餐饮", .notAutoEligible(reason: .amountRelationshipMismatch),
             original: "100", discount: "10"
         )
     ]
@@ -54,8 +58,7 @@ enum RecognitionFixtures {
         _ amount: String,
         _ currency: String,
         _ category: String,
-        _ reason: RecognitionDecisionReason,
-        _ auto: Bool,
+        _ expectation: RecognitionFixtureExpectation,
         original: String? = nil,
         discount: String? = "0",
         accountHint: String = "招商银行 1234"
@@ -68,8 +71,7 @@ enum RecognitionFixtures {
             name: name,
             ocrText: ocr,
             responseJSON: json,
-            expectedReason: reason,
-            expectsAutoEntry: auto
+            expectation: expectation
         )
     }
 }
