@@ -21,6 +21,10 @@ final class LedgerTransaction {
     var exchangeRate: Decimal?
     var adjustmentDirectionRawValue: String?
     var adjustmentReason: String?
+    var merchantOrCounterparty: String?
+    var originalAmount: Decimal?
+    var discountAmount: Decimal?
+    var recognitionImportID: UUID?
 
     @Relationship(deleteRule: .nullify) var sourceAccount: Account?
     @Relationship(deleteRule: .nullify) var sourceWallet: CurrencyWallet?
@@ -51,6 +55,10 @@ final class LedgerTransaction {
         adjustmentDirection: AdjustmentDirection? = nil,
         adjustmentReason: String? = nil,
         category: LedgerCategory? = nil,
+        merchantOrCounterparty: String? = nil,
+        originalAmount: Decimal? = nil,
+        discountAmount: Decimal? = nil,
+        recognitionImportID: UUID? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -75,6 +83,10 @@ final class LedgerTransaction {
         adjustmentDirectionRawValue = adjustmentDirection?.rawValue
         self.adjustmentReason = adjustmentReason
         self.category = category
+        self.merchantOrCounterparty = merchantOrCounterparty
+        self.originalAmount = originalAmount
+        self.discountAmount = discountAmount
+        self.recognitionImportID = recognitionImportID
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

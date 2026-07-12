@@ -13,6 +13,7 @@ struct MultiCurrencyLedgerApp: App {
                 CurrencyWallet.self,
                 LedgerCategory.self,
                 LedgerTransaction.self,
+                RecognitionImportRecord.self,
                 ExchangeRate.self,
                 MonthlyBudget.self
             ])

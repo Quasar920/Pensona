@@ -29,6 +29,7 @@ struct TransactionDetailView: View {
             Section("交易信息") {
                 LabeledContent("日期", value: transaction.date.formatted(date: .long, time: .shortened))
                 if let category = transaction.category { LabeledContent("分类", value: category.name) }
+                if let merchant = transaction.merchantOrCounterparty { LabeledContent("商户", value: merchant) }
                 if let account = transaction.sourceAccount { LabeledContent("来源账户", value: account.name) }
                 if let code = transaction.sourceCurrencyCode { LabeledContent("来源币种", value: code) }
                 if let account = transaction.destinationAccount { LabeledContent("目标账户", value: account.name) }
@@ -37,6 +38,13 @@ struct TransactionDetailView: View {
                 if let fee = transaction.feeAmount, fee > 0 {
                     LabeledContent("手续费", value: "\(MoneyFormatter.plain(fee, currencyCode: transaction.feeCurrencyCode ?? "CNY")) \(transaction.feeCurrencyCode ?? "")")
                 }
+                if let original = transaction.originalAmount {
+                    LabeledContent("原价", value: MoneyFormatter.plain(original, currencyCode: transaction.currencyCode ?? transaction.sourceCurrencyCode ?? "CNY"))
+                }
+                if let discount = transaction.discountAmount, discount > 0 {
+                    LabeledContent("优惠", value: MoneyFormatter.plain(discount, currencyCode: transaction.currencyCode ?? transaction.sourceCurrencyCode ?? "CNY"))
+                }
+                if transaction.recognitionImportID != nil { LabeledContent("来源", value: "截图识别") }
                 if let reason = transaction.adjustmentReason { LabeledContent("调整原因", value: reason) }
                 if let note = transaction.note, !note.isEmpty { LabeledContent("备注", value: note) }
             }

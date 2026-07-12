@@ -177,6 +177,30 @@ final class LedgerService {
         return try persistNew(transaction)
     }
 
+    /// Persists a recognition-confirmed transaction and its non-sensitive audit
+    /// record in the same save operation. Neither OCR text nor screenshot data is
+    /// accepted here, so this boundary cannot accidentally retain either.
+    @discardableResult
+    func persistRecognized(
+        _ transaction: LedgerTransaction,
+        importRecord: RecognitionImportRecord
+    ) throws -> LedgerTransaction {
+        let snapshots = snapshots(for: [transaction])
+        do {
+            try applyTransaction(transaction)
+            importRecord.transactionID = transaction.id
+            transaction.recognitionImportID = importRecord.id
+            context.insert(transaction)
+            context.insert(importRecord)
+            try context.save()
+            return transaction
+        } catch {
+            context.rollback()
+            restore(snapshots)
+            throw error
+        }
+    }
+
     func deleteTransaction(_ transaction: LedgerTransaction) throws {
         let snapshots = snapshots(for: [transaction])
         do {
