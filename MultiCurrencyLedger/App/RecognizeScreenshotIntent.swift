@@ -35,7 +35,10 @@ struct RecognizeScreenshotIntent: AppIntent {
             apiClient: try RecognitionRuntimeConfiguration.makeHTTPClient()
         )
         let analysis = try await coordinator.analyze(
-            image: image, book: book, categories: categories, allowIncomeAutoEntry: false
+            image: image,
+            book: book,
+            categories: categories,
+            allowIncomeAutoEntry: UserDefaults.standard.bool(forKey: "recognitionAllowIncomeAutoEntry")
         )
         guard analysis.decisions.count == 1, let decision = analysis.decisions.first else {
             throw RecognitionError.emptyResults

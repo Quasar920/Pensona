@@ -18,6 +18,7 @@ struct SettingsView: View {
                     }
                     NavigationLink("汇率管理") { ExchangeRateListView() }
                     NavigationLink("分类管理") { CategoryManagementView() }
+                    NavigationLink("快捷记账") { QuickBookkeepingSettingsView() }
                 }
 
                 Section("数据") {
