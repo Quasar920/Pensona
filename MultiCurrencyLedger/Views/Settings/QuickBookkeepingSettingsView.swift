@@ -2,43 +2,16 @@ import SwiftUI
 import UIKit
 
 struct QuickBookkeepingSettingsView: View {
-    @AppStorage(RecognitionRuntimeConfiguration.endpointDefaultsKey) private var savedEndpoint = ""
     @AppStorage("recognitionAllowIncomeAutoEntry") private var allowIncomeAutoEntry = false
-    @State private var endpoint = ""
-    @State private var bearerToken = ""
-    @State private var errorMessage: String?
-    @State private var savedMessage: String?
 
     var body: some View {
         Form {
             Section {
-                Text("截图仅在本机 OCR；发送给识别服务的是 OCR 文字和最小账户/分类候选，原始截图不会保存。")
+                Text("付款页触发快捷指令后，由快捷指令截屏、OCR 并请求你配置的识别 API；App 只验证结果并写入账本。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } header: {
-                Text("数据处理")
-            }
-
-            Section {
-                TextField("HTTPS 网关地址", text: $endpoint)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                    .autocorrectionDisabled()
-                SecureField("Bearer Token（可选）", text: $bearerToken)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("保存服务配置", action: saveConfiguration)
-                if !savedEndpoint.isEmpty {
-                    Label("已配置 HTTPS 识别服务", systemImage: "checkmark.shield.fill")
-                        .foregroundStyle(.green)
-                }
-                if let savedMessage {
-                    Text(savedMessage).foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("受控识别服务")
-            } footer: {
-                Text("令牌仅保存在系统 Keychain，不会写入账本、识别记录或源码。")
+                Text("工作方式")
             }
 
             Section {
@@ -46,59 +19,28 @@ struct QuickBookkeepingSettingsView: View {
             } header: {
                 Text("自动入账")
             } footer: {
-                Text("支出仍需通过本地金额、账户、分类、重复检测等全部安全门槛；转账、换汇、退款和手续费交易必须确认。")
+                Text("支出仍需通过本地金额、账户、分类和重复检测。转账、换汇、退款、手续费交易都必须确认。")
             }
 
             Section {
                 Button("打开“快捷指令”") { openShortcuts() }
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("1. 新建快捷指令，添加“截屏”操作。")
-                    Text("2. 再添加“多币种账本”的“识别并记账”。")
-                    Text("3. 将“截屏”的图像输出传给“截图”参数，然后命名为“快捷记账”。")
+                    Text("1. 新建快捷指令，添加“截屏”。")
+                    Text("2. 添加“从图像提取文本”，输入为截屏。")
+                    Text("3. 用“获取 URL 内容”把 OCR 文本发给你的识别 API。")
+                    Text("4. 添加“多币种账本”的“识别并记账”，传入 OCR 文本与 API 返回的 JSON。")
+                    Text("5. 成功时让快捷指令震动；需要确认时 App 会打开确认页。")
                 }
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             } header: {
-                Text("安装快捷指令")
+                Text("创建快捷指令")
             } footer: {
-                Text("iOS 要求由你确认创建或修改快捷指令，App 不能静默安装。")
-            }
-
-            if !savedEndpoint.isEmpty {
-                Section {
-                    Button("清除识别服务配置", role: .destructive, action: clearConfiguration)
-                }
+                Text("API 地址、Token 和提示词由快捷指令管理，不会保存到记账 App。iOS 要求由你确认创建或修改快捷指令。")
             }
         }
         .navigationTitle("快捷记账")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { endpoint = savedEndpoint }
-        .alert("无法保存", isPresented: Binding(
-            get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
-    }
-
-    private func saveConfiguration() {
-        do {
-            try RecognitionRuntimeConfiguration.save(endpointString: endpoint, bearerToken: bearerToken)
-            savedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-            bearerToken = ""
-            savedMessage = "服务配置已保存"
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func clearConfiguration() {
-        do {
-            try RecognitionRuntimeConfiguration.clear()
-            endpoint = ""
-            bearerToken = ""
-            savedEndpoint = ""
-            savedMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 
     private func openShortcuts() {

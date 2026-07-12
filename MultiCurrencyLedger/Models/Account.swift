@@ -44,3 +44,5 @@ final class Account {
         wallets.filter(\.isEnabled).sorted { $0.currencyCode < $1.currencyCode }
     }
 }
+
+extension Account: Identifiable {}
