@@ -27,9 +27,10 @@ struct QuickBookkeepingSettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("1. 新建快捷指令，添加“截屏”。")
                     Text("2. 添加“从图像提取文本”，输入为截屏。")
-                    Text("3. 用“获取 URL 内容”把 OCR 文本发给你的识别 API。")
-                    Text("4. 添加“多币种账本”的“识别并记账”，传入 OCR 文本与 API 返回的 JSON。")
-                    Text("5. 成功时让快捷指令震动；需要确认时 App 会打开确认页。")
+                    Text("3. 添加“多币种账本”的“获取记账识别候选”。")
+                    Text("4. 用“获取 URL 内容”把 OCR 文本和候选 JSON 发给你的识别 API。")
+                    Text("5. 添加“多币种账本”的“识别并记账”，传入 OCR 文本与 API 返回的 JSON。")
+                    Text("6. 成功时让快捷指令震动；需要确认时 App 会打开确认页。")
                 }
                 .font(.footnote)
                 .foregroundStyle(.secondary)
