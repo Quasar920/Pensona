@@ -7,17 +7,7 @@ struct MultiCurrencyLedgerApp: App {
 
     init() {
         do {
-            let schema = Schema([
-                LedgerBook.self,
-                Account.self,
-                CurrencyWallet.self,
-                LedgerCategory.self,
-                LedgerTransaction.self,
-                RecognitionImportRecord.self,
-                ExchangeRate.self,
-                MonthlyBudget.self
-            ])
-            modelContainer = try ModelContainer(for: schema)
+            modelContainer = try AppModelContainer.make()
         } catch {
             fatalError("无法创建本地数据库：\(error.localizedDescription)")
         }

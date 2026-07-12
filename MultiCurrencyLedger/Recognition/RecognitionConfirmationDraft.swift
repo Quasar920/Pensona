@@ -76,3 +76,24 @@ extension RecognitionDecision {
         }
     }
 }
+
+extension RecognitionImportRecord {
+    var confirmationDraft: RecognitionConfirmationDraft? {
+        guard let type = RecognizedTransactionType(rawValue: candidateTypeRawValue),
+              let currency = SupportedCurrency(rawValue: currencyCode) else {
+            return nil
+        }
+        return RecognitionConfirmationDraft(
+            type: type,
+            paidAmount: paidAmount,
+            currency: currency,
+            occurredAt: occurredAt,
+            merchantOrCounterparty: merchantOrCounterparty ?? "",
+            note: note ?? "",
+            originalAmount: originalAmount,
+            discountAmount: discountAmount,
+            feeAmount: feeAmount,
+            decisionReason: decisionReason
+        )
+    }
+}

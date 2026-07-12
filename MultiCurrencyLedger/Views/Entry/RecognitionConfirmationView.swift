@@ -12,6 +12,7 @@ struct RecognitionConfirmationView: View {
 
     let book: LedgerBook
     let onSaved: ((LedgerTransaction) -> Void)?
+    private let importRecord: RecognitionImportRecord?
     private let initialWalletID: UUID?
     @State private var draft: RecognitionConfirmationDraft?
     @State private var walletID: UUID?
@@ -25,12 +26,25 @@ struct RecognitionConfirmationView: View {
     ) {
         self.book = book
         self.onSaved = onSaved
+        importRecord = nil
         _draft = State(initialValue: decision.confirmationDraft)
         if case let .autoEligible(walletID, _) = decision {
             initialWalletID = walletID
         } else {
             initialWalletID = nil
         }
+    }
+
+    init(
+        record: RecognitionImportRecord,
+        book: LedgerBook,
+        onSaved: ((LedgerTransaction) -> Void)? = nil
+    ) {
+        self.book = book
+        self.onSaved = onSaved
+        importRecord = record
+        _draft = State(initialValue: record.confirmationDraft)
+        initialWalletID = record.selectedWalletID
     }
 
     private var wallets: [CurrencyWallet] {
@@ -173,7 +187,11 @@ struct RecognitionConfirmationView: View {
         let category = availableCategories.first(where: { $0.id == categoryID })
         do {
             let transaction = try RecognitionEntryService(context: context).confirm(
-                draft, wallet: wallet, category: category
+                draft,
+                wallet: wallet,
+                category: category,
+                importRecord: importRecord,
+                importStatus: .confirmed
             )
             onSaved?(transaction)
             dismiss()
@@ -181,6 +199,7 @@ struct RecognitionConfirmationView: View {
             errorMessage = error.localizedDescription
         }
     }
+
 
     private func reasonText(_ reason: RecognitionDecisionReason) -> String {
         switch reason {

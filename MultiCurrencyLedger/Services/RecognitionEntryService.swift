@@ -7,6 +7,7 @@ enum RecognitionEntryError: LocalizedError, Equatable {
     case invalidAmount
     case walletCurrencyMismatch
     case categoryTypeMismatch
+    case missingBook
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,7 @@ enum RecognitionEntryError: LocalizedError, Equatable {
         case .invalidAmount: "确认金额必须大于 0"
         case .walletCurrencyMismatch: "所选钱包与交易币种不一致"
         case .categoryTypeMismatch: "所选分类与交易类型不一致"
+        case .missingBook: "识别交易必须归属一个账本"
         }
     }
 }
@@ -31,7 +33,9 @@ final class RecognitionEntryService {
     func confirm(
         _ draft: RecognitionConfirmationDraft,
         wallet: CurrencyWallet,
-        category: LedgerCategory?
+        category: LedgerCategory?,
+        importRecord: RecognitionImportRecord? = nil,
+        importStatus: RecognitionImportStatus = .confirmed
     ) throws -> LedgerTransaction {
         guard draft.type == .expense || draft.type == .income else {
             throw RecognitionEntryError.unsupportedType
@@ -45,6 +49,7 @@ final class RecognitionEntryService {
             let expected: CategoryKind = draft.type == .expense ? .expense : .income
             guard category.type == expected else { throw RecognitionEntryError.categoryTypeMismatch }
         }
+        guard let bookID = wallet.account?.book?.id else { throw RecognitionEntryError.missingBook }
 
         let transaction = LedgerTransaction(
             type: draft.type == .expense ? .expense : .income,
@@ -61,13 +66,16 @@ final class RecognitionEntryService {
             originalAmount: draft.originalAmount,
             discountAmount: draft.discountAmount
         )
-        let record = RecognitionImportRecord(
-            status: .confirmed,
-            decisionReason: draft.decisionReason,
-            candidateType: draft.type,
-            paidAmount: draft.paidAmount,
-            currencyCode: draft.currency.rawValue
+        let record = importRecord ?? RecognitionImportRecordFactory.make(
+            draft: draft,
+            status: importStatus,
+            bookID: bookID,
+            selectedWalletID: wallet.id,
+            selectedCategoryID: category?.id
         )
+        record.statusRawValue = importStatus.rawValue
+        record.selectedWalletID = wallet.id
+        record.selectedCategoryID = category?.id
         return try LedgerService(context: context).persistRecognized(transaction, importRecord: record)
     }
 }

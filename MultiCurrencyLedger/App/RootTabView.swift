@@ -1,9 +1,15 @@
 import SwiftUI
+import SwiftData
 
 struct RootTabView: View {
     @State private var selection: LedgerTab = .ledger
     @State private var showingNewTransaction = false
     @State private var appliedPreviewScreen = false
+    @AppStorage(RecognitionPendingRoute.recordIDDefaultsKey) private var pendingRecognitionRecordID = ""
+    @Query(sort: \LedgerBook.createdAt) private var books: [LedgerBook]
+    @Query(sort: \RecognitionImportRecord.createdAt, order: .reverse)
+    private var recognitionRecords: [RecognitionImportRecord]
+    @State private var pendingRecognitionRecord: RecognitionImportRecord?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -33,7 +39,19 @@ struct RootTabView: View {
         .sheet(isPresented: $showingNewTransaction) {
             EntryView()
         }
-        .onAppear(perform: applyPreviewScreenIfNeeded)
+        .sheet(item: $pendingRecognitionRecord, onDismiss: {
+            pendingRecognitionRecordID = ""
+        }) { record in
+            if let book = books.first(where: { $0.id == record.bookID }) {
+                RecognitionConfirmationView(record: record, book: book)
+            } else {
+                ContentUnavailableView("找不到对应账本", systemImage: "book.closed")
+            }
+        }
+        .onAppear {
+            applyPreviewScreenIfNeeded()
+            presentPendingRecognitionIfNeeded()
+        }
     }
 
     private func applyPreviewScreenIfNeeded() {
@@ -49,6 +67,11 @@ struct RootTabView: View {
             break
         }
         #endif
+    }
+
+    private func presentPendingRecognitionIfNeeded() {
+        guard let id = UUID(uuidString: pendingRecognitionRecordID) else { return }
+        pendingRecognitionRecord = recognitionRecords.first { $0.id == id && $0.status == .pendingConfirmation }
     }
 }
 
