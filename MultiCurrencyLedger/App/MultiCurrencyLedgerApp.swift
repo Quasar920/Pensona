@@ -24,6 +24,21 @@ struct MultiCurrencyLedgerApp: App {
                     } catch {
                         assertionFailure("默认分类初始化失败：\(error.localizedDescription)")
                     }
+                    if UserDefaults.standard.bool(forKey: CloudSyncService.enabledKey) {
+                        do {
+                            let baseCurrencyCode = UserDefaults.standard.string(forKey: "baseCurrencyCode")
+                                ?? SupportedCurrency.CNY.rawValue
+                            _ = try await CloudSyncService().synchronize(
+                                context: modelContainer.mainContext,
+                                baseCurrencyCode: baseCurrencyCode
+                            )
+                        } catch {
+                            UserDefaults.standard.set(
+                                error.localizedDescription,
+                                forKey: CloudSyncService.lastErrorKey
+                            )
+                        }
+                    }
                 }
         }
         .modelContainer(modelContainer)

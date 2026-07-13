@@ -23,7 +23,9 @@ enum AppModelContainer {
             SavingsGoal.self,
             SavingsAllocation.self,
             TransactionImportBatch.self,
-            TransactionImportFingerprint.self
+            TransactionImportFingerprint.self,
+            CloudSyncTombstone.self,
+            CloudSyncConflictCopy.self
         ])
         return try ModelContainer(for: schema)
     }
