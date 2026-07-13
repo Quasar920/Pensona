@@ -39,6 +39,16 @@ struct QuickBookkeepingSettingsView: View {
             } footer: {
                 Text("API 地址、Token 和提示词由快捷指令管理，不会保存到记账 App。iOS 要求由你确认创建或修改快捷指令。")
             }
+
+            Section("URL Scheme") {
+                Text("本 App 使用独立的 multiledger://entry，不依赖 iCost。链接只会打开待确认草稿，不会直接入账。")
+                Text("示例：multiledger://entry?type=expense&amount=28.5&currency=CNY&wallet=现金&category=餐饮")
+                    .font(.footnote)
+                    .textSelection(.enabled)
+                Text("支持：type、amount、currency、book、wallet、destinationWallet、destinationAmount、fee、feeWallet、category、tags、merchant、note、date。未知字段会被拒绝。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .navigationTitle("快捷记账")
         .navigationBarTitleDisplayMode(.inline)

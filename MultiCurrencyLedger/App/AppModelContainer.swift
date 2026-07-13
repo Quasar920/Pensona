@@ -13,6 +13,10 @@ enum AppModelContainer {
             TransactionTemplate.self,
             TransactionPaymentPart.self,
             TransactionRelation.self,
+            RecurringSchedule.self,
+            RecurringOccurrence.self,
+            InstallmentPlan.self,
+            InstallmentOccurrence.self,
             RecognitionImportRecord.self,
             ExchangeRate.self,
             MonthlyBudget.self

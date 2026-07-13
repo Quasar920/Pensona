@@ -48,8 +48,18 @@ final class LedgerService {
 
     @discardableResult
     func create(_ draft: TransactionDraft) throws -> LedgerTransaction {
+        try create(draft) { _ in }
+    }
+
+    /// Allows automation services to insert their unique occurrence marker in
+    /// the same save as the generated transaction and wallet balance changes.
+    @discardableResult
+    func create(
+        _ draft: TransactionDraft,
+        configureBeforeSave: (LedgerTransaction) throws -> Void
+    ) throws -> LedgerTransaction {
         _ = try impactCalculator.deltas(for: draft)
-        return try persistNew(draft.makeTransaction())
+        return try persistNew(draft.makeTransaction(), configureBeforeSave: configureBeforeSave)
     }
 
     @discardableResult
@@ -259,11 +269,15 @@ final class LedgerService {
         try changeBalances(for: transaction, multiplier: -1)
     }
 
-    private func persistNew(_ transaction: LedgerTransaction) throws -> LedgerTransaction {
+    private func persistNew(
+        _ transaction: LedgerTransaction,
+        configureBeforeSave: (LedgerTransaction) throws -> Void = { _ in }
+    ) throws -> LedgerTransaction {
         let snapshots = snapshots(for: [transaction])
         do {
             try applyTransaction(transaction)
             context.insert(transaction)
+            try configureBeforeSave(transaction)
             try context.save()
             return transaction
         } catch {

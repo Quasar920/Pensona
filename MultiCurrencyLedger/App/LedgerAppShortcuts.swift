@@ -14,5 +14,11 @@ struct LedgerAppShortcuts: AppShortcutsProvider {
             shortTitle: "识别并记账",
             systemImageName: "text.viewfinder"
         )
+        AppShortcut(
+            intent: OpenTransactionDraftIntent(),
+            phrases: ["用\(.applicationName)打开待确认记账"],
+            shortTitle: "待确认记账",
+            systemImageName: "square.and.pencil"
+        )
     }
 }

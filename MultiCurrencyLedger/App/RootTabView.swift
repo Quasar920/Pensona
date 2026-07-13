@@ -5,11 +5,18 @@ struct RootTabView: View {
     @State private var selection: LedgerTab = .ledger
     @State private var showingNewTransaction = false
     @State private var appliedPreviewScreen = false
+    @AppStorage("selectedBookID") private var selectedBookID = ""
     @AppStorage(RecognitionPendingRoute.recordIDDefaultsKey) private var pendingRecognitionRecordID = ""
+    @AppStorage(URLDraftPendingRoute.defaultsKey) private var pendingExternalURL = ""
     @Query(sort: \LedgerBook.createdAt) private var books: [LedgerBook]
+    @Query(sort: \Account.createdAt) private var accounts: [Account]
+    @Query(sort: \LedgerCategory.sortOrder) private var categories: [LedgerCategory]
+    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
     @Query(sort: \RecognitionImportRecord.createdAt, order: .reverse)
     private var recognitionRecords: [RecognitionImportRecord]
     @State private var pendingRecognitionRecord: RecognitionImportRecord?
+    @State private var pendingExternalDraft: TransactionDraft?
+    @State private var externalRouteError: String?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -48,10 +55,25 @@ struct RootTabView: View {
                 ContentUnavailableView("找不到对应账本", systemImage: "book.closed")
             }
         }
+        .sheet(item: $pendingExternalDraft) { draft in
+            EntryView(
+                seed: draft,
+                dismissAfterSave: true,
+                resetSeedDate: false,
+                presentationTitle: "确认外部记账"
+            )
+        }
         .onAppear {
             applyPreviewScreenIfNeeded()
             presentPendingRecognitionIfNeeded()
+            presentPendingExternalURLIfNeeded()
         }
+        .onOpenURL(perform: handleExternalURL)
+        .onChange(of: books.count) { _, _ in presentPendingExternalURLIfNeeded() }
+        .alert("无法打开记账链接", isPresented: Binding(
+            get: { externalRouteError != nil },
+            set: { if !$0 { externalRouteError = nil } }
+        )) { Button("好") {} } message: { Text(externalRouteError ?? "未知错误") }
     }
 
     private func applyPreviewScreenIfNeeded() {
@@ -72,6 +94,32 @@ struct RootTabView: View {
     private func presentPendingRecognitionIfNeeded() {
         guard let id = UUID(uuidString: pendingRecognitionRecordID) else { return }
         pendingRecognitionRecord = recognitionRecords.first { $0.id == id && $0.status == .pendingConfirmation }
+    }
+
+    private func presentPendingExternalURLIfNeeded() {
+        guard !pendingExternalURL.isEmpty,
+              let url = URL(string: pendingExternalURL),
+              !books.isEmpty else { return }
+        pendingExternalURL = ""
+        handleExternalURL(url)
+    }
+
+    private func handleExternalURL(_ url: URL) {
+        do {
+            let request = try URLDraftParser().parse(url)
+            let wallets = accounts.flatMap(\.enabledWallets)
+            let preferredBookID = UUID(uuidString: selectedBookID)
+            pendingExternalDraft = try URLDraftResolver().resolve(
+                request,
+                books: books,
+                wallets: wallets,
+                categories: categories,
+                tags: tags,
+                preferredBookID: preferredBookID
+            )
+        } catch {
+            externalRouteError = error.localizedDescription
+        }
     }
 }
 

@@ -16,6 +16,7 @@ struct EntryView: View {
 
     private let seed: TransactionDraft?
     private let dismissAfterSave: Bool
+    private let presentationTitle: String?
     private let selectionStore = RecentEntrySelectionStore()
 
     @State private var form: TransactionFormState
@@ -25,11 +26,17 @@ struct EntryView: View {
     @State private var showingNegativeWarning = false
     @State private var initialized = false
 
-    init(seed: TransactionDraft? = nil, dismissAfterSave: Bool = false) {
+    init(
+        seed: TransactionDraft? = nil,
+        dismissAfterSave: Bool = false,
+        resetSeedDate: Bool = true,
+        presentationTitle: String? = nil
+    ) {
         self.seed = seed
         self.dismissAfterSave = dismissAfterSave
+        self.presentationTitle = presentationTitle
         var initialState = seed.map(TransactionFormState.init(draft:)) ?? TransactionFormState()
-        if seed != nil {
+        if seed != nil, resetSeedDate {
             initialState.removeImportedMetadataForCopy()
         }
         _form = State(initialValue: initialState)
@@ -122,7 +129,7 @@ struct EntryView: View {
             }
             .scrollContentBackground(.hidden)
             .background(HomePalette.background)
-            .navigationTitle(seed == nil ? "记账" : "复制交易")
+            .navigationTitle(presentationTitle ?? (seed == nil ? "记账" : "复制交易"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -20,6 +20,7 @@ struct MultiCurrencyLedgerApp: App {
                     do {
                         try InitialDataService.seedIfNeeded(context: modelContainer.mainContext)
                         try PreviewDataService.seedIfRequested(context: modelContainer.mainContext)
+                        _ = AutomationDueService(context: modelContainer.mainContext).generateAllDue()
                     } catch {
                         assertionFailure("默认分类初始化失败：\(error.localizedDescription)")
                     }

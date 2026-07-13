@@ -1,0 +1,149 @@
+import Foundation
+
+enum AutomationDraftError: LocalizedError, Equatable {
+    case missingBook
+    case crossBookReference
+    case invalidReference
+    case corruptSnapshot
+
+    var errorDescription: String? {
+        switch self {
+        case .missingBook: "自动记账规则必须归属一个账本"
+        case .crossBookReference: "自动记账规则不能引用其他账本的钱包、分类或标签"
+        case .invalidReference: "自动记账规则引用的钱包、分类或标签已失效"
+        case .corruptSnapshot: "自动记账规则的数据已损坏，请重新创建"
+        }
+    }
+}
+
+struct AutomationPaymentPartSnapshot: Codable, Equatable {
+    let walletID: UUID
+    let amount: Decimal
+}
+
+/// A stable, model-independent copy of a transaction draft. Automation rules
+/// store IDs rather than SwiftData relationships so archiving a referenced
+/// object cannot silently redirect future entries.
+struct AutomationTransactionSnapshot: Codable, Equatable {
+    let type: TransactionKind
+    let amount: Decimal
+    let sourceWalletID: UUID
+    let destinationWalletID: UUID?
+    let destinationAmount: Decimal?
+    let feeAmount: Decimal?
+    let feeWalletID: UUID?
+    let categoryID: UUID?
+    let tagIDs: [UUID]
+    let paymentParts: [AutomationPaymentPartSnapshot]
+    let note: String?
+    let merchantOrCounterparty: String?
+    let adjustmentDirection: AdjustmentDirection?
+    let adjustmentReason: String?
+
+    init(draft: TransactionDraft) throws {
+        guard let sourceWallet = draft.sourceWallet else {
+            throw AutomationDraftError.invalidReference
+        }
+        self.type = draft.type
+        amount = draft.amount
+        sourceWalletID = sourceWallet.id
+        destinationWalletID = draft.destinationWallet?.id
+        destinationAmount = draft.destinationAmount
+        feeAmount = draft.feeAmount
+        feeWalletID = draft.feeWallet?.id
+        categoryID = draft.category?.id
+        tagIDs = draft.tags.map(\.id)
+        paymentParts = draft.paymentParts.map {
+            AutomationPaymentPartSnapshot(walletID: $0.wallet.id, amount: $0.amount)
+        }
+        note = draft.note
+        merchantOrCounterparty = draft.merchantOrCounterparty
+        adjustmentDirection = draft.adjustmentDirection
+        adjustmentReason = draft.adjustmentReason
+    }
+}
+
+struct AutomationDraftCodec {
+    func encode(_ draft: TransactionDraft) throws -> (bookID: UUID, data: Data) {
+        guard let sourceWallet = draft.sourceWallet,
+              let bookID = sourceWallet.account?.book?.id else {
+            throw AutomationDraftError.missingBook
+        }
+        let referencedWallets = [draft.destinationWallet, draft.feeWallet]
+            + draft.paymentParts.map { Optional($0.wallet) }
+        guard referencedWallets.compactMap({ $0 }).allSatisfy({
+            $0.account?.book?.id == bookID
+        }) else {
+            throw AutomationDraftError.crossBookReference
+        }
+        guard draft.category.map({ $0.bookID == nil || $0.bookID == bookID }) ?? true,
+              draft.tags.allSatisfy({ $0.bookID == bookID }) else {
+            throw AutomationDraftError.crossBookReference
+        }
+        return (bookID, try JSONEncoder().encode(AutomationTransactionSnapshot(draft: draft)))
+    }
+
+    func resolve(
+        data: Data,
+        bookID: UUID,
+        date: Date,
+        wallets: [CurrencyWallet],
+        categories: [LedgerCategory],
+        tags: [TransactionTag]
+    ) throws -> TransactionDraft {
+        guard let snapshot = try? JSONDecoder().decode(AutomationTransactionSnapshot.self, from: data) else {
+            throw AutomationDraftError.corruptSnapshot
+        }
+        let scopedWallets = wallets.filter {
+            $0.isEnabled && $0.account?.book?.id == bookID
+        }
+        guard let source = scopedWallets.first(where: { $0.id == snapshot.sourceWalletID }) else {
+            throw AutomationDraftError.invalidReference
+        }
+        let destination = snapshot.destinationWalletID.flatMap { id in
+            scopedWallets.first { $0.id == id }
+        }
+        let feeWallet = snapshot.feeWalletID.flatMap { id in
+            scopedWallets.first { $0.id == id }
+        }
+        let category = snapshot.categoryID.flatMap { id in
+            categories.first {
+                $0.id == id && !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID)
+            }
+        }
+        let resolvedTags = tags.filter {
+            snapshot.tagIDs.contains($0.id) && !$0.isArchived && $0.bookID == bookID
+        }
+        let paymentParts = snapshot.paymentParts.compactMap { part in
+            scopedWallets.first(where: { $0.id == part.walletID }).map {
+                TransactionPaymentPartDraft(wallet: $0, amount: part.amount)
+            }
+        }
+
+        guard (snapshot.destinationWalletID == nil || destination != nil),
+              (snapshot.feeWalletID == nil || feeWallet != nil),
+              (snapshot.categoryID == nil || category != nil),
+              Set(resolvedTags.map(\.id)) == Set(snapshot.tagIDs),
+              paymentParts.count == snapshot.paymentParts.count else {
+            throw AutomationDraftError.invalidReference
+        }
+
+        return TransactionDraft(
+            type: snapshot.type,
+            amount: snapshot.amount,
+            sourceWallet: source,
+            destinationWallet: destination,
+            destinationAmount: snapshot.destinationAmount,
+            feeAmount: snapshot.feeAmount,
+            feeWallet: feeWallet,
+            date: date,
+            note: snapshot.note,
+            merchantOrCounterparty: snapshot.merchantOrCounterparty,
+            category: category,
+            tags: resolvedTags,
+            paymentParts: paymentParts,
+            adjustmentDirection: snapshot.adjustmentDirection,
+            adjustmentReason: snapshot.adjustmentReason
+        )
+    }
+}
