@@ -11,14 +11,19 @@ struct TransactionListView: View {
     @Query(sort: \LedgerCategory.sortOrder) private var categories: [LedgerCategory]
     @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
 
-    @State private var query = TransactionQueryState()
-    @State private var queryConfigured = false
+    @State private var query: TransactionQueryState
+    @State private var queryConfigured: Bool
     @State private var showingFilters = false
     @State private var editMode: EditMode = .inactive
     @State private var selectedTransactionIDs = Set<UUID>()
     @State private var showingBulkEdit = false
     @State private var showingBulkDelete = false
     @State private var bulkErrorMessage: String?
+
+    init(initialQuery: TransactionQueryState? = nil) {
+        _query = State(initialValue: initialQuery ?? TransactionQueryState())
+        _queryConfigured = State(initialValue: initialQuery != nil)
+    }
 
     private var selectedBook: LedgerBook? {
         books.first { $0.id.uuidString == selectedBookID } ?? books.first

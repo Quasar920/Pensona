@@ -77,15 +77,26 @@ final class TransactionTemplateService {
     ) throws -> TransactionDraft {
         guard !template.isArchived,
               let source = wallets.first(where: { $0.id == template.sourceWalletID }),
+              source.isEnabled,
+              source.account?.isArchived == false,
               source.account?.book?.id == template.bookID else {
             throw TransactionTemplateError.invalidReference
         }
-        let destination = template.destinationWalletID.flatMap { id in wallets.first { $0.id == id } }
-        let feeWallet = template.feeWalletID.flatMap { id in wallets.first { $0.id == id } }
-        let category = template.categoryID.flatMap { id in categories.first { $0.id == id } }
-        let resolvedTags = tags.filter { template.tagIDs.contains($0.id) }
+        let scopedWallets = wallets.filter {
+            $0.isEnabled && $0.account?.isArchived == false && $0.account?.book?.id == template.bookID
+        }
+        let destination = template.destinationWalletID.flatMap { id in scopedWallets.first { $0.id == id } }
+        let feeWallet = template.feeWalletID.flatMap { id in scopedWallets.first { $0.id == id } }
+        let category = template.categoryID.flatMap { id in
+            categories.first {
+                $0.id == id && !$0.isArchived && ($0.bookID == nil || $0.bookID == template.bookID)
+            }
+        }
+        let resolvedTags = tags.filter {
+            template.tagIDs.contains($0.id) && !$0.isArchived && $0.bookID == template.bookID
+        }
         let resolvedPaymentParts = template.paymentPartReferences.compactMap { reference in
-            wallets.first(where: { $0.id == reference.walletID }).map {
+            scopedWallets.first(where: { $0.id == reference.walletID }).map {
                 TransactionPaymentPartDraft(wallet: $0, amount: reference.amount)
             }
         }

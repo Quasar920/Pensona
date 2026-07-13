@@ -54,11 +54,64 @@ final class AccountService {
     }
 
     func deleteAccount(_ account: Account, transactions: [LedgerTransaction]) throws {
+        let walletIDs = Set(account.wallets.map(\.id))
         let isReferenced = transactions.contains {
-            $0.sourceAccount === account || $0.destinationAccount === account
+            $0.sourceAccount === account
+                || $0.destinationAccount === account
+                || $0.sourceWallet.map { walletIDs.contains($0.id) } == true
+                || $0.destinationWallet.map { walletIDs.contains($0.id) } == true
+                || $0.feeWallet.map { walletIDs.contains($0.id) } == true
+                || $0.paymentParts.contains(where: { part in
+                    part.wallet.map { walletIDs.contains($0.id) } == true
+                })
         }
         guard !isReferenced else { throw LedgerError.accountInUse }
         context.delete(account)
+        try context.save()
+    }
+
+    func update(
+        _ account: Account,
+        name: String,
+        type: AccountType,
+        note: String?,
+        sortOrder: Int,
+        isHidden: Bool
+    ) throws {
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { throw ValidationError("请输入账户名称") }
+        account.name = cleanName
+        account.typeRawValue = type.rawValue
+        let cleanNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        account.note = cleanNote?.isEmpty == true ? nil : cleanNote
+        account.sortOrder = sortOrder
+        account.isHidden = isHidden
+        account.updatedAt = .now
+        try context.save()
+    }
+
+    func setArchived(_ archived: Bool, account: Account) throws {
+        account.isArchived = archived
+        account.isHidden = archived
+        account.updatedAt = .now
+        try context.save()
+    }
+
+    func setWalletEnabled(_ enabled: Bool, wallet: CurrencyWallet) throws {
+        wallet.isEnabled = enabled
+        wallet.updatedAt = .now
+        try context.save()
+    }
+
+    func deleteWallet(_ wallet: CurrencyWallet, transactions: [LedgerTransaction]) throws {
+        let isReferenced = transactions.contains {
+            $0.sourceWallet?.id == wallet.id
+                || $0.destinationWallet?.id == wallet.id
+                || $0.feeWallet?.id == wallet.id
+                || $0.paymentParts.contains(where: { $0.wallet?.id == wallet.id })
+        }
+        guard wallet.balance == 0, !isReferenced else { throw LedgerError.walletInUse }
+        context.delete(wallet)
         try context.save()
     }
 }

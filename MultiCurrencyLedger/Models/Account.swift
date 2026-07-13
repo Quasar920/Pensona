@@ -8,6 +8,7 @@ final class Account {
     var typeRawValue: String
     var note: String?
     var isHidden: Bool
+    var isArchived: Bool = false
     var sortOrder: Int
     var createdAt: Date
     var updatedAt: Date
@@ -22,6 +23,7 @@ final class Account {
         note: String? = nil,
         book: LedgerBook? = nil,
         isHidden: Bool = false,
+        isArchived: Bool = false,
         sortOrder: Int = 0,
         createdAt: Date = .now,
         updatedAt: Date = .now
@@ -32,6 +34,7 @@ final class Account {
         self.note = note
         self.book = book
         self.isHidden = isHidden
+        self.isArchived = isArchived
         self.sortOrder = sortOrder
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -42,6 +45,10 @@ final class Account {
 
     var enabledWallets: [CurrencyWallet] {
         wallets.filter(\.isEnabled).sorted { $0.currencyCode < $1.currencyCode }
+    }
+
+    var allWallets: [CurrencyWallet] {
+        wallets.sorted { $0.currencyCode < $1.currencyCode }
     }
 }
 

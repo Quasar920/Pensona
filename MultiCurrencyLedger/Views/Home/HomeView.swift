@@ -13,6 +13,7 @@ struct HomeView: View {
     @Query(sort: \LedgerTransaction.date, order: .reverse) private var transactions: [LedgerTransaction]
     @Query private var rates: [ExchangeRate]
     @Query(sort: \MonthlyBudget.monthStart, order: .reverse) private var budgets: [MonthlyBudget]
+    @Query private var relations: [TransactionRelation]
 
     let addTransaction: () -> Void
 
@@ -26,6 +27,9 @@ struct HomeView: View {
     @State private var showingTransactions = false
     @State private var showingMonthPicker = false
     @State private var showingBudgetEditor = false
+    @State private var showingBudgetManagement = false
+    @State private var showingReports = false
+    @State private var showingCalendar = false
     @State private var appliedPreviewState = false
 
     init(addTransaction: @escaping () -> Void = {}) {
@@ -66,7 +70,8 @@ struct HomeView: View {
             .summary(
                 for: selectedBookTransactions,
                 month: selectedMonth,
-                budget: currentBudget?.amount
+                budget: currentBudget?.amount,
+                relations: relations
             )
     }
 
@@ -101,7 +106,10 @@ struct HomeView: View {
                             switchBook: { showingBookSwitcher = true },
                             manageBooks: { showingBookManagement = true },
                             searchTransactions: { showingTransactions = true },
-                            addAsset: { showingAddAsset = true }
+                            addAsset: { showingAddAsset = true },
+                            openReports: { showingReports = true },
+                            openCalendar: { showingCalendar = true },
+                            manageBudgets: { showingBudgetManagement = true }
                         )
 
                         MonthlyOverviewCard(
@@ -126,6 +134,7 @@ struct HomeView: View {
                             ),
                             baseCurrencyCode: baseCurrencyCode,
                             rates: rates,
+                            relations: relations,
                             addTransaction: addTransaction
                         )
                     }
@@ -165,6 +174,11 @@ struct HomeView: View {
                     save: saveBudget
                 )
             }
+            .sheet(isPresented: $showingBudgetManagement) {
+                NavigationStack { BudgetManagementView() }
+            }
+            .sheet(isPresented: $showingReports) { ReportsView() }
+            .sheet(isPresented: $showingCalendar) { TransactionCalendarView() }
             .onAppear {
                 ensureSelectedBook()
                 applyPreviewStateIfNeeded()
@@ -247,6 +261,9 @@ private struct HomeHeader: View {
     let manageBooks: () -> Void
     let searchTransactions: () -> Void
     let addAsset: () -> Void
+    let openReports: () -> Void
+    let openCalendar: () -> Void
+    let manageBudgets: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -291,6 +308,15 @@ private struct HomeHeader: View {
                 }
                 Button(action: searchTransactions) {
                     Label("搜索账单", systemImage: "magnifyingglass")
+                }
+                Button(action: openCalendar) {
+                    Label("账单日历", systemImage: "calendar")
+                }
+                Button(action: openReports) {
+                    Label("统计报表", systemImage: "chart.bar.xaxis")
+                }
+                Button(action: manageBudgets) {
+                    Label("预算管理", systemImage: "gauge.with.dots.needle.50percent")
                 }
                 Divider()
                 Button(action: addAsset) {
@@ -399,12 +425,13 @@ struct TransactionDayGroup: Identifiable {
 
     func cashFlow(
         baseCurrencyCode: String,
-        rates: [ExchangeRate]
+        rates: [ExchangeRate],
+        relations: [TransactionRelation] = []
     ) -> (income: Decimal, expense: Decimal) {
         let result = MonthlySummaryService(
             baseCurrencyCode: baseCurrencyCode,
             rates: rates
-        ).summary(for: transactions, month: date)
+        ).summary(for: transactions, month: date, relations: relations)
         return (result.income, result.expense)
     }
 }
@@ -416,6 +443,7 @@ private struct DailyRecordCards: View {
     let showAddAction: Bool
     let baseCurrencyCode: String
     let rates: [ExchangeRate]
+    let relations: [TransactionRelation]
     let addTransaction: () -> Void
 
     var body: some View {
@@ -436,7 +464,8 @@ private struct DailyRecordCards: View {
                     DailyRecordCard(
                         group: group,
                         baseCurrencyCode: baseCurrencyCode,
-                        rates: rates
+                        rates: rates,
+                        relations: relations
                     )
                 }
             }
@@ -448,9 +477,10 @@ private struct DailyRecordCard: View {
     let group: TransactionDayGroup
     let baseCurrencyCode: String
     let rates: [ExchangeRate]
+    let relations: [TransactionRelation]
 
     private var cashFlow: (income: Decimal, expense: Decimal) {
-        group.cashFlow(baseCurrencyCode: baseCurrencyCode, rates: rates)
+        group.cashFlow(baseCurrencyCode: baseCurrencyCode, rates: rates, relations: relations)
     }
 
     var body: some View {

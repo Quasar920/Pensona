@@ -32,7 +32,7 @@ struct TransactionDetailView: View {
         let bookID = transaction.sourceAccount?.book?.id
         let currencyCode = transaction.sourceCurrencyCode ?? transaction.currencyCode
         return accounts
-            .filter { $0.book?.id == bookID }
+            .filter { !$0.isArchived && $0.book?.id == bookID }
             .flatMap(\.enabledWallets)
             .filter { $0.currencyCode == currencyCode }
     }

@@ -50,7 +50,7 @@ struct RecognitionConfirmationView: View {
     private var wallets: [CurrencyWallet] {
         guard let draft else { return [] }
         return accounts
-            .filter { $0.book?.id == book.id }
+            .filter { !$0.isArchived && $0.book?.id == book.id }
             .flatMap(\.enabledWallets)
             .filter { $0.currencyCode == draft.currency.rawValue }
             .sorted { ($0.account?.name ?? "", $0.currencyCode) < ($1.account?.name ?? "", $1.currencyCode) }

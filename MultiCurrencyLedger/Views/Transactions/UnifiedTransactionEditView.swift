@@ -29,7 +29,7 @@ struct TransactionEditView: View {
 
     private var allWallets: [CurrencyWallet] {
         accounts
-            .filter { bookID == nil || $0.book?.id == bookID }
+            .filter { !$0.isArchived && (bookID == nil || $0.book?.id == bookID) }
             .flatMap(\.enabledWallets)
             .sorted {
                 let left = $0.account?.name ?? ""

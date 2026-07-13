@@ -41,7 +41,9 @@ struct AutomationTransactionSnapshot: Codable, Equatable {
     let adjustmentReason: String?
 
     init(draft: TransactionDraft) throws {
-        guard let sourceWallet = draft.sourceWallet else {
+        guard let sourceWallet = draft.sourceWallet,
+              sourceWallet.isEnabled,
+              sourceWallet.account?.isArchived == false else {
             throw AutomationDraftError.invalidReference
         }
         self.type = draft.type
@@ -95,7 +97,7 @@ struct AutomationDraftCodec {
             throw AutomationDraftError.corruptSnapshot
         }
         let scopedWallets = wallets.filter {
-            $0.isEnabled && $0.account?.book?.id == bookID
+            $0.isEnabled && $0.account?.isArchived == false && $0.account?.book?.id == bookID
         }
         guard let source = scopedWallets.first(where: { $0.id == snapshot.sourceWalletID }) else {
             throw AutomationDraftError.invalidReference

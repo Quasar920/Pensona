@@ -61,7 +61,8 @@ struct MonthlySummaryService {
     func summary(
         for transactions: [LedgerTransaction],
         month date: Date,
-        budget: Decimal? = nil
+        budget: Decimal? = nil,
+        relations: [TransactionRelation] = []
     ) -> MonthlySummary {
         let interval = calendar.dateInterval(of: .month, for: date)
         let monthStart = interval?.start ?? calendar.startOfDay(for: date)
@@ -72,6 +73,7 @@ struct MonthlySummaryService {
         var income = Decimal.zero
         var expense = Decimal.zero
         var missingCodes = Set<String>()
+        let relatedIncomeIDs = Set(relations.map(\.relatedTransactionID))
 
         for transaction in transactions
         where transaction.date >= monthStart && transaction.date < monthEnd {
@@ -82,13 +84,23 @@ struct MonthlySummaryService {
 
             switch transaction.type {
             case .income:
-                add(
-                    principal,
-                    currencyCode: principalCode,
-                    to: &income,
-                    missingCodes: &missingCodes,
-                    valuation: valuation
-                )
+                if relatedIncomeIDs.contains(transaction.id) {
+                    add(
+                        -principal,
+                        currencyCode: principalCode,
+                        to: &expense,
+                        missingCodes: &missingCodes,
+                        valuation: valuation
+                    )
+                } else {
+                    add(
+                        principal,
+                        currencyCode: principalCode,
+                        to: &income,
+                        missingCodes: &missingCodes,
+                        valuation: valuation
+                    )
+                }
             case .expense:
                 add(
                     principal,

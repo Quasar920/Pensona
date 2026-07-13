@@ -27,7 +27,7 @@ struct RootTabView: View {
                 case .assets:
                     AccountListView()
                 case .savings:
-                    SavingsView(addTransaction: { showingNewTransaction = true })
+                    SavingsGoalListView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -107,7 +107,7 @@ struct RootTabView: View {
     private func handleExternalURL(_ url: URL) {
         do {
             let request = try URLDraftParser().parse(url)
-            let wallets = accounts.flatMap(\.enabledWallets)
+            let wallets = accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
             let preferredBookID = UUID(uuidString: selectedBookID)
             pendingExternalDraft = try URLDraftResolver().resolve(
                 request,
@@ -218,25 +218,4 @@ private struct GlassTabBar: View {
     }
 
     @Namespace private var tabNamespace
-}
-
-private struct SavingsView: View {
-    let addTransaction: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-                ContentUnavailableView {
-                    Label("设定一个存钱目标", systemImage: "target")
-                } description: {
-                    Text("目标账户和自动转入将在后续版本提供。\n现在可以先记录一笔存入。")
-                } actions: {
-                    Button("记录一笔", action: addTransaction)
-                        .buttonStyle(.borderedProminent)
-                }
-            }
-            .navigationTitle("存钱")
-        }
-    }
 }

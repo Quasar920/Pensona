@@ -8,6 +8,7 @@ enum LedgerError: LocalizedError, Equatable {
     case missingWallet
     case duplicateCurrency
     case accountInUse
+    case walletInUse
     case categoryMismatch
     case destinationAmountRequired
     case sameCurrencyExchange
@@ -25,6 +26,7 @@ enum LedgerError: LocalizedError, Equatable {
         case .missingWallet: "交易关联的钱包不存在"
         case .duplicateCurrency: "该账户已添加这个币种"
         case .accountInUse: "该账户仍被交易引用，不能删除"
+        case .walletInUse: "该钱包仍有余额或历史交易，只能停用"
         case .categoryMismatch: "分类与交易类型不匹配"
         case .destinationAmountRequired: "请输入大于 0 的换入金额"
         case .sameCurrencyExchange: "换汇必须选择两个不同币种的钱包"

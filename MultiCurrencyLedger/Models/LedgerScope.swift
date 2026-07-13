@@ -39,6 +39,8 @@ struct LedgerScope: Equatable, Sendable {
 
     func matches(budget: MonthlyBudget) -> Bool {
         budget.bookID == bookID
+            && budget.period == .monthly
+            && budget.categoryID == nil
             && budget.currencyCode == baseCurrencyCode
             && calendar.isDate(budget.monthStart, equalTo: selectedMonth, toGranularity: .month)
     }

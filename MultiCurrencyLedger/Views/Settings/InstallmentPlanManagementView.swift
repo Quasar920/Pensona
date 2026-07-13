@@ -20,7 +20,7 @@ struct InstallmentPlanManagementView: View {
 
     private var wallets: [CurrencyWallet] {
         guard let bookID = selectedBook?.id else { return [] }
-        return accounts.filter { $0.book?.id == bookID }.flatMap(\.enabledWallets)
+        return accounts.filter { !$0.isArchived && $0.book?.id == bookID }.flatMap(\.enabledWallets)
     }
 
     private var scopedPlans: [InstallmentPlan] {

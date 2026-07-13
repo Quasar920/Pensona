@@ -44,29 +44,13 @@ final class MonthlyBudgetService {
     ) throws -> MonthlyBudget {
         guard amount > 0 else { throw MonthlyBudgetError.invalidAmount }
 
-        let scope = makeScope(bookID: bookID, date: date, currencyCode: currencyCode)
-        if let existing = try budget(
+        return try BudgetService(context: context, calendar: calendar).upsert(
+            amount: amount,
             bookID: bookID,
-            month: date,
-            currencyCode: scope.currencyCode
-        ) {
-            existing.amount = amount
-            existing.monthStart = scope.monthStart
-            existing.updatedAt = .now
-            try context.save()
-            return existing
-        }
-
-        let value = MonthlyBudget(
-            scopeKey: scope.key,
-            bookID: bookID,
-            monthStart: scope.monthStart,
-            currencyCode: scope.currencyCode,
-            amount: amount
+            period: .monthly,
+            containing: date,
+            currencyCode: currencyCode
         )
-        context.insert(value)
-        try context.save()
-        return value
     }
 
     func remove(

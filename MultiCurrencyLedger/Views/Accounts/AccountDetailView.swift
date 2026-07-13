@@ -2,10 +2,13 @@ import SwiftData
 import SwiftUI
 
 struct AccountDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query(sort: \LedgerTransaction.date, order: .reverse) private var transactions: [LedgerTransaction]
     let account: Account
     @State private var showingAddWallet = false
+    @State private var showingEdit = false
+    @State private var errorMessage: String?
 
     private var accountTransactions: [LedgerTransaction] {
         transactions.filter { $0.sourceAccount === account || $0.destinationAccount === account }
@@ -18,22 +21,39 @@ struct AccountDetailView: View {
                 if let note = account.note, !note.isEmpty {
                     LabeledContent("备注", value: note)
                 }
+                LabeledContent("状态", value: account.isArchived ? "已归档" : (account.isHidden ? "已隐藏" : "正常"))
             }
 
             Section {
-                if account.enabledWallets.isEmpty {
+                if account.allWallets.isEmpty {
                     Text("尚未添加币种").foregroundStyle(.secondary)
                 } else {
-                    ForEach(account.enabledWallets) { wallet in
-                        HStack {
+                    ForEach(account.allWallets) { wallet in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
                             VStack(alignment: .leading) {
                                 Text(wallet.currencyCode).font(.headline)
-                                Text(wallet.currency?.localizedName ?? wallet.currencyCode)
+                                Text((wallet.currency?.localizedName ?? wallet.currencyCode) + (wallet.isEnabled ? "" : " · 已停用"))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Text(MoneyFormatter.string(wallet.balance, currencyCode: wallet.currencyCode))
                                 .monospacedDigit()
+                            }
+                            HStack {
+                                reconciliationLabel(for: wallet)
+                                Spacer()
+                                Button(wallet.isEnabled ? "停用" : "恢复") { toggleWallet(wallet) }
+                                    .buttonStyle(.bordered)
+                                if wallet.balance == 0 {
+                                    Button("删除", role: .destructive) { deleteWallet(wallet) }
+                                        .buttonStyle(.bordered)
+                                }
+                                if let result = try? reconciliation(for: wallet), !result.isBalanced {
+                                    Button("按流水重算") { rebuild(wallet) }
+                                        .buttonStyle(.borderedProminent)
+                                }
+                            }
                         }
                     }
                 }
@@ -57,9 +77,169 @@ struct AccountDetailView: View {
             }
         }
         .navigationTitle(account.name)
+        .toolbar {
+            Menu {
+                Button("编辑账户") { showingEdit = true }
+                Button(account.isArchived ? "恢复账户" : "归档账户") { toggleArchive() }
+                if accountTransactions.isEmpty {
+                    Button("删除账户", role: .destructive) { deleteAccount() }
+                }
+            } label: { Image(systemName: "ellipsis.circle") }
+        }
         .sheet(isPresented: $showingAddWallet) {
             AddWalletView(account: account)
         }
+        .sheet(isPresented: $showingEdit) {
+            AccountEditView(account: account)
+        }
+        .alert("操作失败", isPresented: Binding(
+            get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
+        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+    }
+
+    @ViewBuilder
+    private func reconciliationLabel(for wallet: CurrencyWallet) -> some View {
+        if let result = try? reconciliation(for: wallet) {
+            if result.isBalanced {
+                Label("流水一致", systemImage: "checkmark.circle.fill")
+                    .font(.caption).foregroundStyle(.green)
+            } else {
+                Label(
+                    "差异 \(MoneyFormatter.plain(result.difference, currencyCode: wallet.currencyCode))",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption).foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func reconciliation(for wallet: CurrencyWallet) throws -> WalletReconciliationResult {
+        try BalanceReconciliationService(context: context).result(
+            for: wallet,
+            transactions: transactions
+        )
+    }
+
+    private func toggleWallet(_ wallet: CurrencyWallet) {
+        do { try AccountService(context: context).setWalletEnabled(!wallet.isEnabled, wallet: wallet) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    private func rebuild(_ wallet: CurrencyWallet) {
+        do { try BalanceReconciliationService(context: context).rebuild(wallet, transactions: transactions) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    private func deleteWallet(_ wallet: CurrencyWallet) {
+        do { try AccountService(context: context).deleteWallet(wallet, transactions: transactions) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    private func deleteAccount() {
+        do {
+            try AccountService(context: context).deleteAccount(account, transactions: transactions)
+            dismiss()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func toggleArchive() {
+        do {
+            try AccountService(context: context).setArchived(!account.isArchived, account: account)
+            if account.isArchived { dismiss() }
+        } catch { errorMessage = error.localizedDescription }
+    }
+}
+
+private struct AccountEditView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    let account: Account
+    @State private var name: String
+    @State private var type: AccountType
+    @State private var note: String
+    @State private var sortOrder: Int
+    @State private var isHidden: Bool
+    @State private var errorMessage: String?
+
+    init(account: Account) {
+        self.account = account
+        _name = State(initialValue: account.name)
+        _type = State(initialValue: account.type)
+        _note = State(initialValue: account.note ?? "")
+        _sortOrder = State(initialValue: account.sortOrder)
+        _isHidden = State(initialValue: account.isHidden)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("账户名称", text: $name)
+                Picker("账户类型", selection: $type) {
+                    ForEach(AccountType.allCases) { Text($0.title).tag($0) }
+                }
+                TextField("备注", text: $note, axis: .vertical)
+                Stepper("排序：\(sortOrder)", value: $sortOrder, in: 0...999)
+                Toggle("从资产列表隐藏", isOn: $isHidden)
+            }
+            .navigationTitle("编辑账户")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("保存", action: save) }
+            }
+            .alert("无法保存", isPresented: Binding(
+                get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
+            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        }
+    }
+
+    private func save() {
+        do {
+            try AccountService(context: context).update(
+                account,
+                name: name,
+                type: type,
+                note: note,
+                sortOrder: sortOrder,
+                isHidden: isHidden
+            )
+            dismiss()
+        } catch { errorMessage = error.localizedDescription }
+    }
+}
+
+struct ArchivedAccountManagementView: View {
+    @Environment(\.modelContext) private var context
+    @Query(sort: \Account.updatedAt, order: .reverse) private var accounts: [Account]
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            let archived = accounts.filter(\.isArchived)
+            if archived.isEmpty {
+                ContentUnavailableView("没有归档账户", systemImage: "archivebox")
+            } else {
+                ForEach(archived) { account in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(account.name)
+                            Text(account.book?.name ?? "未归属账本").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("恢复") { restore(account) }.buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+        .navigationTitle("归档账户")
+        .alert("操作失败", isPresented: Binding(
+            get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
+        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+    }
+
+    private func restore(_ account: Account) {
+        do { try AccountService(context: context).setArchived(false, account: account) }
+        catch { errorMessage = error.localizedDescription }
     }
 }
 

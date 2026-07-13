@@ -22,7 +22,7 @@ struct ValuationService {
     func total(for wallets: [CurrencyWallet]) -> (value: Decimal, missingCodes: Set<String>) {
         var total = Decimal.zero
         var missing = Set<String>()
-        for wallet in wallets where wallet.isEnabled {
+        for wallet in wallets {
             if let converted = value(wallet.balance, currencyCode: wallet.currencyCode) {
                 total += converted
             } else {

@@ -19,7 +19,9 @@ enum AppModelContainer {
             InstallmentOccurrence.self,
             RecognitionImportRecord.self,
             ExchangeRate.self,
-            MonthlyBudget.self
+            MonthlyBudget.self,
+            SavingsGoal.self,
+            SavingsAllocation.self
         ])
         return try ModelContainer(for: schema)
     }

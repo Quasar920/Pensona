@@ -80,6 +80,7 @@ final class InstallmentPlanService {
         guard totalFee >= 0 else { throw InstallmentPlanError.invalidFee }
         guard (2...120).contains(installmentCount) else { throw InstallmentPlanError.invalidCount }
         guard sourceWallet.isEnabled,
+              sourceWallet.account?.isArchived == false,
               let bookID = sourceWallet.account?.book?.id else {
             throw InstallmentPlanError.missingWallet
         }
@@ -102,6 +103,7 @@ final class InstallmentPlanService {
         case .bill:
             guard let destinationWallet,
                   destinationWallet.isEnabled,
+                  destinationWallet.account?.isArchived == false,
                   destinationWallet.id != sourceWallet.id,
                   destinationWallet.account?.book?.id == bookID else {
                 throw InstallmentPlanError.crossBookReference
@@ -143,10 +145,14 @@ final class InstallmentPlanService {
         let wallets = try context.fetch(FetchDescriptor<CurrencyWallet>())
         let categories = try context.fetch(FetchDescriptor<LedgerCategory>())
         guard let source = wallets.first(where: {
-            $0.id == plan.sourceWalletID && $0.isEnabled && $0.account?.book?.id == plan.bookID
+            $0.id == plan.sourceWalletID && $0.isEnabled
+                && $0.account?.isArchived == false && $0.account?.book?.id == plan.bookID
         }) else { throw InstallmentPlanError.missingWallet }
         let destination = plan.destinationWalletID.flatMap { id in
-            wallets.first { $0.id == id && $0.isEnabled && $0.account?.book?.id == plan.bookID }
+            wallets.first {
+                $0.id == id && $0.isEnabled
+                    && $0.account?.isArchived == false && $0.account?.book?.id == plan.bookID
+            }
         }
         let category = plan.categoryID.flatMap { id in categories.first { $0.id == id && !$0.isArchived } }
         guard plan.kind != .bill || destination != nil else {

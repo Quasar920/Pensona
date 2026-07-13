@@ -18,7 +18,9 @@ struct AssetSummaryService {
     let rates: [ExchangeRate]
 
     func value(for account: Account) -> AccountValuationResult {
-        let wallets = account.enabledWallets
+        // Disabled wallets remain real assets/liabilities; disabling only removes
+        // them from future transaction pickers.
+        let wallets = account.allWallets
         let result = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
             .total(for: wallets)
 

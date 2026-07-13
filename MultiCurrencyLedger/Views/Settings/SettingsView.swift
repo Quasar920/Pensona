@@ -22,6 +22,8 @@ struct SettingsView: View {
                     NavigationLink("交易模板") { TransactionTemplateManagementView() }
                     NavigationLink("周期账单") { RecurringScheduleManagementView() }
                     NavigationLink("分期管理") { InstallmentPlanManagementView() }
+                    NavigationLink("预算管理") { BudgetManagementView() }
+                    NavigationLink("归档账户") { ArchivedAccountManagementView() }
                     NavigationLink("快捷记账") { QuickBookkeepingSettingsView() }
                 }
 
@@ -54,6 +56,8 @@ struct SettingsView: View {
 
     private func clearAllData() {
         do {
+            for item in try context.fetch(FetchDescriptor<SavingsAllocation>()) { context.delete(item) }
+            for item in try context.fetch(FetchDescriptor<SavingsGoal>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<RecurringOccurrence>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<InstallmentOccurrence>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<RecurringSchedule>()) { context.delete(item) }

@@ -11,6 +11,8 @@ struct AccountListView: View {
     @Query(sort: [SortDescriptor(\Account.sortOrder), SortDescriptor(\Account.createdAt)])
     private var accounts: [Account]
     @Query private var rates: [ExchangeRate]
+    @Query(sort: \LedgerTransaction.date, order: .reverse) private var transactions: [LedgerTransaction]
+    @Query private var relations: [TransactionRelation]
 
     @State private var addAccountGroup: AssetGroup?
     @State private var appliedPreviewState = false
@@ -21,12 +23,31 @@ struct AccountListView: View {
 
     private var visibleAccounts: [Account] {
         guard let bookID = selectedBook?.id else { return [] }
-        return accounts.filter { !$0.isHidden && $0.book?.id == bookID }
+        return accounts.filter { !$0.isHidden && !$0.isArchived && $0.book?.id == bookID }
+    }
+
+    private var bookAccounts: [Account] {
+        guard let bookID = selectedBook?.id else { return [] }
+        return accounts.filter { $0.book?.id == bookID }
     }
 
     private var summary: AssetSummaryResult {
         AssetSummaryService(baseCurrencyCode: baseCurrencyCode, rates: rates)
-            .summary(for: visibleAccounts)
+            .summary(for: bookAccounts)
+    }
+
+    private var changeExplanation: AssetChangeExplanation {
+        let interval = Calendar.current.dateInterval(of: .month, for: .now)
+            ?? DateInterval(start: .now, duration: 0)
+        let bookID = selectedBook?.id
+        return AssetChangeExplanationService(baseCurrencyCode: baseCurrencyCode, rates: rates).explain(
+            accounts: bookAccounts,
+            transactions: transactions.filter {
+                $0.sourceAccount?.book?.id == bookID || $0.destinationAccount?.book?.id == bookID
+            },
+            relations: relations,
+            interval: interval
+        )
     }
 
     var body: some View {
@@ -44,9 +65,17 @@ struct AccountListView: View {
                         AssetSummaryCard(
                             currencyCode: baseCurrencyCode,
                             totalAssets: summary.totalAssets,
+                            totalLiabilities: summary.totalLiabilities,
+                            netWorth: summary.ownerEquity,
                             missingCodes: summary.missingCodes,
-                            hasAccounts: !visibleAccounts.isEmpty,
+                            hasAccounts: !bookAccounts.isEmpty,
                             isHidden: $isBalanceHidden
+                        )
+
+                        AssetChangeCard(
+                            explanation: changeExplanation,
+                            currencyCode: baseCurrencyCode,
+                            isHidden: isBalanceHidden
                         )
 
                         ForEach(AssetGroup.allCases) { group in
@@ -144,6 +173,8 @@ private struct AssetPageHeader: View {
 private struct AssetSummaryCard: View {
     let currencyCode: String
     let totalAssets: Decimal
+    let totalLiabilities: Decimal
+    let netWorth: Decimal
     let missingCodes: Set<String>
     let hasAccounts: Bool
     @Binding var isHidden: Bool
@@ -161,7 +192,7 @@ private struct AssetSummaryCard: View {
             HStack(spacing: 8) {
                 Image(systemName: "chart.pie.fill")
                     .foregroundStyle(Color.accentColor)
-                Text("总资产")
+                Text("资产负债")
                     .font(.headline)
 
                 Spacer()
@@ -185,13 +216,19 @@ private struct AssetSummaryCard: View {
 
             Text(isHidden
                  ? MoneyFormatter.currencySymbol(currencyCode: currencyCode) + "••••••"
-                 : MoneyFormatter.string(totalAssets, currencyCode: currencyCode))
+                 : MoneyFormatter.string(netWorth, currencyCode: currencyCode))
                 .font(.system(size: 40, weight: .semibold, design: .rounded))
                 .tracking(-1.2)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.58)
                 .contentTransition(.numericText())
+
+            HStack(spacing: 18) {
+                summaryValue("资产", totalAssets)
+                summaryValue("负债", totalLiabilities)
+                summaryValue("净资产", netWorth)
+            }
 
             Text(helperText)
                 .font(.footnote)
@@ -218,6 +255,71 @@ private struct AssetSummaryCard: View {
                 .stroke(HomePalette.glassBorder, lineWidth: 0.8)
         }
         .shadow(color: Color.black.opacity(0.05), radius: 20, y: 9)
+    }
+
+    private func summaryValue(_ title: String, _ amount: Decimal) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(isHidden ? "••••" : MoneyFormatter.plain(amount, currencyCode: currencyCode))
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AssetChangeCard: View {
+    let explanation: AssetChangeExplanation
+    let currencyCode: String
+    let isHidden: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("本月净资产变化", systemImage: "chart.line.uptrend.xyaxis")
+                    .font(.headline)
+                Spacer()
+                Text(value(explanation.netChange)).font(.headline).monospacedDigit()
+            }
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 7) {
+                changeRow("收入", explanation.income, "支出", -explanation.expense)
+                changeRow("退款/报销", explanation.expenseRecovery, "手续费", -explanation.fees)
+                changeRow("余额调整", explanation.adjustments, "换汇影响", explanation.exchangeImpact)
+            }
+            if !explanation.missingCodes.isEmpty {
+                Text("\(explanation.missingCodes.sorted().joined(separator: "、")) 缺少汇率，变化解释未包含相关金额。")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(HomePalette.glassBorder, lineWidth: 0.8))
+    }
+
+    private func changeRow(
+        _ leftTitle: String,
+        _ leftValue: Decimal,
+        _ rightTitle: String,
+        _ rightValue: Decimal
+    ) -> some View {
+        GridRow {
+            changeItem(leftTitle, leftValue)
+            changeItem(rightTitle, rightValue)
+        }
+    }
+
+    private func changeItem(_ title: String, _ amount: Decimal) -> some View {
+        HStack {
+            Text(title).foregroundStyle(.secondary)
+            Spacer()
+            Text(value(amount)).monospacedDigit()
+        }
+        .font(.caption)
+    }
+
+    private func value(_ amount: Decimal) -> String {
+        isHidden ? "••••" : MoneyFormatter.plain(amount, currencyCode: currencyCode)
     }
 }
 
@@ -285,7 +387,7 @@ private struct AccountGlassCard: View {
     }
 
     private var walletDescription: String {
-        let codes = account.enabledWallets.map(\.currencyCode)
+        let codes = account.allWallets.map { $0.isEnabled ? $0.currencyCode : "\($0.currencyCode)(停用)" }
         if codes.isEmpty { return "尚未添加币种" }
         if !valuation.missingCodes.isEmpty { return "部分币种缺少汇率" }
         return codes.joined(separator: " / ")

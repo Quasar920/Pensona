@@ -1,0 +1,218 @@
+import Foundation
+
+enum ReportMetric: String, CaseIterable, Identifiable {
+    case expense, income, net
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .expense: "支出"
+        case .income: "收入"
+        case .net: "净额"
+        }
+    }
+}
+
+enum ReportGranularity: String, CaseIterable, Identifiable {
+    case daily, weekly, monthly, yearly
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .daily: "日"
+        case .weekly: "周"
+        case .monthly: "月"
+        case .yearly: "年"
+        }
+    }
+}
+
+enum ReportDimension: String, CaseIterable, Identifiable {
+    case category, tag, account, book
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .category: "分类"
+        case .tag: "标签"
+        case .account: "账户"
+        case .book: "账本"
+        }
+    }
+}
+
+struct ReportBucket: Identifiable, Equatable {
+    let key: String
+    let title: String
+    let value: Decimal
+    var id: String { key }
+}
+
+struct ReportResult {
+    let total: Decimal
+    let buckets: [ReportBucket]
+    let missingCodes: Set<String>
+}
+
+struct ReportQueryService {
+    let baseCurrencyCode: String
+    let rates: [ExchangeRate]
+    var calendar: Calendar = .current
+
+    func trend(
+        transactions: [LedgerTransaction],
+        relations: [TransactionRelation],
+        interval: DateInterval,
+        metric: ReportMetric,
+        granularity: ReportGranularity
+    ) -> ReportResult {
+        aggregate(
+            transactions: transactions,
+            relations: relations,
+            interval: interval,
+            metric: metric
+        ) { transaction, _ in
+            let start = periodStart(granularity, date: transaction.date)
+            return [(key: start.timeIntervalSinceReferenceDate.description, title: periodTitle(granularity, date: start))]
+        }
+    }
+
+    func breakdown(
+        transactions: [LedgerTransaction],
+        relations: [TransactionRelation],
+        interval: DateInterval,
+        metric: ReportMetric,
+        dimension: ReportDimension
+    ) -> ReportResult {
+        aggregate(
+            transactions: transactions,
+            relations: relations,
+            interval: interval,
+            metric: metric
+        ) { transaction, originalForRecovery in
+            let semantic = originalForRecovery ?? transaction
+            switch dimension {
+            case .category:
+                return [(semantic.category?.id.uuidString ?? "none", semantic.category?.name ?? "未分类")]
+            case .tag:
+                let tags = semantic.tags
+                return tags.isEmpty ? [("none", "无标签")] : tags.map { ($0.id.uuidString, $0.name) }
+            case .account:
+                return [(semantic.sourceAccount?.id.uuidString ?? "none", semantic.sourceAccount?.name ?? "未知账户")]
+            case .book:
+                return [(semantic.sourceAccount?.book?.id.uuidString ?? "none", semantic.sourceAccount?.book?.name ?? "未知账本")]
+            }
+        }
+    }
+
+    private func aggregate(
+        transactions: [LedgerTransaction],
+        relations: [TransactionRelation],
+        interval: DateInterval,
+        metric: ReportMetric,
+        group: (LedgerTransaction, LedgerTransaction?) -> [(key: String, title: String)]
+    ) -> ReportResult {
+        let valuation = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
+        let byID = Dictionary(uniqueKeysWithValues: transactions.map { ($0.id, $0) })
+        let relationByRelatedID = Dictionary(uniqueKeysWithValues: relations.map { ($0.relatedTransactionID, $0) })
+        var values: [String: (title: String, value: Decimal)] = [:]
+        var missing = Set<String>()
+
+        for transaction in transactions where interval.contains(transaction.date) {
+            let recoveryRelation = relationByRelatedID[transaction.id]
+            let original = recoveryRelation.flatMap { byID[$0.originalTransactionID] }
+            let signed = signedValue(
+                transaction,
+                recoveryRelation: recoveryRelation,
+                metric: metric,
+                valuation: valuation,
+                missing: &missing
+            )
+            guard signed != 0 else { continue }
+            for item in group(transaction, original) {
+                let current = values[item.key] ?? (item.title, 0)
+                values[item.key] = (current.title, current.value + signed)
+            }
+        }
+        let buckets = values.map { ReportBucket(key: $0.key, title: $0.value.title, value: $0.value.value) }
+            .sorted { left, right in
+                if left.key.hasPrefix("-") || left.key.first?.isNumber == true {
+                    return left.key < right.key
+                }
+                return absDecimal(left.value) > absDecimal(right.value)
+            }
+        return ReportResult(
+            total: buckets.reduce(Decimal.zero) { $0 + $1.value },
+            buckets: buckets,
+            missingCodes: missing
+        )
+    }
+
+    private func signedValue(
+        _ transaction: LedgerTransaction,
+        recoveryRelation: TransactionRelation?,
+        metric: ReportMetric,
+        valuation: ValuationService,
+        missing: inout Set<String>
+    ) -> Decimal {
+        let amount = recoveryRelation?.amount ?? transaction.sourceAmount ?? transaction.amount ?? 0
+        let code = transaction.sourceCurrencyCode ?? transaction.currencyCode ?? baseCurrencyCode
+        guard let principal = convert(amount, code: code, valuation: valuation, missing: &missing) else { return 0 }
+        let fee: Decimal = transaction.feeAmount.flatMap {
+            convert(
+                $0,
+                code: transaction.feeCurrencyCode ?? code,
+                valuation: valuation,
+                missing: &missing
+            )
+        } ?? 0
+
+        switch metric {
+        case .expense:
+            if recoveryRelation != nil { return -principal }
+            return transaction.type == .expense ? principal + fee : fee
+        case .income:
+            return transaction.type == .income && recoveryRelation == nil ? principal : 0
+        case .net:
+            if recoveryRelation != nil { return principal }
+            switch transaction.type {
+            case .income: return principal - fee
+            case .expense: return -principal - fee
+            case .adjustment:
+                return (transaction.adjustmentDirection == .decrease ? -principal : principal) - fee
+            case .transfer, .exchange: return -fee
+            }
+        }
+    }
+
+    private func convert(
+        _ amount: Decimal,
+        code: String,
+        valuation: ValuationService,
+        missing: inout Set<String>
+    ) -> Decimal? {
+        guard let result = valuation.value(amount, currencyCode: code) else {
+            missing.insert(code)
+            return nil
+        }
+        return result
+    }
+
+    private func periodStart(_ granularity: ReportGranularity, date: Date) -> Date {
+        let component: Calendar.Component = switch granularity {
+        case .daily: .day
+        case .weekly: .weekOfYear
+        case .monthly: .month
+        case .yearly: .year
+        }
+        return calendar.dateInterval(of: component, for: date)?.start ?? calendar.startOfDay(for: date)
+    }
+
+    private func periodTitle(_ granularity: ReportGranularity, date: Date) -> String {
+        switch granularity {
+        case .daily: date.formatted(.dateTime.month().day())
+        case .weekly: "第 \(calendar.component(.weekOfYear, from: date)) 周"
+        case .monthly: date.formatted(.dateTime.year().month())
+        case .yearly: date.formatted(.dateTime.year())
+        }
+    }
+
+    private func absDecimal(_ value: Decimal) -> Decimal { value < 0 ? -value : value }
+}

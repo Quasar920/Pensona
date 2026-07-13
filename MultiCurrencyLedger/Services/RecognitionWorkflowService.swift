@@ -76,7 +76,7 @@ final class RecognitionWorkflowService {
     }
 
     private func wallets(in book: LedgerBook) -> [CurrencyWallet] {
-        book.accounts.flatMap(\.enabledWallets)
+        book.accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
     }
 
     private func matchingCategory(for candidate: NormalizedRecognitionCandidate) -> LedgerCategory? {

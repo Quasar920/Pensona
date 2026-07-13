@@ -173,7 +173,9 @@ struct URLDraftResolver {
             books: books,
             preferredBookID: preferredBookID
         )
-        let scopedWallets = wallets.filter { $0.isEnabled && $0.account?.book?.id == book.id }
+        let scopedWallets = wallets.filter {
+            $0.isEnabled && $0.account?.isArchived == false && $0.account?.book?.id == book.id
+        }
         let source = try resolveWallet(
             selector: request.sourceWalletSelector,
             currencyCode: request.currencyCode,

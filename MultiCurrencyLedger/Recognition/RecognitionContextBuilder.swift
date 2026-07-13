@@ -22,6 +22,7 @@ struct RecognitionRequestContext: Codable, Equatable {
 struct RecognitionContextBuilder {
     func makeContext(book: LedgerBook, categories: [LedgerCategory]) -> RecognitionRequestContext {
         let accounts = book.accounts
+            .filter { !$0.isArchived }
             .flatMap { account in
                 account.enabledWallets.map { wallet in
                     RecognitionAccountOption(

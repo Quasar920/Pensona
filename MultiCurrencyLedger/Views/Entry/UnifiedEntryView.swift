@@ -49,7 +49,7 @@ struct EntryView: View {
     private var allWallets: [CurrencyWallet] {
         guard let bookID = selectedBook?.id else { return [] }
         return accounts
-            .filter { $0.book?.id == bookID }
+            .filter { !$0.isArchived && $0.book?.id == bookID }
             .flatMap(\.enabledWallets)
             .sorted {
                 let left = $0.account?.name ?? ""
