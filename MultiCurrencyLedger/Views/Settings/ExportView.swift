@@ -21,6 +21,9 @@ struct ExportView: View {
     var body: some View {
         List {
             Section {
+                NavigationLink("查看 Schema 迁移快照") { MigrationRecoveryView() }
+            }
+            Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("JSON 完整备份", systemImage: "curlybraces")
                         .font(.headline)
