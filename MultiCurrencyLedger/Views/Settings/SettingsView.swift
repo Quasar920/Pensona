@@ -16,15 +16,24 @@ struct SettingsView: View {
                             Text("\($0.rawValue) · \($0.localizedName)").tag($0.rawValue)
                         }
                     }
-                    NavigationLink("汇率管理") { ExchangeRateListView() }
+                    NavigationLink("快捷记账与识别") { QuickBookkeepingSettingsView() }
+                }
+
+                Section("分类与模板") {
                     NavigationLink("分类管理") { CategoryManagementView() }
                     NavigationLink("标签管理") { TagManagementView() }
                     NavigationLink("交易模板") { TransactionTemplateManagementView() }
+                }
+
+                Section("自动化与规划") {
                     NavigationLink("周期账单") { RecurringScheduleManagementView() }
                     NavigationLink("分期管理") { InstallmentPlanManagementView() }
                     NavigationLink("预算管理") { BudgetManagementView() }
+                }
+
+                Section("账户与汇率") {
+                    NavigationLink("汇率管理") { ExchangeRateListView() }
                     NavigationLink("归档账户") { ArchivedAccountManagementView() }
-                    NavigationLink("快捷记账") { QuickBookkeepingSettingsView() }
                 }
 
                 Section("数据") {
@@ -32,6 +41,11 @@ struct SettingsView: View {
                     NavigationLink("数据导出与备份") { ExportView() }
                     NavigationLink("iCloud 私有同步") { CloudSyncSettingsView() }
                     Button("清空全部数据", role: .destructive) { showingClearConfirmation = true }
+                }
+
+                Section("安全与外观") {
+                    NavigationLink("密码与隐私") { SecuritySettingsView() }
+                    NavigationLink("启动与外观") { AppExperienceSettingsView() }
                 }
 
                 Section {
@@ -94,8 +108,8 @@ private struct AboutView: View {
         List {
             Section {
                 LabeledContent("名称", value: "多币种账本")
-                LabeledContent("版本", value: "1.0 MVP")
-                LabeledContent("数据存储", value: "仅保存在本机")
+                LabeledContent("版本", value: "1.0")
+                LabeledContent("数据存储", value: "本机；可选 iCloud 私有同步")
             }
             Section {
                 Text("一个金融账户可以拥有多个币种钱包。所有余额变化均由可追溯的统一流水驱动。")

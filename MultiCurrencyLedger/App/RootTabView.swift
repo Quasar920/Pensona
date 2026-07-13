@@ -2,10 +2,15 @@ import SwiftUI
 import SwiftData
 
 struct RootTabView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var appLock = AppLockManager()
     @State private var selection: LedgerTab = .ledger
     @State private var showingNewTransaction = false
     @State private var appliedPreviewScreen = false
+    @State private var appliedQuickLaunch = false
     @AppStorage("selectedBookID") private var selectedBookID = ""
+    @AppStorage("quickLaunchEntry") private var quickLaunchEntry = false
+    @AppStorage("appearanceMode") private var appearanceMode = AppAppearance.system.rawValue
     @AppStorage(RecognitionPendingRoute.recordIDDefaultsKey) private var pendingRecognitionRecordID = ""
     @AppStorage(URLDraftPendingRoute.defaultsKey) private var pendingExternalURL = ""
     @Query(sort: \LedgerBook.createdAt) private var books: [LedgerBook]
@@ -67,9 +72,37 @@ struct RootTabView: View {
             applyPreviewScreenIfNeeded()
             presentPendingRecognitionIfNeeded()
             presentPendingExternalURLIfNeeded()
+            if appLock.isLocked {
+                PrivacyShieldController.show(manager: appLock, allowsUnlock: true)
+            } else {
+                presentQuickLaunchIfNeeded()
+            }
         }
         .onOpenURL(perform: handleExternalURL)
-        .onChange(of: books.count) { _, _ in presentPendingExternalURLIfNeeded() }
+        .onChange(of: books.count) { _, _ in
+            presentPendingExternalURLIfNeeded()
+            presentQuickLaunchIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in handleScenePhase(phase) }
+        .onChange(of: appLock.isLocked) { _, locked in
+            if locked, scenePhase == .active {
+                PrivacyShieldController.show(manager: appLock, allowsUnlock: true)
+            } else if !locked, scenePhase == .active {
+                PrivacyShieldController.hide()
+                presentQuickLaunchIfNeeded()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .appLockConfigurationChanged)) { _ in
+            appLock.refreshConfiguration()
+        }
+        .preferredColorScheme(AppAppearance(rawValue: appearanceMode)?.colorScheme)
+        .overlay {
+            if appLock.isLocked {
+                AppLockGateView(manager: appLock, allowsUnlock: true)
+                    .ignoresSafeArea()
+                    .zIndex(1_000)
+            }
+        }
         .alert("无法打开记账链接", isPresented: Binding(
             get: { externalRouteError != nil },
             set: { if !$0 { externalRouteError = nil } }
@@ -109,6 +142,7 @@ struct RootTabView: View {
             let request = try URLDraftParser().parse(url)
             let wallets = accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
             let preferredBookID = UUID(uuidString: selectedBookID)
+            showingNewTransaction = false
             pendingExternalDraft = try URLDraftResolver().resolve(
                 request,
                 books: books,
@@ -119,6 +153,31 @@ struct RootTabView: View {
             )
         } catch {
             externalRouteError = error.localizedDescription
+        }
+    }
+
+    private func presentQuickLaunchIfNeeded() {
+        guard quickLaunchEntry, !appliedQuickLaunch, !appLock.isLocked,
+              !books.isEmpty, pendingRecognitionRecord == nil, pendingExternalDraft == nil,
+              pendingRecognitionRecordID.isEmpty, pendingExternalURL.isEmpty else { return }
+        appliedQuickLaunch = true
+        DispatchQueue.main.async { showingNewTransaction = true }
+    }
+
+    private func handleScenePhase(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            if appLock.isLocked {
+                PrivacyShieldController.show(manager: appLock, allowsUnlock: true)
+            } else {
+                PrivacyShieldController.hide()
+                presentQuickLaunchIfNeeded()
+            }
+        case .inactive, .background:
+            appLock.lockForPrivacyIfNeeded()
+            PrivacyShieldController.show(manager: appLock, allowsUnlock: false)
+        @unknown default:
+            PrivacyShieldController.show(manager: appLock, allowsUnlock: false)
         }
     }
 }
