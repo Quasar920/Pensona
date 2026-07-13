@@ -23,6 +23,7 @@ struct HomeView: View {
     @State private var showingAddAsset = false
     @State private var showingBookSwitcher = false
     @State private var showingBookManagement = false
+    @State private var showingTransactions = false
     @State private var showingMonthPicker = false
     @State private var showingBudgetEditor = false
     @State private var appliedPreviewState = false
@@ -35,33 +36,36 @@ struct HomeView: View {
         books.first { $0.id.uuidString == selectedBookID } ?? books.first
     }
 
-    private var selectedBookTransactions: [LedgerTransaction] {
-        guard let bookID = selectedBook?.id else { return [] }
-        return transactions.filter {
-            $0.sourceAccount?.book?.id == bookID || $0.destinationAccount?.book?.id == bookID
+    private var ledgerScope: LedgerScope? {
+        selectedBook.map {
+            LedgerScope(
+                bookID: $0.id,
+                selectedMonth: selectedMonth,
+                baseCurrencyCode: baseCurrencyCode
+            )
         }
+    }
+
+    private var selectedBookTransactions: [LedgerTransaction] {
+        guard let ledgerScope else { return [] }
+        return transactions.filter(ledgerScope.transactionBelongsToBook)
     }
 
     private var selectedMonthTransactions: [LedgerTransaction] {
-        selectedBookTransactions.filter {
-            Calendar.current.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
-        }
+        guard let ledgerScope else { return [] }
+        return selectedBookTransactions.filter { ledgerScope.contains(date: $0.date) }
     }
 
     private var currentBudget: MonthlyBudget? {
-        guard let bookID = selectedBook?.id else { return nil }
-        return budgets.first {
-            $0.bookID == bookID
-                && $0.currencyCode == baseCurrencyCode
-                && Calendar.current.isDate($0.monthStart, equalTo: .now, toGranularity: .month)
-        }
+        guard let ledgerScope else { return nil }
+        return budgets.first(where: ledgerScope.matches)
     }
 
     private var monthlySummary: MonthlySummaryResult {
         MonthlySummaryService(baseCurrencyCode: baseCurrencyCode, rates: rates)
             .summary(
                 for: selectedBookTransactions,
-                month: .now,
+                month: selectedMonth,
                 budget: currentBudget?.amount
             )
     }
@@ -96,6 +100,7 @@ struct HomeView: View {
                             openProfile: { showingSettings = true },
                             switchBook: { showingBookSwitcher = true },
                             manageBooks: { showingBookManagement = true },
+                            searchTransactions: { showingTransactions = true },
                             addAsset: { showingAddAsset = true }
                         )
 
@@ -146,12 +151,15 @@ struct HomeView: View {
             .sheet(isPresented: $showingBookManagement) {
                 LedgerBookManagementView()
             }
+            .sheet(isPresented: $showingTransactions) {
+                TransactionListView()
+            }
             .sheet(isPresented: $showingMonthPicker) {
                 MonthPickerView(selectedMonth: $selectedMonth)
             }
             .sheet(isPresented: $showingBudgetEditor) {
                 BudgetEditorSheet(
-                    month: .now,
+                    month: selectedMonth,
                     currencyCode: baseCurrencyCode,
                     currentAmount: currentBudget?.amount,
                     save: saveBudget
@@ -182,7 +190,7 @@ struct HomeView: View {
         _ = try MonthlyBudgetService(context: context).upsert(
             amount: amount,
             bookID: bookID,
-            month: .now,
+            month: selectedMonth,
             currencyCode: baseCurrencyCode
         )
     }
@@ -237,6 +245,7 @@ private struct HomeHeader: View {
     let openProfile: () -> Void
     let switchBook: () -> Void
     let manageBooks: () -> Void
+    let searchTransactions: () -> Void
     let addAsset: () -> Void
 
     var body: some View {
@@ -279,6 +288,9 @@ private struct HomeHeader: View {
                 }
                 Button(action: manageBooks) {
                     Label("管理账本", systemImage: "slider.horizontal.3")
+                }
+                Button(action: searchTransactions) {
+                    Label("搜索账单", systemImage: "magnifyingglass")
                 }
                 Divider()
                 Button(action: addAsset) {

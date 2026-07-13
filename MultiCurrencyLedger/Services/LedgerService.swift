@@ -8,6 +8,10 @@ enum LedgerError: LocalizedError, Equatable {
     case missingWallet
     case duplicateCurrency
     case accountInUse
+    case categoryMismatch
+    case destinationAmountRequired
+    case sameCurrencyExchange
+    case missingAdjustment
 
     var errorDescription: String? {
         switch self {
@@ -17,6 +21,10 @@ enum LedgerError: LocalizedError, Equatable {
         case .missingWallet: "交易关联的钱包不存在"
         case .duplicateCurrency: "该账户已添加这个币种"
         case .accountInUse: "该账户仍被交易引用，不能删除"
+        case .categoryMismatch: "分类与交易类型不匹配"
+        case .destinationAmountRequired: "请输入大于 0 的换入金额"
+        case .sameCurrencyExchange: "换汇必须选择两个不同币种的钱包"
+        case .missingAdjustment: "请选择调整方向并填写调整原因"
         }
     }
 }
@@ -24,9 +32,16 @@ enum LedgerError: LocalizedError, Equatable {
 @MainActor
 final class LedgerService {
     private let context: ModelContext
+    private let impactCalculator = TransactionImpactCalculator()
 
     init(context: ModelContext) {
         self.context = context
+    }
+
+    @discardableResult
+    func create(_ draft: TransactionDraft) throws -> LedgerTransaction {
+        _ = try impactCalculator.deltas(for: draft)
+        return try persistNew(draft.makeTransaction())
     }
 
     @discardableResult
@@ -35,22 +50,18 @@ final class LedgerService {
         wallet: CurrencyWallet,
         category: LedgerCategory?,
         date: Date,
-        note: String?
+        note: String?,
+        merchantOrCounterparty: String? = nil
     ) throws -> LedgerTransaction {
-        try validate(amount)
-        let transaction = LedgerTransaction(
+        try create(TransactionDraft(
             type: .expense,
             amount: amount,
-            currencyCode: wallet.currencyCode,
+            sourceWallet: wallet,
             date: date,
             note: note,
-            sourceAccount: wallet.account,
-            sourceWallet: wallet,
-            sourceAmount: amount,
-            sourceCurrencyCode: wallet.currencyCode,
+            merchantOrCounterparty: merchantOrCounterparty,
             category: category
-        )
-        return try persistNew(transaction)
+        ))
     }
 
     @discardableResult
@@ -59,22 +70,18 @@ final class LedgerService {
         wallet: CurrencyWallet,
         category: LedgerCategory?,
         date: Date,
-        note: String?
+        note: String?,
+        merchantOrCounterparty: String? = nil
     ) throws -> LedgerTransaction {
-        try validate(amount)
-        let transaction = LedgerTransaction(
+        try create(TransactionDraft(
             type: .income,
             amount: amount,
-            currencyCode: wallet.currencyCode,
+            sourceWallet: wallet,
             date: date,
             note: note,
-            sourceAccount: wallet.account,
-            sourceWallet: wallet,
-            sourceAmount: amount,
-            sourceCurrencyCode: wallet.currencyCode,
+            merchantOrCounterparty: merchantOrCounterparty,
             category: category
-        )
-        return try persistNew(transaction)
+        ))
     }
 
     @discardableResult
@@ -87,31 +94,16 @@ final class LedgerService {
         date: Date,
         note: String?
     ) throws -> LedgerTransaction {
-        try validate(amount)
-        guard sourceWallet !== destinationWallet else { throw LedgerError.sameWallet }
-        guard sourceWallet.currencyCode == destinationWallet.currencyCode else {
-            throw LedgerError.currencyMismatch
-        }
-        if let feeAmount { try validate(feeAmount) }
-        if feeAmount != nil, feeWallet == nil { throw LedgerError.missingWallet }
-
-        let transaction = LedgerTransaction(
+        try create(TransactionDraft(
             type: .transfer,
-            date: date,
-            note: note,
-            sourceAccount: sourceWallet.account,
+            amount: amount,
             sourceWallet: sourceWallet,
-            destinationAccount: destinationWallet.account,
             destinationWallet: destinationWallet,
-            sourceAmount: amount,
-            sourceCurrencyCode: sourceWallet.currencyCode,
-            destinationAmount: amount,
-            destinationCurrencyCode: destinationWallet.currencyCode,
             feeAmount: feeAmount,
-            feeCurrencyCode: feeWallet?.currencyCode,
-            feeWallet: feeWallet
-        )
-        return try persistNew(transaction)
+            feeWallet: feeWallet,
+            date: date,
+            note: note
+        ))
     }
 
     @discardableResult
@@ -125,30 +117,17 @@ final class LedgerService {
         date: Date,
         note: String?
     ) throws -> LedgerTransaction {
-        try validate(sourceAmount)
-        try validate(destinationAmount)
-        guard sourceWallet !== destinationWallet else { throw LedgerError.sameWallet }
-        if let feeAmount { try validate(feeAmount) }
-        if feeAmount != nil, feeWallet == nil { throw LedgerError.missingWallet }
-
-        let transaction = LedgerTransaction(
+        try create(TransactionDraft(
             type: .exchange,
-            date: date,
-            note: note,
-            sourceAccount: sourceWallet.account,
+            amount: sourceAmount,
             sourceWallet: sourceWallet,
-            destinationAccount: destinationWallet.account,
             destinationWallet: destinationWallet,
-            sourceAmount: sourceAmount,
-            sourceCurrencyCode: sourceWallet.currencyCode,
             destinationAmount: destinationAmount,
-            destinationCurrencyCode: destinationWallet.currencyCode,
             feeAmount: feeAmount,
-            feeCurrencyCode: feeWallet?.currencyCode,
             feeWallet: feeWallet,
-            exchangeRate: destinationAmount / sourceAmount
-        )
-        return try persistNew(transaction)
+            date: date,
+            note: note
+        ))
     }
 
     @discardableResult
@@ -160,21 +139,15 @@ final class LedgerService {
         date: Date,
         note: String?
     ) throws -> LedgerTransaction {
-        try validate(amount)
-        let transaction = LedgerTransaction(
+        try create(TransactionDraft(
             type: .adjustment,
             amount: amount,
-            currencyCode: wallet.currencyCode,
+            sourceWallet: wallet,
             date: date,
             note: note,
-            sourceAccount: wallet.account,
-            sourceWallet: wallet,
-            sourceAmount: amount,
-            sourceCurrencyCode: wallet.currencyCode,
             adjustmentDirection: direction,
             adjustmentReason: reason
-        )
-        return try persistNew(transaction)
+        ))
     }
 
     /// Persists a recognition-confirmed transaction and its non-sensitive audit
@@ -218,12 +191,20 @@ final class LedgerService {
         _ existing: LedgerTransaction,
         with replacement: LedgerTransaction
     ) throws {
+        try replaceTransaction(existing, with: TransactionDraft(transaction: replacement))
+    }
+
+    func replaceTransaction(
+        _ existing: LedgerTransaction,
+        with draft: TransactionDraft
+    ) throws {
+        _ = try impactCalculator.deltas(for: draft)
+        let replacement = draft.makeTransaction()
         let snapshots = snapshots(for: [existing, replacement])
         do {
             try reverseTransaction(existing)
-            try applyTransaction(replacement)
-            context.insert(replacement)
-            context.delete(existing)
+            draft.apply(to: existing)
+            try applyTransaction(existing)
             try context.save()
         } catch {
             context.rollback()
@@ -255,20 +236,8 @@ final class LedgerService {
     }
 
     private func changeBalances(for transaction: LedgerTransaction, multiplier: Decimal) throws {
-        switch transaction.type {
-        case .expense:
-            try adjust(transaction.sourceWallet, by: -(transaction.sourceAmount ?? transaction.amount ?? 0) * multiplier)
-        case .income:
-            try adjust(transaction.sourceWallet, by: (transaction.sourceAmount ?? transaction.amount ?? 0) * multiplier)
-        case .transfer, .exchange:
-            try adjust(transaction.sourceWallet, by: -(transaction.sourceAmount ?? 0) * multiplier)
-            try adjust(transaction.destinationWallet, by: (transaction.destinationAmount ?? 0) * multiplier)
-            if let feeAmount = transaction.feeAmount, feeAmount > 0 {
-                try adjust(transaction.feeWallet, by: -feeAmount * multiplier)
-            }
-        case .adjustment:
-            let sign: Decimal = transaction.adjustmentDirection == .decrease ? -1 : 1
-            try adjust(transaction.sourceWallet, by: sign * (transaction.sourceAmount ?? transaction.amount ?? 0) * multiplier)
+        for delta in try impactCalculator.deltas(for: TransactionDraft(transaction: transaction)) {
+            try adjust(delta.wallet, by: delta.amount * multiplier)
         }
     }
 
@@ -276,10 +245,6 @@ final class LedgerService {
         guard let wallet else { throw LedgerError.missingWallet }
         wallet.balance += amount
         wallet.updatedAt = .now
-    }
-
-    private func validate(_ amount: Decimal) throws {
-        guard amount > 0 else { throw LedgerError.invalidAmount }
     }
 
     private func snapshots(for transactions: [LedgerTransaction]) -> [WalletSnapshot] {

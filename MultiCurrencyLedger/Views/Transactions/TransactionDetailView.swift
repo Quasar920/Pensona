@@ -6,6 +6,7 @@ struct TransactionDetailView: View {
     @Environment(\.modelContext) private var context
     let transaction: LedgerTransaction
     @State private var showingEdit = false
+    @State private var showingCopy = false
     @State private var showingDelete = false
     @State private var errorMessage: String?
 
@@ -51,6 +52,7 @@ struct TransactionDetailView: View {
 
             Section {
                 Button("编辑") { showingEdit = true }
+                Button("复制记账") { showingCopy = true }
                 Button("删除交易", role: .destructive) { showingDelete = true }
             }
         }
@@ -58,6 +60,12 @@ struct TransactionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingEdit) {
             TransactionEditView(transaction: transaction) { dismiss() }
+        }
+        .sheet(isPresented: $showingCopy) {
+            EntryView(
+                seed: TransactionDraft(transaction: transaction),
+                dismissAfterSave: true
+            )
         }
         .confirmationDialog("确定删除这笔交易？", isPresented: $showingDelete, titleVisibility: .visible) {
             Button("删除并回滚余额", role: .destructive, action: deleteTransaction)
