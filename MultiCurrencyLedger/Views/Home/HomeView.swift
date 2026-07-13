@@ -30,6 +30,7 @@ struct HomeView: View {
     @State private var showingBudgetManagement = false
     @State private var showingReports = false
     @State private var showingCalendar = false
+    @State private var showingSmartDraft = false
     @State private var appliedPreviewState = false
 
     init(addTransaction: @escaping () -> Void = {}) {
@@ -109,7 +110,8 @@ struct HomeView: View {
                             addAsset: { showingAddAsset = true },
                             openReports: { showingReports = true },
                             openCalendar: { showingCalendar = true },
-                            manageBudgets: { showingBudgetManagement = true }
+                            manageBudgets: { showingBudgetManagement = true },
+                            openSmartDraft: { showingSmartDraft = true }
                         )
 
                         MonthlyOverviewCard(
@@ -179,6 +181,9 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showingReports) { ReportsView() }
             .sheet(isPresented: $showingCalendar) { TransactionCalendarView() }
+            .sheet(isPresented: $showingSmartDraft) {
+                NavigationStack { SmartDraftEntryView() }
+            }
             .onAppear {
                 ensureSelectedBook()
                 applyPreviewStateIfNeeded()
@@ -264,6 +269,7 @@ private struct HomeHeader: View {
     let openReports: () -> Void
     let openCalendar: () -> Void
     let manageBudgets: () -> Void
+    let openSmartDraft: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -317,6 +323,9 @@ private struct HomeHeader: View {
                 }
                 Button(action: manageBudgets) {
                     Label("预算管理", systemImage: "gauge.with.dots.needle.50percent")
+                }
+                Button(action: openSmartDraft) {
+                    Label("文本或语音记账", systemImage: "waveform.and.mic")
                 }
                 Divider()
                 Button(action: addAsset) {

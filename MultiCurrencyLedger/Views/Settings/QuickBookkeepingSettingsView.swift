@@ -6,6 +6,10 @@ struct QuickBookkeepingSettingsView: View {
 
     var body: some View {
         Form {
+            Section("智能草稿") {
+                NavigationLink("文本或语音生成待确认草稿") { SmartDraftEntryView() }
+            }
+
             Section {
                 Text("付款页触发快捷指令后，由快捷指令截屏、OCR 并请求你配置的识别 API；App 只验证结果并写入账本。")
                     .font(.footnote)

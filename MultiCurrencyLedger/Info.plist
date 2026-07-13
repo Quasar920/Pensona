@@ -39,6 +39,10 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>用于解锁你的本地账本，App 不会获取或保存面容数据。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>用于把你主动说出的记账描述转为待确认草稿。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>用于把你主动说出的记账描述转为文字，结果仍需确认后入账。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
