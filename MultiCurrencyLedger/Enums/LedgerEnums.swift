@@ -1,11 +1,29 @@
 import Foundation
 
 enum SupportedCurrency: String, CaseIterable, Codable, Identifiable, Sendable {
-    case CNY, HKD, USD, EUR, GBP, AUD, SGD, JPY, CAD, NZD
+    case AED, ARS, AUD, BDT, BGN, BHD, BRL, CAD, CHF, CLP
+    case CNY, COP, CZK, DKK, EGP, EUR, GBP, GEL, GHS, HKD
+    case HUF, IDR, ILS, INR, ISK, JOD, JPY, KES, KRW, KWD
+    case KZT, LKR, MAD, MXN, MYR, NGN, NOK, NZD, OMR, PEN
+    case PHP, PKR, PLN, QAR, RON, RSD, RUB, SAR, SEK, SGD
+    case THB, TND, TRY, TWD, UAH, USD, UYU, VND, ZAR
 
     var id: String { rawValue }
     var code: String { rawValue }
-    var fractionDigits: Int { self == .JPY ? 0 : 2 }
+    var fractionDigits: Int {
+        switch self {
+        case .CLP, .ISK, .JPY, .KRW, .VND:
+            0
+        case .BHD, .JOD, .KWD, .OMR, .TND:
+            3
+        default:
+            2
+        }
+    }
+
+    static func fractionDigits(for code: String) -> Int {
+        SupportedCurrency(rawValue: code.uppercased())?.fractionDigits ?? 2
+    }
 
     var localizedName: String {
         Locale.current.localizedString(forCurrencyCode: rawValue) ?? rawValue

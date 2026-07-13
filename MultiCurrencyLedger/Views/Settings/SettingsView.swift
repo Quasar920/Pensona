@@ -28,6 +28,7 @@ struct SettingsView: View {
                 }
 
                 Section("数据") {
+                    NavigationLink("账单导入") { TransactionImportView() }
                     NavigationLink("数据导出与备份") { ExportView() }
                     Button("清空全部数据", role: .destructive) { showingClearConfirmation = true }
                 }
@@ -56,6 +57,8 @@ struct SettingsView: View {
 
     private func clearAllData() {
         do {
+            for item in try context.fetch(FetchDescriptor<TransactionImportFingerprint>()) { context.delete(item) }
+            for item in try context.fetch(FetchDescriptor<TransactionImportBatch>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<SavingsAllocation>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<SavingsGoal>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<RecurringOccurrence>()) { context.delete(item) }

@@ -64,6 +64,31 @@ final class LedgerService {
         return try persistNew(draft.makeTransaction(), configureBeforeSave: configureBeforeSave)
     }
 
+    /// Validates and writes a whole import batch in one transaction. No wallet
+    /// balance or row is retained if any row fails.
+    func createBatch(
+        _ drafts: [TransactionDraft],
+        configureBeforeSave: ([LedgerTransaction]) throws -> Void
+    ) throws -> [LedgerTransaction] {
+        guard !drafts.isEmpty else { return [] }
+        for draft in drafts { _ = try impactCalculator.deltas(for: draft) }
+        let transactions = drafts.map { $0.makeTransaction() }
+        let snapshots = snapshots(for: transactions)
+        do {
+            for transaction in transactions {
+                try applyTransaction(transaction)
+                context.insert(transaction)
+            }
+            try configureBeforeSave(transactions)
+            try context.save()
+            return transactions
+        } catch {
+            context.rollback()
+            restore(snapshots)
+            throw error
+        }
+    }
+
     @discardableResult
     func createExpense(
         amount: Decimal,
@@ -198,7 +223,10 @@ final class LedgerService {
         try deleteTransactions([transaction])
     }
 
-    func deleteTransactions(_ transactions: [LedgerTransaction]) throws {
+    func deleteTransactions(
+        _ transactions: [LedgerTransaction],
+        configureBeforeSave: () throws -> Void = {}
+    ) throws {
         guard !transactions.isEmpty else { return }
         let snapshots = snapshots(for: transactions)
         var attachmentPaths: [String] = []
@@ -225,6 +253,7 @@ final class LedgerService {
                 try reverseTransaction(transaction)
                 context.delete(transaction)
             }
+            try configureBeforeSave()
             try context.save()
             let store = AttachmentStore()
             for path in attachmentPaths { try? store.remove(relativePath: path) }

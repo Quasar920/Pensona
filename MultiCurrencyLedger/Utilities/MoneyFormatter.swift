@@ -14,7 +14,7 @@ enum MoneyFormatter {
         formatter.numberStyle = .currency
         formatter.currencyCode = currencyCode
         formatter.locale = .current
-        formatter.minimumFractionDigits = currencyCode == SupportedCurrency.JPY.rawValue ? 0 : 2
+        formatter.minimumFractionDigits = SupportedCurrency.fractionDigits(for: currencyCode)
         formatter.maximumFractionDigits = formatter.minimumFractionDigits
         return formatter.string(from: amount as NSDecimalNumber) ?? "\(currencyCode) \(amount)"
     }
@@ -22,7 +22,7 @@ enum MoneyFormatter {
     static func plain(_ amount: Decimal, currencyCode: String) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = currencyCode == SupportedCurrency.JPY.rawValue ? 0 : 2
+        formatter.minimumFractionDigits = SupportedCurrency.fractionDigits(for: currencyCode)
         formatter.maximumFractionDigits = formatter.minimumFractionDigits
         return formatter.string(from: amount as NSDecimalNumber) ?? "\(amount)"
     }
