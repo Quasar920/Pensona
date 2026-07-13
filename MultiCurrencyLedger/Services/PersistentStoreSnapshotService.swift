@@ -22,7 +22,7 @@ enum PersistentStoreSnapshotError: LocalizedError, Equatable {
 }
 
 enum PersistentStoreSnapshotService {
-    static let schemaVersion = "1.0.0"
+    static let schemaVersion = "2.0.0"
     static let pendingRestoreKey = "pendingMigrationStoreRestorePath"
     private static let preparedVersionKey = "preparedPersistentSchemaVersion"
 
