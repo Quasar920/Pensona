@@ -21,10 +21,10 @@ struct TransactionImpactCalculator {
         switch draft.type {
         case .expense:
             try validateCategory(draft.category, expected: .expense)
-            changes.append(WalletDelta(wallet: sourceWallet, amount: -draft.amount))
+            try appendPayments(from: draft, sign: -1, fallback: sourceWallet, to: &changes)
         case .income:
             try validateCategory(draft.category, expected: .income)
-            changes.append(WalletDelta(wallet: sourceWallet, amount: draft.amount))
+            try appendPayments(from: draft, sign: 1, fallback: sourceWallet, to: &changes)
         case .transfer:
             let destinationWallet = try validateDestination(draft, sourceWallet: sourceWallet)
             guard sourceWallet.currencyCode == destinationWallet.currencyCode else {
@@ -85,6 +85,33 @@ struct TransactionImpactCalculator {
         guard feeAmount > 0 else { throw LedgerError.invalidAmount }
         guard let feeWallet = draft.feeWallet else { throw LedgerError.missingWallet }
         changes.append(WalletDelta(wallet: feeWallet, amount: -feeAmount))
+    }
+
+    private func appendPayments(
+        from draft: TransactionDraft,
+        sign: Decimal,
+        fallback sourceWallet: CurrencyWallet,
+        to changes: inout [WalletDelta]
+    ) throws {
+        guard !draft.paymentParts.isEmpty else {
+            changes.append(WalletDelta(wallet: sourceWallet, amount: sign * draft.amount))
+            return
+        }
+        guard draft.paymentParts.count >= 2,
+              draft.paymentParts.allSatisfy({ $0.amount > 0 }),
+              draft.paymentParts.reduce(Decimal.zero, { $0 + $1.amount }) == draft.amount else {
+            throw LedgerError.paymentPartsMismatch
+        }
+        guard draft.paymentParts.allSatisfy({ $0.wallet.currencyCode == sourceWallet.currencyCode }) else {
+            throw LedgerError.paymentCurrencyMismatch
+        }
+        let walletIDs = draft.paymentParts.map { $0.wallet.id }
+        guard Set(walletIDs).count == walletIDs.count else {
+            throw LedgerError.duplicatePaymentWallet
+        }
+        changes.append(contentsOf: draft.paymentParts.map {
+            WalletDelta(wallet: $0.wallet, amount: sign * $0.amount)
+        })
     }
 
     private func aggregate(_ changes: [WalletDelta]) -> [WalletDelta] {

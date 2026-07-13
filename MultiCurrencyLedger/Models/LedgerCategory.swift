@@ -9,6 +9,11 @@ final class LedgerCategory {
     var symbolName: String
     var sortOrder: Int
     var isSystem: Bool
+    var bookID: UUID?
+    var parentID: UUID?
+    var isArchived: Bool = false
+    var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
 
     init(
         id: UUID = UUID(),
@@ -16,7 +21,12 @@ final class LedgerCategory {
         type: CategoryKind,
         symbolName: String,
         sortOrder: Int,
-        isSystem: Bool = false
+        isSystem: Bool = false,
+        bookID: UUID? = nil,
+        parentID: UUID? = nil,
+        isArchived: Bool = false,
+        createdAt: Date = .now,
+        updatedAt: Date = .now
     ) {
         self.id = id
         self.name = name
@@ -24,6 +34,11 @@ final class LedgerCategory {
         self.symbolName = symbolName
         self.sortOrder = sortOrder
         self.isSystem = isSystem
+        self.bookID = bookID
+        self.parentID = parentID
+        self.isArchived = isArchived
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 
     var type: CategoryKind { CategoryKind(rawValue: typeRawValue) ?? .expense }

@@ -7,6 +7,7 @@ struct TransactionEditView: View {
     @Query(sort: \Account.createdAt) private var accounts: [Account]
     @Query(sort: [SortDescriptor(\LedgerCategory.typeRawValue), SortDescriptor(\LedgerCategory.sortOrder)])
     private var categories: [LedgerCategory]
+    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
 
     let transaction: LedgerTransaction
     let onSaved: () -> Void
@@ -39,7 +40,21 @@ struct TransactionEditView: View {
 
     private var filteredCategories: [LedgerCategory] {
         let type: CategoryKind = form.kind == .income ? .income : .expense
-        return categories.filter { $0.type == type }
+        return scopedCategories.filter { $0.type == type }
+    }
+
+    private var scopedCategories: [LedgerCategory] {
+        guard let bookID else { return categories.filter { !$0.isArchived } }
+        return categories.filter {
+            (!$0.isArchived || $0.id == transaction.category?.id)
+                && ($0.bookID == nil || $0.bookID == bookID)
+        }
+    }
+
+    private var scopedTags: [TransactionTag] {
+        guard let bookID else { return [] }
+        let existingIDs = Set(transaction.tags.map(\.id))
+        return tags.filter { $0.bookID == bookID && (!$0.isArchived || existingIDs.contains($0.id)) }
     }
 
     private var destinationOptions: [CurrencyWallet] {
@@ -62,7 +77,8 @@ struct TransactionEditView: View {
                 TransactionFormSections(
                     state: $form,
                     wallets: allWallets,
-                    categories: categories
+                    categories: scopedCategories,
+                    tags: scopedTags
                 )
 
                 Section {
@@ -88,6 +104,7 @@ struct TransactionEditView: View {
                 applyDefaultsForKind()
             }
             .onChange(of: form.sourceWalletID) { _, _ in
+                form.synchronizePrimaryPaymentWallet()
                 ensureDestinationAndFeeSelections()
             }
             .onChange(of: form.includesFee) { _, includesFee in
@@ -148,7 +165,11 @@ struct TransactionEditView: View {
 
     private func validateAndSave() {
         do {
-            let draft = try form.makeDraft(wallets: allWallets, categories: categories)
+            let draft = try form.makeDraft(
+                wallets: allWallets,
+                categories: scopedCategories,
+                tags: scopedTags
+            )
             pendingDraft = draft
             if try createsNegativeBalance(draft) {
                 showingNegativeWarning = true

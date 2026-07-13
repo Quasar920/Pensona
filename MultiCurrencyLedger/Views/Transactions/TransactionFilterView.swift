@@ -11,6 +11,7 @@ struct TransactionFilterView: View {
     let books: [LedgerBook]
     let accounts: [Account]
     let categories: [LedgerCategory]
+    let tags: [TransactionTag]
     let apply: (TransactionQueryState) -> Void
 
     init(
@@ -19,6 +20,7 @@ struct TransactionFilterView: View {
         books: [LedgerBook],
         accounts: [Account],
         categories: [LedgerCategory],
+        tags: [TransactionTag],
         apply: @escaping (TransactionQueryState) -> Void
     ) {
         _draft = State(initialValue: query)
@@ -28,6 +30,7 @@ struct TransactionFilterView: View {
         self.books = books
         self.accounts = accounts
         self.categories = categories
+        self.tags = tags
         self.apply = apply
     }
 
@@ -40,14 +43,24 @@ struct TransactionFilterView: View {
     private var availableCategories: [LedgerCategory] {
         switch draft.kind {
         case .income:
-            categories.filter { $0.type == .income }
+            scopedCategories.filter { $0.type == .income }
         case .expense:
-            categories.filter { $0.type == .expense }
+            scopedCategories.filter { $0.type == .expense }
         case .transfer, .exchange, .adjustment:
             []
         case nil:
-            categories
+            scopedCategories
         }
+    }
+
+    private var scopedCategories: [LedgerCategory] {
+        categories.filter {
+            !$0.isArchived && (draft.bookID == nil || $0.bookID == nil || $0.bookID == draft.bookID)
+        }
+    }
+
+    private var availableTags: [TransactionTag] {
+        tags.filter { !$0.isArchived && (draft.bookID == nil || $0.bookID == draft.bookID) }
     }
 
     private var parsedMinimum: Decimal? {
@@ -142,6 +155,29 @@ struct TransactionFilterView: View {
                         }
                     }
                     .disabled(availableCategories.isEmpty)
+
+                    if !availableTags.isEmpty {
+                        Menu {
+                            ForEach(availableTags) { tag in
+                                Button {
+                                    if draft.tagIDs.contains(tag.id) {
+                                        draft.tagIDs.remove(tag.id)
+                                    } else {
+                                        draft.tagIDs.insert(tag.id)
+                                    }
+                                } label: {
+                                    Label(
+                                        tag.name,
+                                        systemImage: draft.tagIDs.contains(tag.id) ? "checkmark.circle.fill" : "circle"
+                                    )
+                                }
+                            }
+                        } label: {
+                            LabeledContent("标签") {
+                                Text(draft.tagIDs.isEmpty ? "全部标签" : "已选 \(draft.tagIDs.count) 个")
+                            }
+                        }
+                    }
                 }
 
                 Section("排序") {
@@ -171,6 +207,7 @@ struct TransactionFilterView: View {
                 if !availableAccounts.contains(where: { $0.id == draft.accountID }) {
                     draft.accountID = nil
                 }
+                draft.tagIDs.formIntersection(Set(availableTags.map(\.id)))
             }
             .onChange(of: draft.kind) { _, _ in
                 if !availableCategories.contains(where: { $0.id == draft.categoryID }) {

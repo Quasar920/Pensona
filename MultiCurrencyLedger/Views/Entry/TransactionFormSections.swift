@@ -4,6 +4,7 @@ struct TransactionFormSections: View {
     @Binding var state: TransactionFormState
     let wallets: [CurrencyWallet]
     let categories: [LedgerCategory]
+    var tags: [TransactionTag] = []
 
     private let adjustmentReasons = ["银行利息", "投资收益", "投资亏损", "手动校准", "其他"]
 
@@ -47,6 +48,7 @@ struct TransactionFormSections: View {
 
         amountSection
         walletSection
+        splitPaymentSection
         detailSection
     }
 
@@ -111,6 +113,65 @@ struct TransactionFormSections: View {
     }
 
     @ViewBuilder
+    private var splitPaymentSection: some View {
+        if state.kind == .expense || state.kind == .income {
+            Section(state.kind == .expense ? "付款方式" : "收款方式") {
+                Toggle(
+                    state.kind == .expense ? "组合付款" : "多账户收款",
+                    isOn: Binding(
+                        get: { state.usesSplitPayment },
+                        set: { state.setSplitPaymentEnabled($0, wallets: wallets) }
+                    )
+                )
+                if state.usesSplitPayment {
+                    ForEach(Array(state.paymentParts.indices), id: \.self) { index in
+                        HStack {
+                            if index == 0 {
+                                Text(wallets.first { $0.id == state.sourceWalletID }.map(walletLabel) ?? "来源钱包")
+                                    .font(.subheadline)
+                                    .lineLimit(1)
+                            } else {
+                                Picker("钱包 \(index + 1)", selection: $state.paymentParts[index].walletID) {
+                                    Text("请选择").tag(nil as UUID?)
+                                    ForEach(splitWalletOptions) { wallet in
+                                        Text(walletLabel(wallet)).tag(wallet.id as UUID?)
+                                    }
+                                }
+                                .labelsHidden()
+                            }
+                            TextField("金额", text: $state.paymentParts[index].amountText)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 110)
+                            if index > 1 {
+                                Button(role: .destructive) {
+                                    state.paymentParts.remove(at: index)
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    Button {
+                        state.paymentParts.append(PaymentPartFormState(walletID: splitWalletOptions.first?.id))
+                    } label: {
+                        Label("添加付款钱包", systemImage: "plus.circle")
+                    }
+                    Text("各分项必须使用相同币种，合计严格等于交易总额。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var splitWalletOptions: [CurrencyWallet] {
+        guard let sourceWallet else { return [] }
+        return wallets.filter { $0.currencyCode == sourceWallet.currencyCode }
+    }
+
+    @ViewBuilder
     private var detailSection: some View {
         Section("详情") {
             if state.kind == .expense || state.kind == .income {
@@ -136,6 +197,30 @@ struct TransactionFormSections: View {
                 }
             }
 
+            if !tags.isEmpty {
+                Menu {
+                    ForEach(tags.filter { !$0.isArchived }) { tag in
+                        Button {
+                            if state.tagIDs.contains(tag.id) {
+                                state.tagIDs.remove(tag.id)
+                            } else {
+                                state.tagIDs.insert(tag.id)
+                            }
+                        } label: {
+                            Label(
+                                tag.name,
+                                systemImage: state.tagIDs.contains(tag.id) ? "checkmark.circle.fill" : "circle"
+                            )
+                        }
+                    }
+                } label: {
+                    LabeledContent("标签") {
+                        Text(selectedTagSummary)
+                            .foregroundStyle(state.tagIDs.isEmpty ? .secondary : .primary)
+                    }
+                }
+            }
+
             DatePicker("日期", selection: $state.date)
             TextField("备注（可选）", text: $state.note, axis: .vertical)
         }
@@ -144,5 +229,10 @@ struct TransactionFormSections: View {
     private func walletLabel(_ wallet: CurrencyWallet) -> String {
         let balance = MoneyFormatter.plain(wallet.balance, currencyCode: wallet.currencyCode)
         return "\(wallet.account?.name ?? "未知账户") / \(wallet.currencyCode) / \(balance)"
+    }
+
+    private var selectedTagSummary: String {
+        let selected = tags.filter { state.tagIDs.contains($0.id) }.map(\.name)
+        return selected.isEmpty ? "未选择" : selected.joined(separator: "、")
     }
 }

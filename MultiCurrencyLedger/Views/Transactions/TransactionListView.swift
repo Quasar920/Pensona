@@ -2,16 +2,23 @@ import SwiftData
 import SwiftUI
 
 struct TransactionListView: View {
+    @Environment(\.modelContext) private var context
     @AppStorage("selectedBookID") private var selectedBookID = ""
     @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
     private var books: [LedgerBook]
     @Query(sort: \LedgerTransaction.date, order: .reverse) private var transactions: [LedgerTransaction]
     @Query(sort: \Account.name) private var accounts: [Account]
     @Query(sort: \LedgerCategory.sortOrder) private var categories: [LedgerCategory]
+    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
 
     @State private var query = TransactionQueryState()
     @State private var queryConfigured = false
     @State private var showingFilters = false
+    @State private var editMode: EditMode = .inactive
+    @State private var selectedTransactionIDs = Set<UUID>()
+    @State private var showingBulkEdit = false
+    @State private var showingBulkDelete = false
+    @State private var bulkErrorMessage: String?
 
     private var selectedBook: LedgerBook? {
         books.first { $0.id.uuidString == selectedBookID } ?? books.first
@@ -37,6 +44,10 @@ struct TransactionListView: View {
         query.hasActiveFilters || query.bookID != selectedBook?.id
     }
 
+    private var selectedTransactions: [LedgerTransaction] {
+        transactions.filter { selectedTransactionIDs.contains($0.id) }
+    }
+
     private var filterSummary: String {
         var parts: [String] = []
         if query.bookID == nil {
@@ -51,6 +62,7 @@ struct TransactionListView: View {
         if let currencyCode = query.currencyCode { parts.append(currencyCode) }
         if let kind = query.kind { parts.append(kind.title) }
         if let category = categories.first(where: { $0.id == query.categoryID }) { parts.append(category.name) }
+        if !query.tagIDs.isEmpty { parts.append("标签 \(query.tagIDs.count)") }
         if query.sortOrder != .dateDescending { parts.append(query.sortOrder.title) }
         return parts.isEmpty ? "当前账本 · 全部时间" : parts.joined(separator: " · ")
     }
@@ -65,7 +77,7 @@ struct TransactionListView: View {
                         description: Text(hasFilters ? "当前条件：\(filterSummary)" : "保存第一笔交易后会显示在这里。")
                     )
                 } else {
-                    List {
+                    List(selection: $selectedTransactionIDs) {
                         if hasFilters {
                             Section {
                                 Button {
@@ -109,26 +121,60 @@ struct TransactionListView: View {
                 TransactionDetailView(transaction: $0)
             }
             .toolbar {
-                Button { showingFilters = true } label: {
-                    Label(
-                        "筛选",
-                        systemImage: hasFilters
-                            ? "line.3.horizontal.decrease.circle.fill"
-                            : "line.3.horizontal.decrease.circle"
-                    )
+                ToolbarItem(placement: .topBarLeading) { EditButton() }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if editMode.isEditing, !selectedTransactionIDs.isEmpty {
+                        Menu {
+                            Button("批量修改") { showingBulkEdit = true }
+                            Button("删除所选", role: .destructive) { showingBulkDelete = true }
+                        } label: {
+                            Label("批量操作", systemImage: "ellipsis.circle")
+                        }
+                    }
+                    Button { showingFilters = true } label: {
+                        Label(
+                            "筛选",
+                            systemImage: hasFilters
+                                ? "line.3.horizontal.decrease.circle.fill"
+                                : "line.3.horizontal.decrease.circle"
+                        )
+                    }
                 }
             }
+            .environment(\.editMode, $editMode)
             .sheet(isPresented: $showingFilters) {
                 TransactionFilterView(
                     query: query,
                     defaultBookID: selectedBook?.id,
                     books: books,
                     accounts: accounts,
-                    categories: categories
+                    categories: categories,
+                    tags: tags
                 ) { updatedQuery in
                     query = updatedQuery
                 }
             }
+            .sheet(isPresented: $showingBulkEdit) {
+                BulkTransactionEditView(
+                    transactions: selectedTransactions,
+                    categories: categories,
+                    tags: tags
+                ) {
+                    selectedTransactionIDs.removeAll()
+                    editMode = .inactive
+                }
+            }
+            .confirmationDialog(
+                "删除所选 \(selectedTransactionIDs.count) 笔交易？",
+                isPresented: $showingBulkDelete,
+                titleVisibility: .visible
+            ) {
+                Button("删除并回滚全部余额", role: .destructive, action: deleteSelected)
+                Button("取消", role: .cancel) {}
+            }
+            .alert("批量操作失败", isPresented: Binding(
+                get: { bulkErrorMessage != nil }, set: { if !$0 { bulkErrorMessage = nil } }
+            )) { Button("好") {} } message: { Text(bulkErrorMessage ?? "未知错误") }
             .onAppear(perform: configureQueryIfNeeded)
             .onChange(of: books.count) { _, _ in configureQueryIfNeeded() }
             .onChange(of: selectedBookID) { _, _ in
@@ -142,8 +188,13 @@ struct TransactionListView: View {
     @ViewBuilder
     private func transactionRows(_ items: [LedgerTransaction]) -> some View {
         ForEach(items) { transaction in
-            NavigationLink(value: transaction) {
+            if editMode.isEditing {
                 TransactionCompactRow(transaction: transaction)
+                    .tag(transaction.id)
+            } else {
+                NavigationLink(value: transaction) {
+                    TransactionCompactRow(transaction: transaction)
+                }
             }
         }
     }
@@ -156,5 +207,115 @@ struct TransactionListView: View {
         guard !queryConfigured else { return }
         query.bookID = selectedBook?.id
         queryConfigured = true
+    }
+
+    private func deleteSelected() {
+        do {
+            try BulkTransactionService(context: context).delete(selectedTransactions)
+            selectedTransactionIDs.removeAll()
+            editMode = .inactive
+        } catch {
+            bulkErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct BulkTransactionEditView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    let transactions: [LedgerTransaction]
+    let categories: [LedgerCategory]
+    let tags: [TransactionTag]
+    let onSaved: () -> Void
+    @State private var changesCategory = false
+    @State private var categoryID: UUID?
+    @State private var changesTags = false
+    @State private var tagIDs = Set<UUID>()
+    @State private var changesDate = false
+    @State private var date = Date.now
+    @State private var errorMessage: String?
+
+    private var commonKind: TransactionKind? {
+        guard let first = transactions.first?.type,
+              transactions.allSatisfy({ $0.type == first }) else { return nil }
+        return first
+    }
+
+    private var availableCategories: [LedgerCategory] {
+        guard let commonKind, commonKind == .expense || commonKind == .income else { return [] }
+        let type: CategoryKind = commonKind == .expense ? .expense : .income
+        let bookIDs = Set(transactions.compactMap { $0.sourceAccount?.book?.id })
+        return categories.filter {
+            !$0.isArchived && $0.type == type
+                && ($0.bookID == nil || (bookIDs.count == 1 && bookIDs.contains($0.bookID!)))
+        }
+    }
+
+    private var availableTags: [TransactionTag] {
+        let bookIDs = Set(transactions.compactMap { $0.sourceAccount?.book?.id })
+        guard bookIDs.count == 1, let bookID = bookIDs.first else { return [] }
+        return tags.filter { !$0.isArchived && $0.bookID == bookID }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("已选") { Text("\(transactions.count) 笔交易") }
+                Section("分类") {
+                    Toggle("修改分类", isOn: $changesCategory)
+                    if changesCategory {
+                        Picker("分类", selection: $categoryID) {
+                            Text("未分类").tag(nil as UUID?)
+                            ForEach(availableCategories) { Text($0.name).tag($0.id as UUID?) }
+                        }
+                        .disabled(availableCategories.isEmpty)
+                    }
+                }
+                Section("标签") {
+                    Toggle("替换标签", isOn: $changesTags)
+                    if changesTags {
+                        ForEach(availableTags) { tag in
+                            Toggle(tag.name, isOn: Binding(
+                                get: { tagIDs.contains(tag.id) },
+                                set: { selected in
+                                    if selected { tagIDs.insert(tag.id) } else { tagIDs.remove(tag.id) }
+                                }
+                            ))
+                        }
+                    }
+                }
+                Section("日期") {
+                    Toggle("统一日期", isOn: $changesDate)
+                    if changesDate { DatePicker("日期", selection: $date) }
+                }
+            }
+            .navigationTitle("批量修改")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("保存", action: save) }
+            }
+            .alert("无法保存", isPresented: Binding(
+                get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
+            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        }
+    }
+
+    private func save() {
+        do {
+            try BulkTransactionService(context: context).update(
+                transactions,
+                changesCategory: changesCategory,
+                category: categories.first { $0.id == categoryID },
+                changesTags: changesTags,
+                tags: availableTags.filter { tagIDs.contains($0.id) },
+                changesDate: changesDate,
+                date: date
+            )
+            dismiss()
+            onSaved()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

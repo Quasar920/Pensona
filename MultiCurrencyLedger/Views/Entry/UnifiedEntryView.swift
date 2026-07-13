@@ -10,6 +10,9 @@ struct EntryView: View {
     @Query(sort: \Account.createdAt) private var accounts: [Account]
     @Query(sort: [SortDescriptor(\LedgerCategory.typeRawValue), SortDescriptor(\LedgerCategory.sortOrder)])
     private var categories: [LedgerCategory]
+    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
+    @Query(sort: \TransactionTemplate.updatedAt, order: .reverse)
+    private var templates: [TransactionTemplate]
 
     private let seed: TransactionDraft?
     private let dismissAfterSave: Bool
@@ -50,7 +53,24 @@ struct EntryView: View {
 
     private var filteredCategories: [LedgerCategory] {
         let type: CategoryKind = form.kind == .income ? .income : .expense
-        return categories.filter { $0.type == type }
+        return scopedCategories.filter { $0.type == type }
+    }
+
+    private var scopedCategories: [LedgerCategory] {
+        guard let bookID = selectedBook?.id else { return [] }
+        return categories.filter {
+            !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID)
+        }
+    }
+
+    private var scopedTags: [TransactionTag] {
+        guard let bookID = selectedBook?.id else { return [] }
+        return tags.filter { $0.bookID == bookID && !$0.isArchived }
+    }
+
+    private var scopedTemplates: [TransactionTemplate] {
+        guard let bookID = selectedBook?.id else { return [] }
+        return templates.filter { $0.bookID == bookID && !$0.isArchived }
     }
 
     private var destinationOptions: [CurrencyWallet] {
@@ -84,7 +104,8 @@ struct EntryView: View {
                     TransactionFormSections(
                         state: $form,
                         wallets: allWallets,
-                        categories: categories
+                        categories: scopedCategories,
+                        tags: scopedTags
                     )
 
                     Section {
@@ -107,6 +128,17 @@ struct EntryView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }
                 }
+                if seed == nil, !scopedTemplates.isEmpty {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            ForEach(scopedTemplates) { template in
+                                Button(template.name) { applyTemplate(template) }
+                            }
+                        } label: {
+                            Label("模板", systemImage: "square.on.square")
+                        }
+                    }
+                }
             }
             .onAppear(perform: initializeSelections)
             .onChange(of: form.kind) { oldKind, newKind in
@@ -116,6 +148,7 @@ struct EntryView: View {
                 successMessage = nil
             }
             .onChange(of: form.sourceWalletID) { _, _ in
+                form.synchronizePrimaryPaymentWallet()
                 ensureDestinationAndFeeSelections()
             }
             .onChange(of: form.includesFee) { _, includesFee in
@@ -218,7 +251,11 @@ struct EntryView: View {
     private func validateAndSave() {
         successMessage = nil
         do {
-            let draft = try form.makeDraft(wallets: allWallets, categories: categories)
+            let draft = try form.makeDraft(
+                wallets: allWallets,
+                categories: scopedCategories,
+                tags: scopedTags
+            )
             let deltas = try TransactionImpactCalculator().deltas(for: draft)
             pendingDraft = draft
             if deltas.contains(where: { $0.wallet.balance + $0.amount < 0 }) {
@@ -268,5 +305,21 @@ struct EntryView: View {
     private func wallet(id: UUID?) -> CurrencyWallet? {
         guard let id else { return nil }
         return allWallets.first { $0.id == id }
+    }
+
+    private func applyTemplate(_ template: TransactionTemplate) {
+        do {
+            let draft = try TransactionTemplateService(context: context).resolve(
+                template,
+                wallets: allWallets,
+                categories: scopedCategories,
+                tags: scopedTags
+            )
+            form = TransactionFormState(draft: draft)
+            ensureSeedSelections()
+            successMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

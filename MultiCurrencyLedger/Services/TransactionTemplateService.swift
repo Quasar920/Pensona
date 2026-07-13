@@ -1,0 +1,132 @@
+import Foundation
+import SwiftData
+
+enum TransactionTemplateError: LocalizedError, Equatable {
+    case emptyName
+    case duplicateName
+    case missingBook
+    case invalidReference
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyName: "请输入模板名称"
+        case .duplicateName: "当前账本已存在同名模板"
+        case .missingBook: "模板必须归属一个账本"
+        case .invalidReference: "模板引用的钱包、分类或标签已失效，请编辑或重新创建模板"
+        }
+    }
+}
+
+@MainActor
+final class TransactionTemplateService {
+    private let context: ModelContext
+
+    init(context: ModelContext) {
+        self.context = context
+    }
+
+    func scoped(bookID: UUID, includeArchived: Bool = false) throws -> [TransactionTemplate] {
+        try context.fetch(FetchDescriptor<TransactionTemplate>())
+            .filter { $0.bookID == bookID && (includeArchived || !$0.isArchived) }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    @discardableResult
+    func create(name: String, from draft: TransactionDraft) throws -> TransactionTemplate {
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { throw TransactionTemplateError.emptyName }
+        guard let sourceWallet = draft.sourceWallet,
+              let bookID = sourceWallet.account?.book?.id else {
+            throw TransactionTemplateError.missingBook
+        }
+        let duplicate = try scoped(bookID: bookID, includeArchived: true).contains {
+            $0.name.compare(cleanName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        guard !duplicate else { throw TransactionTemplateError.duplicateName }
+        let template = TransactionTemplate(
+            name: cleanName,
+            bookID: bookID,
+            type: draft.type,
+            amount: draft.amount,
+            sourceWalletID: sourceWallet.id,
+            destinationWalletID: draft.destinationWallet?.id,
+            destinationAmount: draft.destinationAmount,
+            feeAmount: draft.feeAmount,
+            feeWalletID: draft.feeWallet?.id,
+            categoryID: draft.category?.id,
+            tagIDs: draft.tags.map(\.id),
+            paymentParts: draft.paymentParts.map {
+                TemplatePaymentPartReference(walletID: $0.wallet.id, amount: $0.amount)
+            },
+            note: draft.note,
+            merchantOrCounterparty: draft.merchantOrCounterparty,
+            adjustmentDirection: draft.adjustmentDirection,
+            adjustmentReason: draft.adjustmentReason
+        )
+        context.insert(template)
+        try context.save()
+        return template
+    }
+
+    func resolve(
+        _ template: TransactionTemplate,
+        wallets: [CurrencyWallet],
+        categories: [LedgerCategory],
+        tags: [TransactionTag],
+        date: Date = .now
+    ) throws -> TransactionDraft {
+        guard !template.isArchived,
+              let source = wallets.first(where: { $0.id == template.sourceWalletID }),
+              source.account?.book?.id == template.bookID else {
+            throw TransactionTemplateError.invalidReference
+        }
+        let destination = template.destinationWalletID.flatMap { id in wallets.first { $0.id == id } }
+        let feeWallet = template.feeWalletID.flatMap { id in wallets.first { $0.id == id } }
+        let category = template.categoryID.flatMap { id in categories.first { $0.id == id } }
+        let resolvedTags = tags.filter { template.tagIDs.contains($0.id) }
+        let resolvedPaymentParts = template.paymentPartReferences.compactMap { reference in
+            wallets.first(where: { $0.id == reference.walletID }).map {
+                TransactionPaymentPartDraft(wallet: $0, amount: reference.amount)
+            }
+        }
+
+        if template.destinationWalletID != nil && destination == nil
+            || template.feeWalletID != nil && feeWallet == nil
+            || template.categoryID != nil && category == nil
+            || resolvedTags.count != Set(template.tagIDs).count {
+            throw TransactionTemplateError.invalidReference
+        }
+        if resolvedPaymentParts.count != template.paymentPartReferences.count {
+            throw TransactionTemplateError.invalidReference
+        }
+
+        return TransactionDraft(
+            type: template.type,
+            amount: template.amount,
+            sourceWallet: source,
+            destinationWallet: destination,
+            destinationAmount: template.destinationAmount,
+            feeAmount: template.feeAmount,
+            feeWallet: feeWallet,
+            date: date,
+            note: template.note,
+            merchantOrCounterparty: template.merchantOrCounterparty,
+            category: category,
+            tags: resolvedTags,
+            paymentParts: resolvedPaymentParts,
+            adjustmentDirection: template.adjustmentDirection,
+            adjustmentReason: template.adjustmentReason
+        )
+    }
+
+    func setArchived(_ archived: Bool, template: TransactionTemplate) throws {
+        template.isArchived = archived
+        template.updatedAt = .now
+        try context.save()
+    }
+
+    func delete(_ template: TransactionTemplate) throws {
+        context.delete(template)
+        try context.save()
+    }
+}

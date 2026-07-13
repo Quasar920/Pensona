@@ -53,6 +53,7 @@ struct TransactionQueryState: Equatable, Sendable {
     var currencyCode: String?
     var kind: TransactionKind?
     var categoryID: UUID?
+    var tagIDs: Set<UUID> = []
     var sortOrder: TransactionSortOrder = .dateDescending
 
     init(scope: LedgerScope) {
@@ -75,6 +76,7 @@ struct TransactionQueryState: Equatable, Sendable {
             || currencyCode != nil
             || kind != nil
             || categoryID != nil
+            || !tagIDs.isEmpty
     }
 
     var hasValidDateRange: Bool {
@@ -110,7 +112,8 @@ struct TransactionQueryState: Equatable, Sendable {
     ) -> Bool {
         guard matchesBook(transaction), matchesDate(transaction.date, referenceDate: referenceDate, calendar: calendar),
               matchesAmount(transaction), matchesKeyword(transaction), matchesAccount(transaction),
-              matchesCurrency(transaction), matchesKind(transaction), matchesCategory(transaction) else {
+              matchesCurrency(transaction), matchesKind(transaction), matchesCategory(transaction),
+              matchesTags(transaction) else {
             return false
         }
         return true
@@ -182,6 +185,11 @@ struct TransactionQueryState: Equatable, Sendable {
 
     private func matchesCategory(_ transaction: LedgerTransaction) -> Bool {
         categoryID == nil || transaction.category?.id == categoryID
+    }
+
+    private func matchesTags(_ transaction: LedgerTransaction) -> Bool {
+        guard !tagIDs.isEmpty else { return true }
+        return tagIDs.isSubset(of: Set(transaction.tags.map(\.id)))
     }
 
     private func sort(_ lhs: LedgerTransaction, _ rhs: LedgerTransaction) -> Bool {

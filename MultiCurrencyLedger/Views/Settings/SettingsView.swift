@@ -18,6 +18,8 @@ struct SettingsView: View {
                     }
                     NavigationLink("汇率管理") { ExchangeRateListView() }
                     NavigationLink("分类管理") { CategoryManagementView() }
+                    NavigationLink("标签管理") { TagManagementView() }
+                    NavigationLink("交易模板") { TransactionTemplateManagementView() }
                     NavigationLink("快捷记账") { QuickBookkeepingSettingsView() }
                 }
 
@@ -50,7 +52,12 @@ struct SettingsView: View {
 
     private func clearAllData() {
         do {
+            for item in try context.fetch(FetchDescriptor<TransactionAttachment>()) { context.delete(item) }
+            for item in try context.fetch(FetchDescriptor<TransactionRelation>()) { context.delete(item) }
+            for item in try context.fetch(FetchDescriptor<TransactionTemplate>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<LedgerTransaction>()) { context.delete(item) }
+            for item in try context.fetch(FetchDescriptor<TransactionPaymentPart>()) { context.delete(item) }
+            for item in try context.fetch(FetchDescriptor<TransactionTag>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<MonthlyBudget>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<CurrencyWallet>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<Account>()) { context.delete(item) }

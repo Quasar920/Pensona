@@ -1,0 +1,101 @@
+import Foundation
+import SwiftData
+
+enum TransactionRelationError: LocalizedError, Equatable {
+    case originalMustBeExpense
+    case invalidAmount
+    case exceedsOriginalAmount
+    case currencyMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .originalMustBeExpense: "只有支出交易可以记录退款或报销"
+        case .invalidAmount: "金额必须大于 0"
+        case .exceedsOriginalAmount: "累计退款和报销不能超过原支出金额"
+        case .currencyMismatch: "退款或报销钱包必须与原交易币种一致"
+        }
+    }
+}
+
+struct TransactionRelationSummary: Equatable {
+    let refunded: Decimal
+    let reimbursed: Decimal
+    let originalAmount: Decimal
+
+    var totalRecovered: Decimal { refunded + reimbursed }
+    var remaining: Decimal { max(0, originalAmount - totalRecovered) }
+}
+
+@MainActor
+final class TransactionRelationService {
+    private let context: ModelContext
+
+    init(context: ModelContext) {
+        self.context = context
+    }
+
+    func relations(for original: LedgerTransaction) throws -> [TransactionRelation] {
+        let id = original.id
+        return try context.fetch(FetchDescriptor<TransactionRelation>())
+            .filter { $0.originalTransactionID == id }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func summary(for original: LedgerTransaction) throws -> TransactionRelationSummary {
+        let relations = try relations(for: original)
+        return TransactionRelationSummary(
+            refunded: relations.filter { $0.kind == .refund }.reduce(0) { $0 + $1.amount },
+            reimbursed: relations.filter { $0.kind == .reimbursement }.reduce(0) { $0 + $1.amount },
+            originalAmount: original.sourceAmount ?? original.amount ?? 0
+        )
+    }
+
+    @discardableResult
+    func record(
+        kind: TransactionRelationKind,
+        original: LedgerTransaction,
+        amount: Decimal,
+        wallet: CurrencyWallet,
+        date: Date = .now,
+        note: String? = nil
+    ) throws -> LedgerTransaction {
+        guard original.type == .expense else {
+            throw TransactionRelationError.originalMustBeExpense
+        }
+        guard amount > 0 else { throw TransactionRelationError.invalidAmount }
+        let originalCurrency = original.sourceCurrencyCode ?? original.currencyCode
+        guard wallet.currencyCode == originalCurrency else {
+            throw TransactionRelationError.currencyMismatch
+        }
+        let summary = try summary(for: original)
+        guard amount <= summary.remaining else {
+            throw TransactionRelationError.exceedsOriginalAmount
+        }
+
+        let cleanNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let related = try LedgerService(context: context).create(TransactionDraft(
+            type: .income,
+            amount: amount,
+            sourceWallet: wallet,
+            date: date,
+            note: cleanNote?.isEmpty == false ? cleanNote : "关联\(kind.title)：\(original.note ?? original.merchantOrCounterparty ?? "原支出")",
+            merchantOrCounterparty: original.merchantOrCounterparty,
+            category: nil,
+            tags: original.tags
+        ))
+        let relation = TransactionRelation(
+            kind: kind,
+            originalTransactionID: original.id,
+            relatedTransactionID: related.id,
+            amount: amount
+        )
+        context.insert(relation)
+        do {
+            try context.save()
+            return related
+        } catch {
+            try? LedgerService(context: context).deleteTransaction(related)
+            throw error
+        }
+    }
+}

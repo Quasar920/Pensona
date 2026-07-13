@@ -12,6 +12,10 @@ enum LedgerError: LocalizedError, Equatable {
     case destinationAmountRequired
     case sameCurrencyExchange
     case missingAdjustment
+    case paymentPartsMismatch
+    case paymentCurrencyMismatch
+    case duplicatePaymentWallet
+    case relatedTransactionExists
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +29,10 @@ enum LedgerError: LocalizedError, Equatable {
         case .destinationAmountRequired: "请输入大于 0 的换入金额"
         case .sameCurrencyExchange: "换汇必须选择两个不同币种的钱包"
         case .missingAdjustment: "请选择调整方向并填写调整原因"
+        case .paymentPartsMismatch: "组合付款分项之和必须等于交易总额"
+        case .paymentCurrencyMismatch: "组合付款只能使用相同币种的钱包"
+        case .duplicatePaymentWallet: "组合付款不能重复选择同一个钱包"
+        case .relatedTransactionExists: "请先删除这笔支出关联的退款或报销交易"
         }
     }
 }
@@ -175,11 +183,39 @@ final class LedgerService {
     }
 
     func deleteTransaction(_ transaction: LedgerTransaction) throws {
-        let snapshots = snapshots(for: [transaction])
+        try deleteTransactions([transaction])
+    }
+
+    func deleteTransactions(_ transactions: [LedgerTransaction]) throws {
+        guard !transactions.isEmpty else { return }
+        let snapshots = snapshots(for: transactions)
+        var attachmentPaths: [String] = []
         do {
-            try reverseTransaction(transaction)
-            context.delete(transaction)
+            let allRelations = try context.fetch(FetchDescriptor<TransactionRelation>())
+            let transactionIDs = Set(transactions.map(\.id))
+            if allRelations.contains(where: {
+                transactionIDs.contains($0.originalTransactionID)
+                    && !transactionIDs.contains($0.relatedTransactionID)
+            }) {
+                throw LedgerError.relatedTransactionExists
+            }
+            for relation in allRelations where
+                transactionIDs.contains(relation.originalTransactionID)
+                    || transactionIDs.contains(relation.relatedTransactionID) {
+                context.delete(relation)
+            }
+            let allAttachments = try context.fetch(FetchDescriptor<TransactionAttachment>())
+            for attachment in allAttachments where transactionIDs.contains(attachment.transactionID) {
+                attachmentPaths.append(attachment.relativePath)
+                context.delete(attachment)
+            }
+            for transaction in transactions {
+                try reverseTransaction(transaction)
+                context.delete(transaction)
+            }
             try context.save()
+            let store = AttachmentStore()
+            for path in attachmentPaths { try? store.remove(relativePath: path) }
         } catch {
             context.rollback()
             restore(snapshots)
@@ -203,7 +239,9 @@ final class LedgerService {
         let snapshots = snapshots(for: [existing, replacement])
         do {
             try reverseTransaction(existing)
+            let oldPaymentParts = existing.paymentParts
             draft.apply(to: existing)
+            for part in oldPaymentParts { context.delete(part) }
             try applyTransaction(existing)
             try context.save()
         } catch {
@@ -250,7 +288,10 @@ final class LedgerService {
     private func snapshots(for transactions: [LedgerTransaction]) -> [WalletSnapshot] {
         var seen = Set<ObjectIdentifier>()
         return transactions
-            .flatMap { [$0.sourceWallet, $0.destinationWallet, $0.feeWallet] }
+            .flatMap { transaction in
+                [transaction.sourceWallet, transaction.destinationWallet, transaction.feeWallet]
+                    + transaction.paymentParts.map(\.wallet)
+            }
             .compactMap { $0 }
             .compactMap { wallet in
                 guard seen.insert(ObjectIdentifier(wallet)).inserted else { return nil }

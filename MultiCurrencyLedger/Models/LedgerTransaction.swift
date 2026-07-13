@@ -32,6 +32,9 @@ final class LedgerTransaction {
     @Relationship(deleteRule: .nullify) var destinationWallet: CurrencyWallet?
     @Relationship(deleteRule: .nullify) var feeWallet: CurrencyWallet?
     @Relationship(deleteRule: .nullify) var category: LedgerCategory?
+    @Relationship(inverse: \TransactionTag.transactions) var tags: [TransactionTag]
+    @Relationship(deleteRule: .cascade, inverse: \TransactionPaymentPart.transaction)
+    var paymentParts: [TransactionPaymentPart]
 
     init(
         id: UUID = UUID(),
@@ -55,6 +58,8 @@ final class LedgerTransaction {
         adjustmentDirection: AdjustmentDirection? = nil,
         adjustmentReason: String? = nil,
         category: LedgerCategory? = nil,
+        tags: [TransactionTag] = [],
+        paymentParts: [TransactionPaymentPart] = [],
         merchantOrCounterparty: String? = nil,
         originalAmount: Decimal? = nil,
         discountAmount: Decimal? = nil,
@@ -83,6 +88,8 @@ final class LedgerTransaction {
         adjustmentDirectionRawValue = adjustmentDirection?.rawValue
         self.adjustmentReason = adjustmentReason
         self.category = category
+        self.tags = tags
+        self.paymentParts = paymentParts
         self.merchantOrCounterparty = merchantOrCounterparty
         self.originalAmount = originalAmount
         self.discountAmount = discountAmount

@@ -8,6 +8,7 @@ struct TransactionFormState {
     var sourceWalletID: UUID?
     var destinationWalletID: UUID?
     var categoryID: UUID?
+    var tagIDs: Set<UUID>
     var feeWalletID: UUID?
     var date: Date
     var note: String
@@ -16,6 +17,8 @@ struct TransactionFormState {
     var adjustmentReason: String
     var includesFee: Bool
     var feeText: String
+    var usesSplitPayment: Bool
+    var paymentParts: [PaymentPartFormState]
 
     private var originalAmount: Decimal?
     private var discountAmount: Decimal?
@@ -28,6 +31,7 @@ struct TransactionFormState {
         sourceWalletID = nil
         destinationWalletID = nil
         categoryID = nil
+        tagIDs = []
         feeWalletID = nil
         self.date = date
         note = ""
@@ -36,6 +40,8 @@ struct TransactionFormState {
         adjustmentReason = "手动校准"
         includesFee = false
         feeText = ""
+        usesSplitPayment = false
+        paymentParts = []
         originalAmount = nil
         discountAmount = nil
         recognitionImportID = nil
@@ -48,6 +54,7 @@ struct TransactionFormState {
         sourceWalletID = draft.sourceWallet?.id
         destinationWalletID = draft.destinationWallet?.id
         categoryID = draft.category?.id
+        tagIDs = Set(draft.tags.map(\.id))
         feeWalletID = draft.feeWallet?.id
         date = draft.date
         note = draft.note ?? ""
@@ -56,6 +63,10 @@ struct TransactionFormState {
         adjustmentReason = draft.adjustmentReason ?? "手动校准"
         includesFee = draft.feeAmount != nil
         feeText = draft.feeAmount.map(Self.string) ?? ""
+        usesSplitPayment = draft.paymentParts.count >= 2
+        paymentParts = draft.paymentParts.map {
+            PaymentPartFormState(walletID: $0.wallet.id, amountText: Self.string($0.amount))
+        }
         originalAmount = draft.originalAmount
         discountAmount = draft.discountAmount
         recognitionImportID = draft.recognitionImportID
@@ -74,6 +85,8 @@ struct TransactionFormState {
         feeText = ""
         adjustmentDirection = .increase
         adjustmentReason = "手动校准"
+        usesSplitPayment = false
+        paymentParts = []
     }
 
     mutating func resetForContinuousEntry(now: Date = .now) {
@@ -85,6 +98,7 @@ struct TransactionFormState {
         date = now
         note = ""
         merchantOrCounterparty = ""
+        for index in paymentParts.indices { paymentParts[index].amountText = "" }
         originalAmount = nil
         discountAmount = nil
         recognitionImportID = nil
@@ -99,7 +113,8 @@ struct TransactionFormState {
 
     func makeDraft(
         wallets: [CurrencyWallet],
-        categories: [LedgerCategory]
+        categories: [LedgerCategory],
+        tags: [TransactionTag] = []
     ) throws -> TransactionDraft {
         guard let amount = DecimalParser.parse(amountText), amount > 0 else {
             throw ValidationError("请输入大于 0 的有效金额")
@@ -149,6 +164,22 @@ struct TransactionFormState {
         let cleanMerchant = merchantOrCounterparty.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanAdjustmentReason = adjustmentReason.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let resolvedPaymentParts: [TransactionPaymentPartDraft]
+        if usesSplitPayment {
+            guard kind == .expense || kind == .income, paymentParts.count >= 2 else {
+                throw LedgerError.paymentPartsMismatch
+            }
+            resolvedPaymentParts = try paymentParts.map { part in
+                guard let wallet = wallets.first(where: { $0.id == part.walletID }),
+                      let amount = DecimalParser.parse(part.amountText), amount > 0 else {
+                    throw LedgerError.paymentPartsMismatch
+                }
+                return TransactionPaymentPartDraft(wallet: wallet, amount: amount)
+            }
+        } else {
+            resolvedPaymentParts = []
+        }
+
         return TransactionDraft(
             type: kind,
             amount: amount,
@@ -161,6 +192,8 @@ struct TransactionFormState {
             note: cleanNote.isEmpty ? nil : cleanNote,
             merchantOrCounterparty: cleanMerchant.isEmpty ? nil : cleanMerchant,
             category: categories.first(where: { $0.id == categoryID }),
+            tags: tags.filter { tagIDs.contains($0.id) },
+            paymentParts: resolvedPaymentParts,
             adjustmentDirection: kind == .adjustment ? adjustmentDirection : nil,
             adjustmentReason: kind == .adjustment
                 ? (cleanAdjustmentReason.isEmpty ? "手动校准" : cleanAdjustmentReason)
@@ -173,5 +206,39 @@ struct TransactionFormState {
 
     private static func string(_ decimal: Decimal) -> String {
         NSDecimalNumber(decimal: decimal).stringValue
+    }
+
+    mutating func setSplitPaymentEnabled(_ enabled: Bool, wallets: [CurrencyWallet]) {
+        usesSplitPayment = enabled
+        guard enabled else {
+            paymentParts = []
+            return
+        }
+        let sourceID = sourceWalletID
+        let sourceCode = wallets.first { $0.id == sourceID }?.currencyCode
+        let secondID = wallets.first {
+            $0.id != sourceID && $0.currencyCode == sourceCode
+        }?.id
+        paymentParts = [
+            PaymentPartFormState(walletID: sourceID),
+            PaymentPartFormState(walletID: secondID)
+        ]
+    }
+
+    mutating func synchronizePrimaryPaymentWallet() {
+        guard usesSplitPayment, !paymentParts.isEmpty else { return }
+        paymentParts[0].walletID = sourceWalletID
+    }
+}
+
+struct PaymentPartFormState: Identifiable, Equatable {
+    let id: UUID
+    var walletID: UUID?
+    var amountText: String
+
+    init(id: UUID = UUID(), walletID: UUID?, amountText: String = "") {
+        self.id = id
+        self.walletID = walletID
+        self.amountText = amountText
     }
 }
