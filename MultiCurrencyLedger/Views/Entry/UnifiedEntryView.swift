@@ -2,6 +2,34 @@ import SwiftData
 import SwiftUI
 
 struct EntryView: View {
+    private let seed: TransactionDraft?
+    private let dismissAfterSave: Bool
+    private let resetSeedDate: Bool
+    private let presentationTitle: String?
+
+    init(
+        seed: TransactionDraft? = nil,
+        dismissAfterSave: Bool = true,
+        resetSeedDate: Bool = true,
+        presentationTitle: String? = nil
+    ) {
+        self.seed = seed
+        self.dismissAfterSave = dismissAfterSave
+        self.resetSeedDate = resetSeedDate
+        self.presentationTitle = presentationTitle
+    }
+
+    var body: some View {
+        EntryLoadedView(
+            seed: seed,
+            dismissAfterSave: dismissAfterSave,
+            resetSeedDate: resetSeedDate,
+            presentationTitle: presentationTitle
+        )
+    }
+}
+
+private struct EntryLoadedView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @AppStorage("selectedBookID") private var selectedBookID = ""
@@ -10,7 +38,6 @@ struct EntryView: View {
     @Query(sort: \Account.createdAt) private var accounts: [Account]
     @Query(sort: [SortDescriptor(\LedgerCategory.typeRawValue), SortDescriptor(\LedgerCategory.sortOrder)])
     private var categories: [LedgerCategory]
-    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
     @Query(sort: \TransactionTemplate.updatedAt, order: .reverse)
     private var templates: [TransactionTemplate]
 
@@ -21,14 +48,17 @@ struct EntryView: View {
 
     @State private var form: TransactionFormState
     @State private var pendingDraft: TransactionDraft?
+    @State private var pendingAASplitDraft: AASplitDraft?
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var showingNegativeWarning = false
     @State private var initialized = false
+    @State private var pendingSaveAction: EntrySaveAction = .complete
+    @State private var isSaving = false
 
     init(
         seed: TransactionDraft? = nil,
-        dismissAfterSave: Bool = false,
+        dismissAfterSave: Bool = true,
         resetSeedDate: Bool = true,
         presentationTitle: String? = nil
     ) {
@@ -70,11 +100,6 @@ struct EntryView: View {
         }
     }
 
-    private var scopedTags: [TransactionTag] {
-        guard let bookID = selectedBook?.id else { return [] }
-        return tags.filter { $0.bookID == bookID && !$0.isArchived }
-    }
-
     private var scopedTemplates: [TransactionTemplate] {
         guard let bookID = selectedBook?.id else { return [] }
         return templates.filter { $0.bookID == bookID && !$0.isArchived }
@@ -96,39 +121,28 @@ struct EntryView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ZStack {
+                HomePalette.background.ignoresSafeArea()
                 if allWallets.isEmpty {
-                    Section {
-                        ContentUnavailableView {
-                            Label("还不能记账", systemImage: "plus.circle")
-                        } description: {
-                            Text("请先在“资产”中创建账户并添加至少一个币种。")
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                    ContentUnavailableView {
+                        Label("还不能记账", systemImage: "plus.circle")
+                    } description: {
+                        Text("请先在“资产”中创建账户并添加至少一个币种。")
                     }
+                    .padding(24)
                 } else {
-                    TransactionFormSections(
+                    EntryComposerView(
                         state: $form,
                         wallets: allWallets,
                         categories: scopedCategories,
-                        tags: scopedTags
+                        successMessage: successMessage,
+                        showsNextEntry: seed == nil,
+                        isSaving: isSaving,
+                        nextEntry: { validateAndSave(.next) },
+                        complete: { validateAndSave(.complete) }
                     )
-
-                    Section {
-                        Button("保存\(form.kind.title)", action: validateAndSave)
-                            .frame(maxWidth: .infinity)
-                            .font(.headline)
-                        if let successMessage {
-                            Label(successMessage, systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(HomePalette.background)
             .navigationTitle(presentationTitle ?? (seed == nil ? "记账" : "复制交易"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -177,7 +191,10 @@ struct EntryView: View {
                 titleVisibility: .visible
             ) {
                 Button("仍然保存", role: .destructive, action: performSave)
-                Button("取消", role: .cancel) { pendingDraft = nil }
+                Button("取消", role: .cancel) {
+                    pendingDraft = nil
+                    pendingAASplitDraft = nil
+                }
             } message: {
                 Text("应用允许负余额，但请确认金额和钱包选择无误。")
             }
@@ -255,16 +272,26 @@ struct EntryView: View {
         }
     }
 
-    private func validateAndSave() {
+    private func validateAndSave(_ action: EntrySaveAction) {
+        guard !isSaving else { return }
         successMessage = nil
+        pendingSaveAction = action
         do {
-            let draft = try form.makeDraft(
-                wallets: allWallets,
-                categories: scopedCategories,
-                tags: scopedTags
-            )
+            let draft = try form.makeDraft(wallets: allWallets, categories: scopedCategories)
+            let resolvedAASplit: AASplitDraft?
+            if let aaDraft = form.aaSplitDraft {
+                let code = draft.sourceWallet?.currencyCode ?? SupportedCurrency.CNY.rawValue
+                resolvedAASplit = try AASplitCalculator().resolvedDraft(
+                    aaDraft,
+                    totalAmount: draft.amount,
+                    currencyCode: code
+                )
+            } else {
+                resolvedAASplit = nil
+            }
             let deltas = try TransactionImpactCalculator().deltas(for: draft)
             pendingDraft = draft
+            pendingAASplitDraft = resolvedAASplit
             if deltas.contains(where: { $0.wallet.balance + $0.amount < 0 }) {
                 showingNegativeWarning = true
             } else {
@@ -272,25 +299,41 @@ struct EntryView: View {
             }
         } catch {
             pendingDraft = nil
+            pendingAASplitDraft = nil
             errorMessage = error.localizedDescription
         }
     }
 
     private func performSave() {
         guard let draft = pendingDraft else { return }
+        isSaving = true
         do {
-            try LedgerService(context: context).create(draft)
+            let aaDraft = pendingAASplitDraft
+            try LedgerService(context: context).create(draft) { transaction in
+                if let aaDraft {
+                    try AASplitService(context: context).upsert(
+                        aaDraft,
+                        for: transaction,
+                        save: false
+                    )
+                }
+            }
             rememberSelections()
             pendingDraft = nil
-            if dismissAfterSave {
+            pendingAASplitDraft = nil
+            if pendingSaveAction == .complete && dismissAfterSave {
+                // 完成路径保持 isSaving = true，防止 Sheet 关闭动画期间重复点击造成重复写入
                 dismiss()
             } else {
+                isSaving = false
                 form.resetForContinuousEntry()
                 ensureDestinationAndFeeSelections()
-                successMessage = "已保存，可继续记账"
+                successMessage = "已记下一笔"
             }
         } catch {
+            isSaving = false
             pendingDraft = nil
+            pendingAASplitDraft = nil
             errorMessage = error.localizedDescription
         }
     }
@@ -319,8 +362,7 @@ struct EntryView: View {
             let draft = try TransactionTemplateService(context: context).resolve(
                 template,
                 wallets: allWallets,
-                categories: scopedCategories,
-                tags: scopedTags
+                categories: scopedCategories
             )
             form = TransactionFormState(draft: draft)
             ensureSeedSelections()
@@ -329,4 +371,9 @@ struct EntryView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+private enum EntrySaveAction {
+    case next
+    case complete
 }

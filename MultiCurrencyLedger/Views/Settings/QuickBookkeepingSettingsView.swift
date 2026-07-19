@@ -49,7 +49,7 @@ struct QuickBookkeepingSettingsView: View {
                 Text("示例：multiledger://entry?type=expense&amount=28.5&currency=CNY&wallet=现金&category=餐饮")
                     .font(.footnote)
                     .textSelection(.enabled)
-                Text("支持：type、amount、currency、book、wallet、destinationWallet、destinationAmount、fee、feeWallet、category、tags、merchant、note、date。未知字段会被拒绝。")
+                Text("支持：type、amount、currency、book、wallet、destinationWallet、destinationAmount、fee、feeWallet、category、merchant、note、date。未知字段会被拒绝。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
