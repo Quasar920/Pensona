@@ -29,7 +29,8 @@ struct LedgerScope: Equatable, Sendable {
     }
 
     func contains(date: Date) -> Bool {
-        monthInterval.contains(date)
+        let interval = monthInterval
+        return date >= interval.start && date < interval.end
     }
 
     func contains(transaction: LedgerTransaction) -> Bool {

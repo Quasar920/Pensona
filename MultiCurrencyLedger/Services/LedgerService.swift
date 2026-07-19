@@ -17,6 +17,8 @@ enum LedgerError: LocalizedError, Equatable {
     case paymentCurrencyMismatch
     case duplicatePaymentWallet
     case relatedTransactionExists
+    case aaSettlementExists
+    case aaRecoveryManaged
 
     var errorDescription: String? {
         switch self {
@@ -35,6 +37,8 @@ enum LedgerError: LocalizedError, Equatable {
         case .paymentCurrencyMismatch: "组合付款只能使用相同币种的钱包"
         case .duplicatePaymentWallet: "组合付款不能重复选择同一个钱包"
         case .relatedTransactionExists: "请先删除这笔支出关联的退款或报销交易"
+        case .aaSettlementExists: "请先删除这笔支出关联的 AA 收款记录"
+        case .aaRecoveryManaged: "AA 收款只能从原支出的 AA 收款历史中处理"
         }
     }
 }
@@ -227,6 +231,31 @@ final class LedgerService {
         _ transactions: [LedgerTransaction],
         configureBeforeSave: () throws -> Void = {}
     ) throws {
+        try deleteTransactions(
+            transactions,
+            allowedAASettlementIDs: [],
+            configureBeforeSave: configureBeforeSave
+        )
+    }
+
+    func deleteAASettlementTransaction(
+        _ transaction: LedgerTransaction,
+        settlement: AASettlement
+    ) throws {
+        guard settlement.recoveryTransactionID == transaction.id else {
+            throw LedgerError.aaRecoveryManaged
+        }
+        try deleteTransactions(
+            [transaction],
+            allowedAASettlementIDs: [settlement.id]
+        )
+    }
+
+    private func deleteTransactions(
+        _ transactions: [LedgerTransaction],
+        allowedAASettlementIDs: Set<UUID>,
+        configureBeforeSave: () throws -> Void = {}
+    ) throws {
         guard !transactions.isEmpty else { return }
         let snapshots = snapshots(for: transactions)
         var attachmentPaths: [String] = []
@@ -239,10 +268,39 @@ final class LedgerService {
             }) {
                 throw LedgerError.relatedTransactionExists
             }
+
+            let allSplits = try context.fetch(FetchDescriptor<AASplit>())
+            let allAASettlements = try context.fetch(FetchDescriptor<AASettlement>())
+            let splitByID = Dictionary(uniqueKeysWithValues: allSplits.map { ($0.id, $0) })
+            for settlement in allAASettlements where transactionIDs.contains(settlement.recoveryTransactionID) {
+                let originalIsAlsoDeleted = splitByID[settlement.splitID]
+                    .map { transactionIDs.contains($0.originalTransactionID) } ?? false
+                guard allowedAASettlementIDs.contains(settlement.id) || originalIsAlsoDeleted else {
+                    throw LedgerError.aaRecoveryManaged
+                }
+            }
+            for split in allSplits where transactionIDs.contains(split.originalTransactionID) {
+                let pendingRecoveries = allAASettlements.filter {
+                    $0.splitID == split.id && !transactionIDs.contains($0.recoveryTransactionID)
+                }
+                guard pendingRecoveries.isEmpty else { throw LedgerError.aaSettlementExists }
+            }
+
             for relation in allRelations where
                 transactionIDs.contains(relation.originalTransactionID)
                     || transactionIDs.contains(relation.relatedTransactionID) {
                 context.delete(relation)
+            }
+            let deletedSplitIDs = Set(allSplits.filter {
+                transactionIDs.contains($0.originalTransactionID)
+            }.map(\.id))
+            for settlement in allAASettlements where
+                transactionIDs.contains(settlement.recoveryTransactionID)
+                    || deletedSplitIDs.contains(settlement.splitID) {
+                context.delete(settlement)
+            }
+            for split in allSplits where deletedSplitIDs.contains(split.id) {
+                context.delete(split)
             }
             let allAttachments = try context.fetch(FetchDescriptor<TransactionAttachment>())
             for attachment in allAttachments where transactionIDs.contains(attachment.transactionID) {
@@ -273,20 +331,33 @@ final class LedgerService {
 
     func replaceTransaction(
         _ existing: LedgerTransaction,
-        with draft: TransactionDraft
+        with draft: TransactionDraft,
+        configureBeforeSave: (LedgerTransaction) throws -> Void = { _ in }
     ) throws {
         _ = try impactCalculator.deltas(for: draft)
+        let aaSettlements = try context.fetch(FetchDescriptor<AASettlement>())
+        guard !aaSettlements.contains(where: { $0.recoveryTransactionID == existing.id }) else {
+            throw LedgerError.aaRecoveryManaged
+        }
         let replacement = draft.makeTransaction()
         let snapshots = snapshots(for: [existing, replacement])
+        let transactionSnapshot = LedgerTransactionSnapshot(transaction: existing)
         do {
             try reverseTransaction(existing)
             let oldPaymentParts = existing.paymentParts
             draft.apply(to: existing)
             for part in oldPaymentParts { context.delete(part) }
             try applyTransaction(existing)
+            try configureBeforeSave(existing)
+            let hasAASplit = try context.fetch(FetchDescriptor<AASplit>())
+                .contains(where: { $0.originalTransactionID == existing.id })
+            if hasAASplit, existing.type != .expense {
+                throw AASplitError.expenseRequired
+            }
             try context.save()
         } catch {
             context.rollback()
+            transactionSnapshot.restore()
             restore(snapshots)
             throw error
         }
@@ -356,4 +427,96 @@ private struct WalletSnapshot {
     let wallet: CurrencyWallet
     let balance: Decimal
     let updatedAt: Date
+}
+
+private struct LedgerTransactionSnapshot {
+    let transaction: LedgerTransaction
+    let typeRawValue: String
+    let amount: Decimal?
+    let currencyCode: String?
+    let date: Date
+    let note: String?
+    let updatedAt: Date
+    let sourceAmount: Decimal?
+    let sourceCurrencyCode: String?
+    let destinationAmount: Decimal?
+    let destinationCurrencyCode: String?
+    let feeAmount: Decimal?
+    let feeCurrencyCode: String?
+    let exchangeRate: Decimal?
+    let adjustmentDirectionRawValue: String?
+    let adjustmentReason: String?
+    let merchantOrCounterparty: String?
+    let originalAmount: Decimal?
+    let discountAmount: Decimal?
+    let recognitionImportID: UUID?
+    let sourceAccount: Account?
+    let sourceWallet: CurrencyWallet?
+    let destinationAccount: Account?
+    let destinationWallet: CurrencyWallet?
+    let feeWallet: CurrencyWallet?
+    let category: LedgerCategory?
+    let tags: [TransactionTag]
+    let paymentParts: [TransactionPaymentPart]
+
+    init(transaction: LedgerTransaction) {
+        self.transaction = transaction
+        typeRawValue = transaction.typeRawValue
+        amount = transaction.amount
+        currencyCode = transaction.currencyCode
+        date = transaction.date
+        note = transaction.note
+        updatedAt = transaction.updatedAt
+        sourceAmount = transaction.sourceAmount
+        sourceCurrencyCode = transaction.sourceCurrencyCode
+        destinationAmount = transaction.destinationAmount
+        destinationCurrencyCode = transaction.destinationCurrencyCode
+        feeAmount = transaction.feeAmount
+        feeCurrencyCode = transaction.feeCurrencyCode
+        exchangeRate = transaction.exchangeRate
+        adjustmentDirectionRawValue = transaction.adjustmentDirectionRawValue
+        adjustmentReason = transaction.adjustmentReason
+        merchantOrCounterparty = transaction.merchantOrCounterparty
+        originalAmount = transaction.originalAmount
+        discountAmount = transaction.discountAmount
+        recognitionImportID = transaction.recognitionImportID
+        sourceAccount = transaction.sourceAccount
+        sourceWallet = transaction.sourceWallet
+        destinationAccount = transaction.destinationAccount
+        destinationWallet = transaction.destinationWallet
+        feeWallet = transaction.feeWallet
+        category = transaction.category
+        tags = transaction.tags
+        paymentParts = transaction.paymentParts
+    }
+
+    func restore() {
+        transaction.typeRawValue = typeRawValue
+        transaction.amount = amount
+        transaction.currencyCode = currencyCode
+        transaction.date = date
+        transaction.note = note
+        transaction.updatedAt = updatedAt
+        transaction.sourceAmount = sourceAmount
+        transaction.sourceCurrencyCode = sourceCurrencyCode
+        transaction.destinationAmount = destinationAmount
+        transaction.destinationCurrencyCode = destinationCurrencyCode
+        transaction.feeAmount = feeAmount
+        transaction.feeCurrencyCode = feeCurrencyCode
+        transaction.exchangeRate = exchangeRate
+        transaction.adjustmentDirectionRawValue = adjustmentDirectionRawValue
+        transaction.adjustmentReason = adjustmentReason
+        transaction.merchantOrCounterparty = merchantOrCounterparty
+        transaction.originalAmount = originalAmount
+        transaction.discountAmount = discountAmount
+        transaction.recognitionImportID = recognitionImportID
+        transaction.sourceAccount = sourceAccount
+        transaction.sourceWallet = sourceWallet
+        transaction.destinationAccount = destinationAccount
+        transaction.destinationWallet = destinationWallet
+        transaction.feeWallet = feeWallet
+        transaction.category = category
+        transaction.tags = tags
+        transaction.paymentParts = paymentParts
+    }
 }

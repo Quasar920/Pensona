@@ -13,7 +13,8 @@ final class LedgerScopeTests: XCTestCase {
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let schema = Schema([
             LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
-            LedgerTransaction.self, ExchangeRate.self, MonthlyBudget.self
+            LedgerTransaction.self, AASplit.self, AASettlement.self,
+            ExchangeRate.self, MonthlyBudget.self
         ])
         container = try ModelContainer(
             for: schema,

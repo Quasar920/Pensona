@@ -82,11 +82,7 @@ enum SpreadsheetImportDecoder {
             } else if character == delimiter {
                 row.append(field)
                 field = ""
-            } else if character == "\n" || character == "\r" {
-                if character == "\r" {
-                    let next = content.index(after: index)
-                    if next < content.endIndex, content[next] == "\n" { index = next }
-                }
+            } else if character.isNewline {
                 row.append(field)
                 if row.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
                     rows.append(row)

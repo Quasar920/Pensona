@@ -12,7 +12,8 @@ final class TransactionImportServiceTests: XCTestCase {
             LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
             LedgerTransaction.self, TransactionTag.self, TransactionPaymentPart.self,
             TransactionRelation.self, TransactionAttachment.self,
-            TransactionImportBatch.self, TransactionImportFingerprint.self
+            TransactionImportBatch.self, TransactionImportFingerprint.self,
+            AASplit.self, AASettlement.self
         ])
         container = try ModelContainer(
             for: schema,

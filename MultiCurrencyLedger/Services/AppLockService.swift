@@ -43,6 +43,10 @@ struct AppLockCredentialStore {
     }
 
     func hasCredential() -> Bool {
+        (try? credentialExists()) == true
+    }
+
+    private func credentialExists() throws -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -50,13 +54,20 @@ struct AppLockCredentialStore {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         let status = SecItemCopyMatching(query as CFDictionary, nil)
-        if status == errSecItemNotFound { return false }
-        return true
+        switch status {
+        case errSecSuccess:
+            return true
+        case errSecItemNotFound:
+            return false
+        default:
+            throw AppLockError.keychain(status)
+        }
     }
 
     func setPassword(_ password: String, currentPassword: String? = nil) throws {
         guard password.count >= 6 else { throw AppLockError.passwordTooShort }
-        if hasCredential() {
+        let isConfigured = try credentialExists()
+        if isConfigured {
             guard let currentPassword, try verify(currentPassword) else { throw AppLockError.wrongPassword }
         }
         var salt = Data(count: 24)
@@ -82,7 +93,7 @@ struct AppLockCredentialStore {
             kSecAttrSynchronizable as String: false
         ]
         let status: OSStatus
-        if SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess {
+        if isConfigured {
             status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         } else {
             status = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil)
@@ -97,7 +108,7 @@ struct AppLockCredentialStore {
     }
 
     func remove(currentPassword: String) throws {
-        guard hasCredential() else { throw AppLockError.notConfigured }
+        guard try credentialExists() else { throw AppLockError.notConfigured }
         guard try verify(currentPassword) else { throw AppLockError.wrongPassword }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
