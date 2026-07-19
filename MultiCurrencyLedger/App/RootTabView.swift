@@ -131,6 +131,10 @@ struct RootTabView: View {
         switch ProcessInfo.processInfo.environment["APP_PREVIEW_SCREEN"] {
         case "assets":
             selection = .assets
+        case "plans":
+            selection = .savings
+        case "reports":
+            selection = .statistics
         case "entry":
             DispatchQueue.main.async { presentation.presentNewEntry() }
         default:
