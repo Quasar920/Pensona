@@ -4,7 +4,22 @@ struct RecognitionAccountOption: Codable, Equatable {
     let walletID: UUID
     let accountName: String
     let accountNote: String?
+    let accountLastFour: String?
     let currencyCode: String
+
+    init(
+        walletID: UUID,
+        accountName: String,
+        accountNote: String?,
+        accountLastFour: String? = nil,
+        currencyCode: String
+    ) {
+        self.walletID = walletID
+        self.accountName = accountName
+        self.accountNote = accountNote
+        self.accountLastFour = accountLastFour
+        self.currencyCode = currencyCode
+    }
 }
 
 struct RecognitionCategoryOption: Codable, Equatable {
@@ -20,6 +35,12 @@ struct RecognitionRequestContext: Codable, Equatable {
 }
 
 struct RecognitionContextBuilder {
+    private let cardIdentityStore: AccountCardIdentityStore
+
+    init(cardIdentityStore: AccountCardIdentityStore = AccountCardIdentityStore()) {
+        self.cardIdentityStore = cardIdentityStore
+    }
+
     func makeContext(book: LedgerBook, categories: [LedgerCategory]) -> RecognitionRequestContext {
         let accounts = book.accounts
             .filter { !$0.isArchived }
@@ -29,6 +50,9 @@ struct RecognitionContextBuilder {
                         walletID: wallet.id,
                         accountName: account.name,
                         accountNote: account.note,
+                        accountLastFour: account.type.supportsCardLastFour
+                            ? cardIdentityStore.lastFour(for: account.id)
+                            : nil,
                         currencyCode: wallet.currencyCode
                     )
                 }

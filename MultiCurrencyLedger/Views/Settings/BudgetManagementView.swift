@@ -10,6 +10,7 @@ struct BudgetManagementView: View {
     @Query(sort: \MonthlyBudget.monthStart, order: .reverse) private var budgets: [MonthlyBudget]
     @Query private var transactions: [LedgerTransaction]
     @Query private var relations: [TransactionRelation]
+    @Query private var aaSplits: [AASplit]
     @Query private var rates: [ExchangeRate]
     @State private var period: BudgetPeriod = .monthly
     @State private var date = Date.now
@@ -35,42 +36,79 @@ struct BudgetManagementView: View {
     private var statuses: [BudgetStatus] {
         let service = BudgetStatisticsService(baseCurrencyCode: baseCurrencyCode, rates: rates)
         return periodBudgets.map {
-            service.status(for: $0, transactions: transactions, relations: relations)
+            service.status(
+                for: $0,
+                transactions: transactions,
+                relations: relations,
+                aaSplits: aaSplits
+            )
         }
     }
 
     var body: some View {
-        List {
-            Section("周期") {
-                Picker("预算周期", selection: $period) {
-                    ForEach(BudgetPeriod.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                DatePicker("查看日期", selection: $date, displayedComponents: .date)
-                Button("复制上期预算", action: copyPrevious)
-            }
-            Section("预算执行") {
-                if statuses.isEmpty {
-                    ContentUnavailableView("尚未设置预算", systemImage: "gauge.with.dots.needle.0percent")
-                } else {
-                    ForEach(statuses) { status in
-                        Button { openTransactions(status.budget) } label: {
-                            BudgetStatusRow(
-                                status: status,
-                                categoryName: categoryName(status.budget.categoryID),
-                                currencyCode: baseCurrencyCode
-                            )
+        ZStack {
+            HomePalette.background.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 14) {
+                    VStack(spacing: 14) {
+                        Picker("预算周期", selection: $period) {
+                            ForEach(BudgetPeriod.allCases) { Text($0.title).tag($0) }
                         }
-                        .buttonStyle(.plain)
-                        .swipeActions {
-                            Button("编辑") { editingBudget = status.budget }.tint(.blue)
-                            Button("删除", role: .destructive) { remove(status.budget) }
+                        .pickerStyle(.segmented)
+                        HStack {
+                            DatePicker("查看日期", selection: $date, displayedComponents: .date)
+                            Button("复制上期", action: copyPrevious)
+                                .font(.subheadline.weight(.semibold))
+                                .buttonStyle(.bordered)
                         }
                     }
+                    .padding(16)
+                    .ledgerGlassCard(cornerRadius: 24)
+
+                    HStack {
+                        Text("预算执行").font(.headline)
+                        Spacer()
+                        Text("\(statuses.count) 项").font(.caption).foregroundStyle(.secondary)
+                    }
+
+                    if statuses.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "gauge.with.dots.needle.0percent")
+                                .font(.system(size: 28, weight: .semibold)).foregroundStyle(HomePalette.accent)
+                            Text("尚未设置预算").font(.headline)
+                            Text("添加总预算或分类预算，即可在这里跟踪执行进度。")
+                                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 30).padding(.horizontal, 20)
+                        .ledgerGlassCard(cornerRadius: 26)
+                    } else {
+                        ForEach(statuses) { status in
+                            Button { openTransactions(status.budget) } label: {
+                                BudgetStatusRow(
+                                    status: status,
+                                    categoryName: categoryName(status.budget.categoryID),
+                                    currencyCode: baseCurrencyCode
+                                )
+                                .padding(16)
+                            }
+                            .buttonStyle(LedgerGlassPressStyle())
+                            .ledgerGlassCard(cornerRadius: 24, tint: status.isOver ? .red : HomePalette.accent)
+                            .contextMenu {
+                                Button("编辑") { editingBudget = status.budget }
+                                Button("删除", role: .destructive) { remove(status.budget) }
+                            }
+                        }
+                    }
+
+                    Button { showingAdd = true } label: {
+                        Label("添加总预算或分类预算", systemImage: "plus")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(HomePalette.accent)
                 }
-            }
-            Section {
-                Button { showingAdd = true } label: { Label("添加总预算或分类预算", systemImage: "plus.circle") }
+                .padding(18)
             }
         }
         .navigationTitle("预算管理")

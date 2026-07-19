@@ -17,7 +17,8 @@ final class CloudSyncServiceTests: XCTestCase {
             InstallmentOccurrence.self, RecognitionImportRecord.self, ExchangeRate.self,
             MonthlyBudget.self, SavingsGoal.self, SavingsAllocation.self,
             TransactionImportBatch.self, TransactionImportFingerprint.self,
-            CloudSyncTombstone.self, CloudSyncConflictCopy.self
+            CloudSyncTombstone.self, CloudSyncConflictCopy.self,
+            AASplit.self, AASettlement.self
         ])
         container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         context = container.mainContext

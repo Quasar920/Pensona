@@ -15,7 +15,8 @@ final class BackupServiceTests: XCTestCase {
             RecurringSchedule.self, RecurringOccurrence.self, InstallmentPlan.self,
             InstallmentOccurrence.self, RecognitionImportRecord.self, ExchangeRate.self,
             MonthlyBudget.self, SavingsGoal.self, SavingsAllocation.self,
-            TransactionImportBatch.self, TransactionImportFingerprint.self
+            TransactionImportBatch.self, TransactionImportFingerprint.self,
+            AASplit.self, AASettlement.self
         ])
         container = try ModelContainer(
             for: schema,
@@ -32,8 +33,26 @@ final class BackupServiceTests: XCTestCase {
             name: "餐饮", type: .expense, symbolName: "fork.knife", sortOrder: 0, bookID: book.id
         )
         context.insert(book); context.insert(account); context.insert(wallet); context.insert(category)
-        _ = try LedgerService(context: context).createExpense(
+        let expense = try LedgerService(context: context).createExpense(
             amount: 20, wallet: wallet, category: category, date: .now, note: "午餐"
+        )
+        let split = try AASplitService(context: context).upsert(
+            AASplitDraft(
+                otherPeopleCount: 1,
+                calculationMode: .equal,
+                othersOwedAmount: 10,
+                note: "同事午餐",
+                basedOnAmount: 20
+            ),
+            for: expense
+        )
+        _ = try AASettlementService(context: context).record(
+            split: split,
+            original: expense,
+            amount: 4,
+            wallet: wallet,
+            date: .now,
+            note: "部分收款"
         )
         let goal = SavingsGoal(bookID: book.id, name: "旅行", targetAmount: 1_000, currencyCode: "CNY")
         context.insert(goal)
@@ -46,7 +65,7 @@ final class BackupServiceTests: XCTestCase {
             attachmentStore: AttachmentStore(rootURL: temporaryFolder("source"))
         ))
         let preview = try BackupService.preview(data: data)
-        XCTAssertEqual(preview.transactionCount, 1)
+        XCTAssertEqual(preview.transactionCount, 2)
         XCTAssertEqual(preview.bookCount, 1)
 
         try LedgerService(context: context).deleteTransactions(
@@ -62,8 +81,10 @@ final class BackupServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(result.settings.baseCurrencyCode, "CNY")
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<LedgerTransaction>()), 1)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<CurrencyWallet>()).first?.balance, 80)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<LedgerTransaction>()), 2)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<CurrencyWallet>()).first?.balance, 84)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<AASplit>()).first?.othersOwedAmount, 10)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<AASettlement>()).first?.amount, 4)
         XCTAssertEqual(try context.fetch(FetchDescriptor<SavingsAllocation>()).first?.goal?.name, "旅行")
     }
 

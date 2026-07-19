@@ -5,9 +5,14 @@ import SwiftData
 final class AccountService {
     private let context: ModelContext
     private let ledger: LedgerService
+    private let cardIdentityStore: AccountCardIdentityStore
 
-    init(context: ModelContext) {
+    init(
+        context: ModelContext,
+        cardIdentityStore: AccountCardIdentityStore = AccountCardIdentityStore()
+    ) {
         self.context = context
+        self.cardIdentityStore = cardIdentityStore
         ledger = LedgerService(context: context)
     }
 
@@ -15,13 +20,16 @@ final class AccountService {
         name: String,
         type: AccountType,
         note: String?,
+        cardLastFour: String? = nil,
         book: LedgerBook? = nil
     ) throws -> Account {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ValidationError("请输入账户名称") }
+        let cleanLastFour = try AccountCardIdentityStore.validated(cardLastFour)
         let account = Account(name: trimmed, type: type, note: note, book: book)
         context.insert(account)
         try context.save()
+        try cardIdentityStore.setLastFour(cleanLastFour, for: account.id)
         return account
     }
 
@@ -66,8 +74,10 @@ final class AccountService {
                 })
         }
         guard !isReferenced else { throw LedgerError.accountInUse }
+        let accountID = account.id
         context.delete(account)
         try context.save()
+        cardIdentityStore.removeLastFour(for: accountID)
     }
 
     func update(
@@ -76,10 +86,12 @@ final class AccountService {
         type: AccountType,
         note: String?,
         sortOrder: Int,
-        isHidden: Bool
+        isHidden: Bool,
+        cardLastFour: String?
     ) throws {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw ValidationError("请输入账户名称") }
+        let cleanLastFour = try AccountCardIdentityStore.validated(cardLastFour)
         account.name = cleanName
         account.typeRawValue = type.rawValue
         let cleanNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -88,6 +100,7 @@ final class AccountService {
         account.isHidden = isHidden
         account.updatedAt = .now
         try context.save()
+        try cardIdentityStore.setLastFour(cleanLastFour, for: account.id)
     }
 
     func setArchived(_ archived: Bool, account: Account) throws {

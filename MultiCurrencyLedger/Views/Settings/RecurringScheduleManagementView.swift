@@ -8,7 +8,6 @@ struct RecurringScheduleManagementView: View {
     private var books: [LedgerBook]
     @Query(sort: \Account.createdAt) private var accounts: [Account]
     @Query(sort: \LedgerCategory.sortOrder) private var categories: [LedgerCategory]
-    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
     @Query(sort: \RecurringSchedule.nextDueDate) private var schedules: [RecurringSchedule]
     @Query private var occurrences: [RecurringOccurrence]
     @State private var showingAdd = false
@@ -62,8 +61,7 @@ struct RecurringScheduleManagementView: View {
                     wallets: wallets,
                     categories: categories.filter {
                         !$0.isArchived && ($0.bookID == nil || $0.bookID == book.id)
-                    },
-                    tags: tags.filter { !$0.isArchived && $0.bookID == book.id }
+                    }
                 )
             }
         }
@@ -127,7 +125,6 @@ private struct RecurringScheduleEditorView: View {
     let book: LedgerBook
     let wallets: [CurrencyWallet]
     let categories: [LedgerCategory]
-    let tags: [TransactionTag]
     @State private var name = ""
     @State private var frequency: RecurringFrequency = .monthly
     @State private var interval = 1
@@ -154,8 +151,7 @@ private struct RecurringScheduleEditorView: View {
                 TransactionFormSections(
                     state: $form,
                     wallets: wallets,
-                    categories: categories,
-                    tags: tags
+                    categories: categories
                 )
                 Section {
                     Text("首次到期日使用交易日期。月度规则会记住原始日期，例如 31 日会在短月落到月末。")
@@ -212,7 +208,7 @@ private struct RecurringScheduleEditorView: View {
 
     private func save() {
         do {
-            let draft = try form.makeDraft(wallets: wallets, categories: categories, tags: tags)
+            let draft = try form.makeDraft(wallets: wallets, categories: categories)
             try RecurringScheduleService(context: context).create(
                 name: name,
                 draft: draft,

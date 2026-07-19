@@ -150,7 +150,7 @@ struct AccountDetailView: View {
     }
 }
 
-private struct AccountEditView: View {
+struct AccountEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     let account: Account
@@ -159,6 +159,7 @@ private struct AccountEditView: View {
     @State private var note: String
     @State private var sortOrder: Int
     @State private var isHidden: Bool
+    @State private var cardLastFour: String
     @State private var errorMessage: String?
 
     init(account: Account) {
@@ -168,6 +169,7 @@ private struct AccountEditView: View {
         _note = State(initialValue: account.note ?? "")
         _sortOrder = State(initialValue: account.sortOrder)
         _isHidden = State(initialValue: account.isHidden)
+        _cardLastFour = State(initialValue: AccountCardIdentityStore().lastFour(for: account.id) ?? "")
     }
 
     var body: some View {
@@ -176,6 +178,22 @@ private struct AccountEditView: View {
                 TextField("账户名称", text: $name)
                 Picker("账户类型", selection: $type) {
                     ForEach(AccountType.allCases) { Text($0.title).tag($0) }
+                }
+                if type.supportsCardLastFour {
+                    Section {
+                        TextField("选填", text: $cardLastFour)
+                            .keyboardType(.numberPad)
+                            .onChange(of: cardLastFour) { _, value in
+                                let sanitized = AccountCardIdentityStore.sanitizedInput(value)
+                                if sanitized != value { cardLastFour = sanitized }
+                            }
+                    } header: {
+                        Text("银行卡后四位")
+                    } footer: {
+                        Text("用于快捷指令记账时快速识别账户。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 TextField("备注", text: $note, axis: .vertical)
                 Stepper("排序：\(sortOrder)", value: $sortOrder, in: 0...999)
@@ -201,7 +219,8 @@ private struct AccountEditView: View {
                 type: type,
                 note: note,
                 sortOrder: sortOrder,
-                isHidden: isHidden
+                isHidden: isHidden,
+                cardLastFour: type.supportsCardLastFour ? cardLastFour : nil
             )
             dismiss()
         } catch { errorMessage = error.localizedDescription }

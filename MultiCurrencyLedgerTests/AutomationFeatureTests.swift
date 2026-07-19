@@ -12,7 +12,8 @@ final class AutomationFeatureTests: XCTestCase {
             LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
             LedgerTransaction.self, TransactionTag.self, TransactionPaymentPart.self,
             RecurringSchedule.self, RecurringOccurrence.self,
-            InstallmentPlan.self, InstallmentOccurrence.self
+            InstallmentPlan.self, InstallmentOccurrence.self,
+            AASplit.self, AASettlement.self
         ])
         container = try ModelContainer(
             for: schema,

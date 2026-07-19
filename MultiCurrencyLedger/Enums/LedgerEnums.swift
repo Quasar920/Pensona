@@ -82,6 +82,7 @@ enum AccountType: String, CaseIterable, Codable, Identifiable {
 
     var canonicalAccountType: AccountType { assetGroup.canonicalAccountType }
     var isLiability: Bool { assetGroup.isLiability }
+    var supportsCardLastFour: Bool { self == .bankCard || self == .creditCard }
 }
 
 enum AssetGroup: String, CaseIterable, Codable, Identifiable {

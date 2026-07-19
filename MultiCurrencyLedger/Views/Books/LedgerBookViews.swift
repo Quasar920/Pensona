@@ -79,7 +79,7 @@ struct LedgerBookSwitcherView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 18)
-                .background(.ultraThinMaterial)
+                .background(.bar)
             }
             .navigationTitle("切换账本")
             .navigationBarTitleDisplayMode(.inline)

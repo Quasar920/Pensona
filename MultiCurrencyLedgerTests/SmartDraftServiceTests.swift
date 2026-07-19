@@ -6,13 +6,10 @@ final class SmartDraftServiceTests: XCTestCase {
         let account = Account(name: "支付宝", type: .eWallet)
         let wallet = CurrencyWallet(currency: .CNY, account: account)
         let category = LedgerCategory(name: "餐饮", type: .expense, symbolName: "fork.knife", sortOrder: 0)
-        let tag = TransactionTag(name: "工作", bookID: UUID())
-
         let result = try SmartDraftService().parse(
-            "2026-07-12 用支付宝花 28.5 元吃午饭 餐饮 #工作",
+            "2026-07-12 用支付宝花 28.5 元吃午饭 餐饮",
             wallets: [wallet],
             categories: [category],
-            tags: [tag],
             now: Date(timeIntervalSince1970: 0)
         )
 
@@ -20,7 +17,6 @@ final class SmartDraftServiceTests: XCTestCase {
         XCTAssertEqual(result.draft.amount, Decimal(string: "28.5"))
         XCTAssertEqual(result.draft.sourceWallet?.id, wallet.id)
         XCTAssertEqual(result.draft.category?.id, category.id)
-        XCTAssertEqual(result.draft.tags.map(\.id), [tag.id])
     }
 
     func testTransferRequiresAndResolvesTwoNamedAccounts() throws {
@@ -32,8 +28,7 @@ final class SmartDraftServiceTests: XCTestCase {
         let result = try SmartDraftService().parse(
             "从现金转账 100 到银行卡",
             wallets: [source, destination],
-            categories: [],
-            tags: []
+            categories: []
         )
 
         XCTAssertEqual(result.draft.type, .transfer)
@@ -45,8 +40,7 @@ final class SmartDraftServiceTests: XCTestCase {
         XCTAssertThrowsError(try SmartDraftService().parse(
             "昨天用现金吃午饭",
             wallets: [],
-            categories: [],
-            tags: []
+            categories: []
         )) { error in
             XCTAssertEqual(error as? SmartDraftError, .missingAmount)
         }

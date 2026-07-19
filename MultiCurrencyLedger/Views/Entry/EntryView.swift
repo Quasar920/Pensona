@@ -5,98 +5,54 @@ struct MonthlyOverviewCard: View {
     let summary: MonthlySummaryResult
     let setBudget: () -> Void
 
-    private var remainingPercentageText: String {
+    private var remainingAmountText: String {
         guard summary.missingCodes.isEmpty else { return "--" }
-        guard let remainingProgress = summary.remainingBudgetProgress else { return "--" }
-        return "\(Int((remainingProgress * 100).rounded()))%"
+        guard let remaining = summary.remainingBudget else { return "设置预算" }
+        return wholeNumber(remaining)
     }
 
-    private var remainingStateText: String {
-        if summary.budget == nil { return "剩余" }
-        if !summary.missingCodes.isEmpty { return "汇率缺失" }
-        return summary.isOverBudget ? "已超支" : "剩余"
+    private var totalBudgetText: String {
+        summary.budget.map(wholeNumber) ?? "预算"
     }
 
-    private var budgetTint: Color {
-        summary.isOverBudget ? HomePalette.expense : Color.accentColor
+    private var gaugeProgress: Double {
+        guard summary.missingCodes.isEmpty else { return 0 }
+        return summary.remainingBudgetProgress ?? 0
     }
 
-    private var cardSurface: Color {
-        Color(uiColor: .secondarySystemGroupedBackground)
+    private var stateText: String {
+        if !summary.missingCodes.isEmpty { return "汇率数据不完整" }
+        if summary.budget == nil { return "点击设置本月预算" }
+        return summary.isOverBudget ? "本月已超出预算" : "本月剩余预算"
     }
 
     var body: some View {
         Button(action: setBudget) {
-            VStack(spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("预算")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-
-                    Spacer()
-
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(remainingStateText)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(summary.isOverBudget ? HomePalette.expense : .secondary)
-                        Text(remainingPercentageText)
-                            .font(.system(size: 20, weight: .semibold, design: .rounded))
-                            .foregroundStyle(summary.isOverBudget ? HomePalette.expense : .primary)
-                            .monospacedDigit()
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-
-                BudgetGaugeView(
-                    currencyCode: currencyCode,
-                    summary: summary,
-                    tint: budgetTint,
-                    showsIncompleteData: summary.budget != nil && !summary.missingCodes.isEmpty
-                )
-                .frame(height: 72)
-
-                Divider()
-                    .overlay(Color.primary.opacity(0.06))
-
-                HStack(alignment: .bottom) {
-                    CashFlowMetric(
-                        title: "收入",
-                        amount: summary.income,
-                        currencyCode: currencyCode,
-                        alignment: .leading
-                    )
-
-                    Spacer(minLength: 28)
-
-                    CashFlowMetric(
-                        title: "支出",
-                        amount: summary.expense,
-                        currencyCode: currencyCode,
-                        alignment: .trailing
-                    )
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 15)
-            .padding(.bottom, 14)
-            .background {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(cardSurface)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.primary.opacity(0.055), lineWidth: 0.8)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            FigmaBudgetGauge(
+                amountText: remainingAmountText,
+                stateText: stateText,
+                totalText: totalBudgetText,
+                progress: gaugeProgress,
+                isOverBudget: summary.isOverBudget
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: 183)
+            .ledgerContentSurface(cornerRadius: 36)
+            .contentShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
         }
         .buttonStyle(BudgetCardButtonStyle())
-        .shadow(color: Color(red: 0.13, green: 0.20, blue: 0.28).opacity(0.07), radius: 14, y: 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(summary.budget == nil ? "本月预算，未设置" : "本月预算")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint(summary.budget == nil ? "点击设置预算" : "点击修改预算")
+    }
+
+    private func wholeNumber(_ amount: Decimal) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: amount as NSDecimalNumber) ?? "\(amount)"
     }
 
     private var accessibilityValue: String {
@@ -108,72 +64,62 @@ struct MonthlyOverviewCard: View {
         }
         let total = MoneyFormatter.compactString(budget, currencyCode: currencyCode)
         let used = MoneyFormatter.compactString(summary.expense, currencyCode: currencyCode)
-        return "已用 \(used)，总预算 \(total)，\(remainingStateText) \(remainingPercentageText)"
+        return "已用 \(used)，总预算 \(total)，\(stateText) \(remainingAmountText)"
     }
 }
 
-private struct BudgetGaugeView: View {
-    let currencyCode: String
-    let summary: MonthlySummaryResult
-    let tint: Color
-    let showsIncompleteData: Bool
+private struct FigmaBudgetGauge: View {
+    let amountText: String
+    let stateText: String
+    let totalText: String
+    let progress: Double
+    let isOverBudget: Bool
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .top) {
             BudgetGaugeArc()
                 .stroke(
-                    Color.primary.opacity(0.075),
-                    style: StrokeStyle(lineWidth: 11, lineCap: .round)
+                    HomePalette.gaugeTrack,
+                    style: StrokeStyle(lineWidth: 18, lineCap: .round)
                 )
+                .frame(width: 214, height: 108)
+                .padding(.top, 25)
 
             BudgetGaugeArc()
-                .trim(from: 0, to: showsIncompleteData ? 0 : summary.budgetProgress)
+                .trim(from: 0, to: progress)
                 .stroke(
-                    tint,
-                    style: StrokeStyle(lineWidth: 11, lineCap: .round)
+                    isOverBudget ? HomePalette.expense : HomePalette.gaugeProgress,
+                    style: StrokeStyle(lineWidth: 18, lineCap: .round)
                 )
-                .animation(.snappy(duration: 0.32), value: summary.budgetProgress)
+                .frame(width: 214, height: 108)
+                .padding(.top, 25)
+                .animation(LedgerMotion.responsive, value: progress)
 
-            Group {
-                if showsIncompleteData {
-                    VStack(spacing: 3) {
-                        Text("汇率数据不完整")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text("补充汇率后将自动更新")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                } else if let budget = summary.budget {
-                    VStack(spacing: 2) {
-                        Text("本月已用")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text(
-                            MoneyFormatter.compactString(summary.expense, currencyCode: currencyCode)
-                                + " / "
-                                + MoneyFormatter.compactString(budget, currencyCode: currencyCode)
-                        )
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                    }
-                } else {
-                    VStack(spacing: 3) {
-                        Text("点击设置预算")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text("设置后将按本月支出自动更新")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            VStack(spacing: 5) {
+                Text(amountText)
+                    .font(.system(size: amountText.count > 7 ? 25 : 32, weight: .medium, design: .rounded))
+                    .foregroundStyle(isOverBudget ? HomePalette.expense : .primary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.68)
+                Text(stateText)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .padding(.bottom, 1)
+            .frame(width: 150)
+            .padding(.top, 76)
+
+            HStack {
+                Text("0")
+                Spacer()
+                Text(totalText)
+            }
+            .font(.system(size: 9, weight: .regular))
+            .foregroundStyle(.tertiary)
+            .frame(width: 226)
+            .padding(.top, 143)
         }
-        .padding(.horizontal, 28)
         .accessibilityHidden(true)
     }
 }
@@ -191,28 +137,6 @@ private struct BudgetGaugeArc: Shape {
             clockwise: false
         )
         return path
-    }
-}
-
-private struct CashFlowMetric: View {
-    let title: String
-    let amount: Decimal
-    let currencyCode: String
-    let alignment: HorizontalAlignment
-
-    var body: some View {
-        VStack(alignment: alignment, spacing: 3) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(MoneyFormatter.compactString(amount, currencyCode: currencyCode))
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-        }
-        .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
     }
 }
 
@@ -307,10 +231,12 @@ struct BudgetEditorSheet: View {
 }
 
 private struct BudgetCardButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive, value: configuration.isPressed)
     }
 }

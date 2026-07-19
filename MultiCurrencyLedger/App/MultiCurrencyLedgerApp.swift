@@ -18,6 +18,7 @@ struct MultiCurrencyLedgerApp: App {
             RootTabView()
                 .task {
                     do {
+                        try LegacyTagRemovalService.removeAll(context: modelContainer.mainContext)
                         try InitialDataService.seedIfNeeded(context: modelContainer.mainContext)
                         try PreviewDataService.seedIfRequested(context: modelContainer.mainContext)
                         _ = AutomationDueService(context: modelContainer.mainContext).generateAllDue()

@@ -62,7 +62,9 @@ struct MonthlySummaryService {
         for transactions: [LedgerTransaction],
         month date: Date,
         budget: Decimal? = nil,
-        relations: [TransactionRelation] = []
+        relations: [TransactionRelation] = [],
+        aaSplits: [AASplit] = [],
+        aaSettlements: [AASettlement] = []
     ) -> MonthlySummary {
         let interval = calendar.dateInterval(of: .month, for: date)
         let monthStart = interval?.start ?? calendar.startOfDay(for: date)
@@ -74,6 +76,10 @@ struct MonthlySummaryService {
         var expense = Decimal.zero
         var missingCodes = Set<String>()
         let relatedIncomeIDs = Set(relations.map(\.relatedTransactionID))
+        let aaRecoveryIDs = Set(aaSettlements.map(\.recoveryTransactionID))
+        let aaSplitByOriginalID = Dictionary(uniqueKeysWithValues: aaSplits.map {
+            ($0.originalTransactionID, $0)
+        })
 
         for transaction in transactions
         where transaction.date >= monthStart && transaction.date < monthEnd {
@@ -84,7 +90,9 @@ struct MonthlySummaryService {
 
             switch transaction.type {
             case .income:
-                if relatedIncomeIDs.contains(transaction.id) {
+                if aaRecoveryIDs.contains(transaction.id) {
+                    break
+                } else if relatedIncomeIDs.contains(transaction.id) {
                     add(
                         -principal,
                         currencyCode: principalCode,
@@ -102,8 +110,12 @@ struct MonthlySummaryService {
                     )
                 }
             case .expense:
+                let personalAmount = max(
+                    0,
+                    principal - (aaSplitByOriginalID[transaction.id]?.othersOwedAmount ?? 0)
+                )
                 add(
-                    principal,
+                    personalAmount,
                     currencyCode: principalCode,
                     to: &expense,
                     missingCodes: &missingCodes,

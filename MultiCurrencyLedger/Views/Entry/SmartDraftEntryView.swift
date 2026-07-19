@@ -6,7 +6,6 @@ struct SmartDraftEntryView: View {
     @Query(sort: \LedgerBook.createdAt) private var books: [LedgerBook]
     @Query(sort: \Account.createdAt) private var accounts: [Account]
     @Query(sort: \LedgerCategory.sortOrder) private var categories: [LedgerCategory]
-    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
     @StateObject private var transcriber = SpeechDraftTranscriber()
     @State private var text = ""
     @State private var result: SmartDraftParseResult?
@@ -22,11 +21,6 @@ struct SmartDraftEntryView: View {
         guard let bookID else { return [] }
         return categories.filter { !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID) }
     }
-    private var scopedTags: [TransactionTag] {
-        guard let bookID else { return [] }
-        return tags.filter { !$0.isArchived && $0.bookID == bookID }
-    }
-
     var body: some View {
         Form {
             Section {
@@ -34,7 +28,7 @@ struct SmartDraftEntryView: View {
                     .frame(minHeight: 120)
                     .overlay(alignment: .topLeading) {
                         if text.isEmpty {
-                            Text("例如：昨天用支付宝花 28.5 元吃午饭 #工作")
+                            Text("例如：昨天用支付宝花 28.5 元吃午饭")
                                 .foregroundStyle(.tertiary).padding(.top, 8).allowsHitTesting(false)
                         }
                     }
@@ -56,7 +50,7 @@ struct SmartDraftEntryView: View {
             } header: {
                 Text("文本或语音")
             } footer: {
-                Text("支持支出、收入、转账、换汇、金额、账户、分类、日期和 #标签；解析不会自动入账。")
+                Text("支持支出、收入、转账、换汇、金额、账户、分类和日期；解析不会自动入账。")
             }
 
             if let result {
@@ -101,8 +95,7 @@ struct SmartDraftEntryView: View {
             result = try SmartDraftService().parse(
                 text,
                 wallets: wallets,
-                categories: scopedCategories,
-                tags: scopedTags
+                categories: scopedCategories
             )
         } catch {
             result = nil

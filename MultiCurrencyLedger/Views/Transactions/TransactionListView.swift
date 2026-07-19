@@ -9,7 +9,7 @@ struct TransactionListView: View {
     @Query(sort: \LedgerTransaction.date, order: .reverse) private var transactions: [LedgerTransaction]
     @Query(sort: \Account.name) private var accounts: [Account]
     @Query(sort: \LedgerCategory.sortOrder) private var categories: [LedgerCategory]
-    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
+    @Query private var aaSettlements: [AASettlement]
 
     @State private var query: TransactionQueryState
     @State private var queryConfigured: Bool
@@ -19,6 +19,8 @@ struct TransactionListView: View {
     @State private var showingBulkEdit = false
     @State private var showingBulkDelete = false
     @State private var bulkErrorMessage: String?
+    @State private var editingTransaction: LedgerTransaction?
+    @State private var deletingTransaction: LedgerTransaction?
 
     init(initialQuery: TransactionQueryState? = nil) {
         _query = State(initialValue: initialQuery ?? TransactionQueryState())
@@ -53,6 +55,10 @@ struct TransactionListView: View {
         transactions.filter { selectedTransactionIDs.contains($0.id) }
     }
 
+    private var aaRecoveryTransactionIDs: Set<UUID> {
+        Set(aaSettlements.map(\.recoveryTransactionID))
+    }
+
     private var filterSummary: String {
         var parts: [String] = []
         if query.bookID == nil {
@@ -67,7 +73,6 @@ struct TransactionListView: View {
         if let currencyCode = query.currencyCode { parts.append(currencyCode) }
         if let kind = query.kind { parts.append(kind.title) }
         if let category = categories.first(where: { $0.id == query.categoryID }) { parts.append(category.name) }
-        if !query.tagIDs.isEmpty { parts.append("标签 \(query.tagIDs.count)") }
         if query.sortOrder != .dateDescending { parts.append(query.sortOrder.title) }
         return parts.isEmpty ? "当前账本 · 全部时间" : parts.joined(separator: " · ")
     }
@@ -153,8 +158,7 @@ struct TransactionListView: View {
                     defaultBookID: selectedBook?.id,
                     books: books,
                     accounts: accounts,
-                    categories: categories,
-                    tags: tags
+                    categories: categories
                 ) { updatedQuery in
                     query = updatedQuery
                 }
@@ -162,12 +166,14 @@ struct TransactionListView: View {
             .sheet(isPresented: $showingBulkEdit) {
                 BulkTransactionEditView(
                     transactions: selectedTransactions,
-                    categories: categories,
-                    tags: tags
+                    categories: categories
                 ) {
                     selectedTransactionIDs.removeAll()
                     editMode = .inactive
                 }
+            }
+            .sheet(item: $editingTransaction) { transaction in
+                TransactionEditView(transaction: transaction) {}
             }
             .confirmationDialog(
                 "删除所选 \(selectedTransactionIDs.count) 笔交易？",
@@ -176,6 +182,19 @@ struct TransactionListView: View {
             ) {
                 Button("删除并回滚全部余额", role: .destructive, action: deleteSelected)
                 Button("取消", role: .cancel) {}
+            }
+            .confirmationDialog(
+                "确定删除这笔交易？",
+                isPresented: Binding(
+                    get: { deletingTransaction != nil },
+                    set: { if !$0 { deletingTransaction = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("删除并回滚余额", role: .destructive, action: deletePendingTransaction)
+                Button("取消", role: .cancel) { deletingTransaction = nil }
+            } message: {
+                Text("删除后，相关账户余额会同步回滚。")
             }
             .alert("批量操作失败", isPresented: Binding(
                 get: { bulkErrorMessage != nil }, set: { if !$0 { bulkErrorMessage = nil } }
@@ -194,11 +213,36 @@ struct TransactionListView: View {
     private func transactionRows(_ items: [LedgerTransaction]) -> some View {
         ForEach(items) { transaction in
             if editMode.isEditing {
-                TransactionCompactRow(transaction: transaction)
-                    .tag(transaction.id)
-            } else {
-                NavigationLink(value: transaction) {
+                if aaRecoveryTransactionIDs.contains(transaction.id) {
                     TransactionCompactRow(transaction: transaction)
+                } else {
+                    TransactionCompactRow(transaction: transaction)
+                        .tag(transaction.id)
+                }
+            } else {
+                if aaRecoveryTransactionIDs.contains(transaction.id) {
+                    NavigationLink(value: transaction) {
+                        TransactionCompactRow(transaction: transaction)
+                    }
+                } else {
+                    NavigationLink(value: transaction) {
+                        TransactionCompactRow(transaction: transaction)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button {
+                            editingTransaction = transaction
+                        } label: {
+                            Label("编辑", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            deletingTransaction = transaction
+                        } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
@@ -223,6 +267,16 @@ struct TransactionListView: View {
             bulkErrorMessage = error.localizedDescription
         }
     }
+
+    private func deletePendingTransaction() {
+        guard let transaction = deletingTransaction else { return }
+        do {
+            try LedgerService(context: context).deleteTransaction(transaction)
+            deletingTransaction = nil
+        } catch {
+            bulkErrorMessage = error.localizedDescription
+        }
+    }
 }
 
 private struct BulkTransactionEditView: View {
@@ -230,12 +284,9 @@ private struct BulkTransactionEditView: View {
     @Environment(\.modelContext) private var context
     let transactions: [LedgerTransaction]
     let categories: [LedgerCategory]
-    let tags: [TransactionTag]
     let onSaved: () -> Void
     @State private var changesCategory = false
     @State private var categoryID: UUID?
-    @State private var changesTags = false
-    @State private var tagIDs = Set<UUID>()
     @State private var changesDate = false
     @State private var date = Date.now
     @State private var errorMessage: String?
@@ -256,12 +307,6 @@ private struct BulkTransactionEditView: View {
         }
     }
 
-    private var availableTags: [TransactionTag] {
-        let bookIDs = Set(transactions.compactMap { $0.sourceAccount?.book?.id })
-        guard bookIDs.count == 1, let bookID = bookIDs.first else { return [] }
-        return tags.filter { !$0.isArchived && $0.bookID == bookID }
-    }
-
     var body: some View {
         NavigationStack {
             Form {
@@ -274,19 +319,6 @@ private struct BulkTransactionEditView: View {
                             ForEach(availableCategories) { Text($0.name).tag($0.id as UUID?) }
                         }
                         .disabled(availableCategories.isEmpty)
-                    }
-                }
-                Section("标签") {
-                    Toggle("替换标签", isOn: $changesTags)
-                    if changesTags {
-                        ForEach(availableTags) { tag in
-                            Toggle(tag.name, isOn: Binding(
-                                get: { tagIDs.contains(tag.id) },
-                                set: { selected in
-                                    if selected { tagIDs.insert(tag.id) } else { tagIDs.remove(tag.id) }
-                                }
-                            ))
-                        }
                     }
                 }
                 Section("日期") {
@@ -312,8 +344,6 @@ private struct BulkTransactionEditView: View {
                 transactions,
                 changesCategory: changesCategory,
                 category: categories.first { $0.id == categoryID },
-                changesTags: changesTags,
-                tags: availableTags.filter { tagIDs.contains($0.id) },
                 changesDate: changesDate,
                 date: date
             )

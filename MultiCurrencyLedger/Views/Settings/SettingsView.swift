@@ -21,7 +21,6 @@ struct SettingsView: View {
 
                 Section("分类与模板") {
                     NavigationLink("分类管理") { CategoryManagementView() }
-                    NavigationLink("标签管理") { TagManagementView() }
                     NavigationLink("交易模板") { TransactionTemplateManagementView() }
                 }
 
@@ -95,6 +94,7 @@ struct SettingsView: View {
             for item in try context.fetch(FetchDescriptor<ExchangeRate>()) { context.delete(item) }
             for item in try context.fetch(FetchDescriptor<LedgerCategory>()) { context.delete(item) }
             try context.save()
+            AccountCardIdentityStore().removeAll()
             try InitialDataService.seedIfNeeded(context: context)
         } catch {
             context.rollback()

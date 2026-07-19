@@ -11,7 +11,8 @@ final class RichTransactionFeatureTests: XCTestCase {
         let schema = Schema([
             LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
             LedgerTransaction.self, TransactionTag.self, TransactionPaymentPart.self,
-            TransactionTemplate.self, TransactionRelation.self, TransactionAttachment.self
+            TransactionTemplate.self, TransactionRelation.self, TransactionAttachment.self,
+            AASplit.self, AASettlement.self
         ])
         container = try ModelContainer(
             for: schema,
@@ -79,7 +80,7 @@ final class RichTransactionFeatureTests: XCTestCase {
             from: TransactionDraft(type: .expense, amount: 10, sourceWallet: wallet)
         )
 
-        XCTAssertThrowsError(try service.resolve(template, wallets: [], categories: [], tags: [])) {
+        XCTAssertThrowsError(try service.resolve(template, wallets: [], categories: [])) {
             XCTAssertEqual($0 as? TransactionTemplateError, .invalidReference)
         }
     }

@@ -14,7 +14,6 @@ struct TransactionDraft {
     var note: String?
     var merchantOrCounterparty: String?
     var category: LedgerCategory?
-    var tags: [TransactionTag]
     var paymentParts: [TransactionPaymentPartDraft]
     var adjustmentDirection: AdjustmentDirection?
     var adjustmentReason: String?
@@ -34,7 +33,6 @@ struct TransactionDraft {
         note: String? = nil,
         merchantOrCounterparty: String? = nil,
         category: LedgerCategory? = nil,
-        tags: [TransactionTag] = [],
         paymentParts: [TransactionPaymentPartDraft] = [],
         adjustmentDirection: AdjustmentDirection? = nil,
         adjustmentReason: String? = nil,
@@ -53,7 +51,6 @@ struct TransactionDraft {
         self.note = note
         self.merchantOrCounterparty = merchantOrCounterparty
         self.category = category
-        self.tags = tags
         self.paymentParts = paymentParts
         self.adjustmentDirection = adjustmentDirection
         self.adjustmentReason = adjustmentReason
@@ -74,7 +71,6 @@ struct TransactionDraft {
         note = transaction.note
         merchantOrCounterparty = transaction.merchantOrCounterparty
         category = transaction.category
-        tags = transaction.tags
         paymentParts = transaction.paymentParts
             .sorted { $0.sortOrder < $1.sortOrder }
             .compactMap { part in
@@ -138,7 +134,7 @@ struct TransactionDraft {
             ? adjustmentReason?.trimmingCharacters(in: .whitespacesAndNewlines)
             : nil
         transaction.category = isCategorized ? category : nil
-        transaction.tags = tags
+        transaction.tags.removeAll()
         transaction.paymentParts = paymentParts.enumerated().map { index, part in
             TransactionPaymentPart(
                 amount: part.amount,

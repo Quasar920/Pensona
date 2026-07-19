@@ -162,7 +162,6 @@ final class RecurringScheduleService {
         calendar.timeZone = timeZone
         let wallets = try context.fetch(FetchDescriptor<CurrencyWallet>())
         let categories = try context.fetch(FetchDescriptor<LedgerCategory>())
-        let tags = try context.fetch(FetchDescriptor<TransactionTag>())
         let existingKeys = Set(try context.fetch(FetchDescriptor<RecurringOccurrence>())
             .filter { $0.scheduleID == schedule.id }
             .map(\.generationKey))
@@ -198,8 +197,7 @@ final class RecurringScheduleService {
                 bookID: schedule.bookID,
                 date: dueDate,
                 wallets: wallets,
-                categories: categories,
-                tags: tags
+                categories: categories
             )
             schedule.nextDueDate = nextDate
             schedule.updatedAt = .now

@@ -12,7 +12,7 @@ enum TransactionTemplateError: LocalizedError, Equatable {
         case .emptyName: "请输入模板名称"
         case .duplicateName: "当前账本已存在同名模板"
         case .missingBook: "模板必须归属一个账本"
-        case .invalidReference: "模板引用的钱包、分类或标签已失效，请编辑或重新创建模板"
+        case .invalidReference: "模板引用的钱包或分类已失效，请编辑或重新创建模板"
         }
     }
 }
@@ -54,7 +54,6 @@ final class TransactionTemplateService {
             feeAmount: draft.feeAmount,
             feeWalletID: draft.feeWallet?.id,
             categoryID: draft.category?.id,
-            tagIDs: draft.tags.map(\.id),
             paymentParts: draft.paymentParts.map {
                 TemplatePaymentPartReference(walletID: $0.wallet.id, amount: $0.amount)
             },
@@ -72,7 +71,6 @@ final class TransactionTemplateService {
         _ template: TransactionTemplate,
         wallets: [CurrencyWallet],
         categories: [LedgerCategory],
-        tags: [TransactionTag],
         date: Date = .now
     ) throws -> TransactionDraft {
         guard !template.isArchived,
@@ -92,9 +90,6 @@ final class TransactionTemplateService {
                 $0.id == id && !$0.isArchived && ($0.bookID == nil || $0.bookID == template.bookID)
             }
         }
-        let resolvedTags = tags.filter {
-            template.tagIDs.contains($0.id) && !$0.isArchived && $0.bookID == template.bookID
-        }
         let resolvedPaymentParts = template.paymentPartReferences.compactMap { reference in
             scopedWallets.first(where: { $0.id == reference.walletID }).map {
                 TransactionPaymentPartDraft(wallet: $0, amount: reference.amount)
@@ -103,8 +98,7 @@ final class TransactionTemplateService {
 
         if template.destinationWalletID != nil && destination == nil
             || template.feeWalletID != nil && feeWallet == nil
-            || template.categoryID != nil && category == nil
-            || resolvedTags.count != Set(template.tagIDs).count {
+            || template.categoryID != nil && category == nil {
             throw TransactionTemplateError.invalidReference
         }
         if resolvedPaymentParts.count != template.paymentPartReferences.count {
@@ -123,7 +117,6 @@ final class TransactionTemplateService {
             note: template.note,
             merchantOrCounterparty: template.merchantOrCounterparty,
             category: category,
-            tags: resolvedTags,
             paymentParts: resolvedPaymentParts,
             adjustmentDirection: template.adjustmentDirection,
             adjustmentReason: template.adjustmentReason

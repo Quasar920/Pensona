@@ -35,7 +35,6 @@ struct SmartDraftService {
         _ text: String,
         wallets: [CurrencyWallet],
         categories: [LedgerCategory],
-        tags: [TransactionTag],
         now: Date = .now,
         calendar: Calendar = .current
     ) throws -> SmartDraftParseResult {
@@ -72,9 +71,6 @@ struct SmartDraftService {
             value.type == categoryKind
                 && clean.range(of: value.name, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
-        let matchedTags = tags.filter {
-            clean.range(of: "#\($0.name)", options: [.caseInsensitive, .diacriticInsensitive]) != nil
-        }
         let date = recognizedDate(clean, now: now, calendar: calendar)
         let draft = TransactionDraft(
             type: kind,
@@ -84,8 +80,7 @@ struct SmartDraftService {
             destinationAmount: destinationAmount,
             date: date,
             note: clean,
-            category: category,
-            tags: matchedTags
+            category: category
         )
         _ = try TransactionImpactCalculator().deltas(for: draft)
         var fields = [kind.title, "金额", source.account?.name ?? "账户"]

@@ -10,8 +10,10 @@ struct SyncManifest: Codable, Equatable {
         entities = [
             "book": document.books.map(\.id), "account": document.accounts.map(\.id),
             "wallet": document.wallets.map(\.id), "category": document.categories.map(\.id),
-            "tag": document.tags.map(\.id), "transaction": document.transactions.map(\.id),
+            "transaction": document.transactions.map(\.id),
             "relation": document.relations.map(\.id), "attachment": document.attachments.map(\.id),
+            "aaSplit": document.aaSplits.map(\.id),
+            "aaSettlement": document.aaSettlements.map(\.id),
             "template": document.templates.map(\.id),
             "recurringSchedule": document.recurringSchedules.map(\.id),
             "recurringOccurrence": document.recurringOccurrences.map(\.id),
@@ -394,17 +396,19 @@ final class CloudSyncService {
         value.accounts.sort { $0.id.uuidString < $1.id.uuidString }
         value.wallets.sort { $0.id.uuidString < $1.id.uuidString }
         value.categories.sort { $0.id.uuidString < $1.id.uuidString }
-        value.tags.sort { $0.id.uuidString < $1.id.uuidString }
+        value.tags = []
         value.transactions.sort { $0.id.uuidString < $1.id.uuidString }
         for index in value.transactions.indices {
-            value.transactions[index].tagIDs?.sort { $0.uuidString < $1.uuidString }
+            value.transactions[index].tagIDs = nil
             value.transactions[index].paymentParts?.sort { $0.id.uuidString < $1.id.uuidString }
         }
         value.relations.sort { $0.id.uuidString < $1.id.uuidString }
+        value.aaSplits.sort { $0.id.uuidString < $1.id.uuidString }
+        value.aaSettlements.sort { $0.id.uuidString < $1.id.uuidString }
         value.attachments.sort { $0.id.uuidString < $1.id.uuidString }
         value.templates.sort { $0.id.uuidString < $1.id.uuidString }
         for index in value.templates.indices {
-            value.templates[index].tagIDs.sort { $0.uuidString < $1.uuidString }
+            value.templates[index].tagIDs = []
             value.templates[index].paymentParts.sort { $0.walletID.uuidString < $1.walletID.uuidString }
         }
         value.recurringSchedules.sort { $0.id.uuidString < $1.id.uuidString }

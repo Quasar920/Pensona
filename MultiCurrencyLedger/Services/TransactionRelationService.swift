@@ -6,6 +6,7 @@ enum TransactionRelationError: LocalizedError, Equatable {
     case invalidAmount
     case exceedsOriginalAmount
     case currencyMismatch
+    case aaConflict
 
     var errorDescription: String? {
         switch self {
@@ -13,6 +14,7 @@ enum TransactionRelationError: LocalizedError, Equatable {
         case .invalidAmount: "金额必须大于 0"
         case .exceedsOriginalAmount: "累计退款和报销不能超过原支出金额"
         case .currencyMismatch: "退款或报销钱包必须与原交易币种一致"
+        case .aaConflict: "已设置 AA 的支出不能再记录退款或报销"
         }
     }
 }
@@ -62,6 +64,10 @@ final class TransactionRelationService {
         guard original.type == .expense else {
             throw TransactionRelationError.originalMustBeExpense
         }
+        let originalID = original.id
+        let hasAASplit = try context.fetch(FetchDescriptor<AASplit>())
+            .contains { $0.originalTransactionID == originalID }
+        guard !hasAASplit else { throw TransactionRelationError.aaConflict }
         guard amount > 0 else { throw TransactionRelationError.invalidAmount }
         let originalCurrency = original.sourceCurrencyCode ?? original.currencyCode
         guard wallet.currencyCode == originalCurrency else {
@@ -73,29 +79,21 @@ final class TransactionRelationService {
         }
 
         let cleanNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let related = try LedgerService(context: context).create(TransactionDraft(
+        return try LedgerService(context: context).create(TransactionDraft(
             type: .income,
             amount: amount,
             sourceWallet: wallet,
             date: date,
             note: cleanNote?.isEmpty == false ? cleanNote : "关联\(kind.title)：\(original.note ?? original.merchantOrCounterparty ?? "原支出")",
             merchantOrCounterparty: original.merchantOrCounterparty,
-            category: nil,
-            tags: original.tags
-        ))
-        let relation = TransactionRelation(
-            kind: kind,
-            originalTransactionID: original.id,
-            relatedTransactionID: related.id,
-            amount: amount
-        )
-        context.insert(relation)
-        do {
-            try context.save()
-            return related
-        } catch {
-            try? LedgerService(context: context).deleteTransaction(related)
-            throw error
+            category: nil
+        )) { related in
+            context.insert(TransactionRelation(
+                kind: kind,
+                originalTransactionID: original.id,
+                relatedTransactionID: related.id,
+                amount: amount
+            ))
         }
     }
 }

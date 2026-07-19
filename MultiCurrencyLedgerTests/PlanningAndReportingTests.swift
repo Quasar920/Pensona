@@ -12,7 +12,7 @@ final class PlanningAndReportingTests: XCTestCase {
             LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
             LedgerTransaction.self, TransactionTag.self, TransactionPaymentPart.self,
             TransactionRelation.self, ExchangeRate.self, MonthlyBudget.self,
-            SavingsGoal.self, SavingsAllocation.self
+            SavingsGoal.self, SavingsAllocation.self, AASplit.self, AASettlement.self
         ])
         container = try ModelContainer(
             for: schema,
@@ -149,6 +149,53 @@ final class PlanningAndReportingTests: XCTestCase {
 
         XCTAssertEqual(summary.income, 0)
         XCTAssertEqual(summary.expense, 70)
+    }
+
+    func testReportIntervalsAreHalfOpenAtMidnightBoundary() {
+        let fixture = makeFixture(balance: 1_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let start = calendar.date(from: DateComponents(year: 2026, month: 7, day: 1))!
+        let boundary = calendar.date(byAdding: .day, value: 1, to: start)!
+        let first = LedgerTransaction(
+            type: .expense,
+            amount: 10,
+            currencyCode: "CNY",
+            date: start,
+            sourceAccount: fixture.wallet.account,
+            sourceWallet: fixture.wallet,
+            category: fixture.category
+        )
+        let second = LedgerTransaction(
+            type: .expense,
+            amount: 20,
+            currencyCode: "CNY",
+            date: boundary,
+            sourceAccount: fixture.wallet.account,
+            sourceWallet: fixture.wallet,
+            category: fixture.category
+        )
+        let service = ReportQueryService(baseCurrencyCode: "CNY", rates: [], calendar: calendar)
+
+        let firstDay = service.trend(
+            transactions: [first, second],
+            relations: [],
+            interval: DateInterval(start: start, end: boundary),
+            metric: .expense,
+            granularity: .daily
+        )
+        let secondDay = service.trend(
+            transactions: [first, second],
+            relations: [],
+            interval: DateInterval(
+                start: boundary,
+                end: calendar.date(byAdding: .day, value: 1, to: boundary)!
+            ),
+            metric: .expense,
+            granularity: .daily
+        )
+
+        XCTAssertEqual(firstDay.total, 10)
+        XCTAssertEqual(secondDay.total, 20)
     }
 
     private func makeFixture(balance: Decimal) -> (

@@ -26,12 +26,11 @@ enum ReportGranularity: String, CaseIterable, Identifiable {
 }
 
 enum ReportDimension: String, CaseIterable, Identifiable {
-    case category, tag, account, book
+    case category, account, book
     var id: String { rawValue }
     var title: String {
         switch self {
         case .category: "分类"
-        case .tag: "标签"
         case .account: "账户"
         case .book: "账本"
         }
@@ -61,11 +60,15 @@ struct ReportQueryService {
         relations: [TransactionRelation],
         interval: DateInterval,
         metric: ReportMetric,
-        granularity: ReportGranularity
+        granularity: ReportGranularity,
+        aaSplits: [AASplit] = [],
+        aaSettlements: [AASettlement] = []
     ) -> ReportResult {
         aggregate(
             transactions: transactions,
             relations: relations,
+            aaSplits: aaSplits,
+            aaSettlements: aaSettlements,
             interval: interval,
             metric: metric
         ) { transaction, _ in
@@ -79,11 +82,15 @@ struct ReportQueryService {
         relations: [TransactionRelation],
         interval: DateInterval,
         metric: ReportMetric,
-        dimension: ReportDimension
+        dimension: ReportDimension,
+        aaSplits: [AASplit] = [],
+        aaSettlements: [AASettlement] = []
     ) -> ReportResult {
         aggregate(
             transactions: transactions,
             relations: relations,
+            aaSplits: aaSplits,
+            aaSettlements: aaSettlements,
             interval: interval,
             metric: metric
         ) { transaction, originalForRecovery in
@@ -91,9 +98,6 @@ struct ReportQueryService {
             switch dimension {
             case .category:
                 return [(semantic.category?.id.uuidString ?? "none", semantic.category?.name ?? "未分类")]
-            case .tag:
-                let tags = semantic.tags
-                return tags.isEmpty ? [("none", "无标签")] : tags.map { ($0.id.uuidString, $0.name) }
             case .account:
                 return [(semantic.sourceAccount?.id.uuidString ?? "none", semantic.sourceAccount?.name ?? "未知账户")]
             case .book:
@@ -105,6 +109,8 @@ struct ReportQueryService {
     private func aggregate(
         transactions: [LedgerTransaction],
         relations: [TransactionRelation],
+        aaSplits: [AASplit],
+        aaSettlements: [AASettlement],
         interval: DateInterval,
         metric: ReportMetric,
         group: (LedgerTransaction, LedgerTransaction?) -> [(key: String, title: String)]
@@ -112,15 +118,22 @@ struct ReportQueryService {
         let valuation = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
         let byID = Dictionary(uniqueKeysWithValues: transactions.map { ($0.id, $0) })
         let relationByRelatedID = Dictionary(uniqueKeysWithValues: relations.map { ($0.relatedTransactionID, $0) })
+        let aaSplitByOriginalID = Dictionary(uniqueKeysWithValues: aaSplits.map {
+            ($0.originalTransactionID, $0)
+        })
+        let aaRecoveryIDs = Set(aaSettlements.map(\.recoveryTransactionID))
         var values: [String: (title: String, value: Decimal)] = [:]
         var missing = Set<String>()
 
-        for transaction in transactions where interval.contains(transaction.date) {
+        for transaction in transactions
+        where transaction.date >= interval.start && transaction.date < interval.end {
             let recoveryRelation = relationByRelatedID[transaction.id]
             let original = recoveryRelation.flatMap { byID[$0.originalTransactionID] }
             let signed = signedValue(
                 transaction,
                 recoveryRelation: recoveryRelation,
+                aaSplit: aaSplitByOriginalID[transaction.id],
+                isAARecovery: aaRecoveryIDs.contains(transaction.id),
                 metric: metric,
                 valuation: valuation,
                 missing: &missing
@@ -148,11 +161,17 @@ struct ReportQueryService {
     private func signedValue(
         _ transaction: LedgerTransaction,
         recoveryRelation: TransactionRelation?,
+        aaSplit: AASplit?,
+        isAARecovery: Bool,
         metric: ReportMetric,
         valuation: ValuationService,
         missing: inout Set<String>
     ) -> Decimal {
-        let amount = recoveryRelation?.amount ?? transaction.sourceAmount ?? transaction.amount ?? 0
+        if isAARecovery { return 0 }
+        let rawAmount = recoveryRelation?.amount ?? transaction.sourceAmount ?? transaction.amount ?? 0
+        let amount = transaction.type == .expense
+            ? max(0, rawAmount - (aaSplit?.othersOwedAmount ?? 0))
+            : rawAmount
         let code = transaction.sourceCurrencyCode ?? transaction.currencyCode ?? baseCurrencyCode
         guard let principal = convert(amount, code: code, valuation: valuation, missing: &missing) else { return 0 }
         let fee: Decimal = transaction.feeAmount.flatMap {

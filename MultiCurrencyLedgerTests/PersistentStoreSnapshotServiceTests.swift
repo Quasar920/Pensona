@@ -42,10 +42,14 @@ final class PersistentStoreSnapshotServiceTests: XCTestCase {
     func testVersionedSchemaContainsEveryCurrentPersistentModel() {
         XCTAssertEqual(LedgerSchemaLegacy.versionIdentifier, .init(1, 0, 0))
         XCTAssertEqual(LedgerSchemaV1.versionIdentifier, .init(2, 0, 0))
+        XCTAssertEqual(LedgerSchemaV2.versionIdentifier, .init(3, 0, 0))
         XCTAssertEqual(LedgerSchemaLegacy.models.count, 8)
         XCTAssertEqual(LedgerSchemaV1.models.count, 23)
-        XCTAssertTrue(LedgerSchemaV1.models.contains { $0 == LedgerTransaction.self })
-        XCTAssertTrue(LedgerSchemaV1.models.contains { $0 == CloudSyncConflictCopy.self })
+        XCTAssertEqual(LedgerSchemaV2.models.count, 25)
+        XCTAssertTrue(LedgerSchemaV2.models.contains { $0 == LedgerTransaction.self })
+        XCTAssertTrue(LedgerSchemaV2.models.contains { $0 == CloudSyncConflictCopy.self })
+        XCTAssertTrue(LedgerSchemaV2.models.contains { $0 == AASplit.self })
+        XCTAssertTrue(LedgerSchemaV2.models.contains { $0 == AASettlement.self })
     }
 
     @MainActor
@@ -54,7 +58,7 @@ final class PersistentStoreSnapshotServiceTests: XCTestCase {
             .appendingPathComponent("legacy-migration-\(UUID()).store")
         try createLegacyStore(at: storeURL)
 
-        let currentSchema = Schema(versionedSchema: LedgerSchemaV1.self)
+        let currentSchema = Schema(versionedSchema: LedgerSchemaV2.self)
         let configuration = ModelConfiguration(
             "MigrationTest",
             schema: currentSchema,

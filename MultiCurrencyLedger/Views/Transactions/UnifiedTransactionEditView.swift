@@ -7,15 +7,17 @@ struct TransactionEditView: View {
     @Query(sort: \Account.createdAt) private var accounts: [Account]
     @Query(sort: [SortDescriptor(\LedgerCategory.typeRawValue), SortDescriptor(\LedgerCategory.sortOrder)])
     private var categories: [LedgerCategory]
-    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
+    @Query private var aaSplits: [AASplit]
 
     let transaction: LedgerTransaction
     let onSaved: () -> Void
 
     @State private var form: TransactionFormState
     @State private var pendingDraft: TransactionDraft?
+    @State private var pendingAASplitDraft: AASplitDraft?
     @State private var errorMessage: String?
     @State private var showingNegativeWarning = false
+    @State private var loadedAASplit = false
 
     init(transaction: LedgerTransaction, onSaved: @escaping () -> Void) {
         self.transaction = transaction
@@ -51,12 +53,6 @@ struct TransactionEditView: View {
         }
     }
 
-    private var scopedTags: [TransactionTag] {
-        guard let bookID else { return [] }
-        let existingIDs = Set(transaction.tags.map(\.id))
-        return tags.filter { $0.bookID == bookID && (!$0.isArchived || existingIDs.contains($0.id)) }
-    }
-
     private var destinationOptions: [CurrencyWallet] {
         guard let source = wallet(id: form.sourceWalletID) else { return [] }
         return allWallets.filter { candidate in
@@ -77,8 +73,7 @@ struct TransactionEditView: View {
                 TransactionFormSections(
                     state: $form,
                     wallets: allWallets,
-                    categories: scopedCategories,
-                    tags: scopedTags
+                    categories: scopedCategories
                 )
 
                 Section {
@@ -126,12 +121,24 @@ struct TransactionEditView: View {
                 titleVisibility: .visible
             ) {
                 Button("仍然保存", role: .destructive, action: performSave)
-                Button("取消", role: .cancel) { pendingDraft = nil }
+                Button("取消", role: .cancel) {
+                    pendingDraft = nil
+                    pendingAASplitDraft = nil
+                }
             }
         }
     }
 
     private func ensureSelections() {
+        if !loadedAASplit {
+            if let split = aaSplits.first(where: { $0.originalTransactionID == transaction.id }) {
+                form.aaSplitDraft = AASplitDraft(
+                    split: split,
+                    totalAmount: transaction.sourceAmount ?? transaction.amount ?? 0
+                )
+            }
+            loadedAASplit = true
+        }
         if wallet(id: form.sourceWalletID) == nil {
             form.sourceWalletID = allWallets.first?.id
         }
@@ -165,12 +172,20 @@ struct TransactionEditView: View {
 
     private func validateAndSave() {
         do {
-            let draft = try form.makeDraft(
-                wallets: allWallets,
-                categories: scopedCategories,
-                tags: scopedTags
-            )
+            let draft = try form.makeDraft(wallets: allWallets, categories: scopedCategories)
+            let resolvedAASplit: AASplitDraft?
+            if let aaDraft = form.aaSplitDraft {
+                let code = draft.sourceWallet?.currencyCode ?? SupportedCurrency.CNY.rawValue
+                resolvedAASplit = try AASplitCalculator().resolvedDraft(
+                    aaDraft,
+                    totalAmount: draft.amount,
+                    currencyCode: code
+                )
+            } else {
+                resolvedAASplit = nil
+            }
             pendingDraft = draft
+            pendingAASplitDraft = resolvedAASplit
             if try createsNegativeBalance(draft) {
                 showingNegativeWarning = true
             } else {
@@ -178,6 +193,7 @@ struct TransactionEditView: View {
             }
         } catch {
             pendingDraft = nil
+            pendingAASplitDraft = nil
             errorMessage = error.localizedDescription
         }
     }
@@ -203,12 +219,25 @@ struct TransactionEditView: View {
     private func performSave() {
         guard let draft = pendingDraft else { return }
         do {
-            try LedgerService(context: context).replaceTransaction(transaction, with: draft)
+            let aaDraft = pendingAASplitDraft
+            try LedgerService(context: context).replaceTransaction(
+                transaction,
+                with: draft
+            ) { updatedTransaction in
+                let service = AASplitService(context: context)
+                if let aaDraft {
+                    try service.upsert(aaDraft, for: updatedTransaction, save: false)
+                } else {
+                    try service.remove(from: updatedTransaction, save: false)
+                }
+            }
             pendingDraft = nil
+            pendingAASplitDraft = nil
             dismiss()
             onSaved()
         } catch {
             pendingDraft = nil
+            pendingAASplitDraft = nil
             errorMessage = error.localizedDescription
         }
     }

@@ -10,7 +10,6 @@ struct TransactionTemplateManagementView: View {
     private var templates: [TransactionTemplate]
     @Query(sort: \Account.createdAt) private var accounts: [Account]
     @Query(sort: \LedgerCategory.sortOrder) private var categories: [LedgerCategory]
-    @Query(sort: \TransactionTag.name) private var tags: [TransactionTag]
     @State private var showsArchived = false
     @State private var draftToUse: TransactionDraft?
     @State private var errorMessage: String?
@@ -82,8 +81,7 @@ struct TransactionTemplateManagementView: View {
             draftToUse = try TransactionTemplateService(context: context).resolve(
                 template,
                 wallets: wallets,
-                categories: categories.filter { !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID) },
-                tags: tags.filter { !$0.isArchived && $0.bookID == bookID }
+                categories: categories.filter { !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID) }
             )
         } catch {
             errorMessage = error.localizedDescription

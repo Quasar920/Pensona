@@ -9,8 +9,8 @@ enum AutomationDraftError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingBook: "自动记账规则必须归属一个账本"
-        case .crossBookReference: "自动记账规则不能引用其他账本的钱包、分类或标签"
-        case .invalidReference: "自动记账规则引用的钱包、分类或标签已失效"
+        case .crossBookReference: "自动记账规则不能引用其他账本的钱包或分类"
+        case .invalidReference: "自动记账规则引用的钱包或分类已失效"
         case .corruptSnapshot: "自动记账规则的数据已损坏，请重新创建"
         }
     }
@@ -33,7 +33,6 @@ struct AutomationTransactionSnapshot: Codable, Equatable {
     let feeAmount: Decimal?
     let feeWalletID: UUID?
     let categoryID: UUID?
-    let tagIDs: [UUID]
     let paymentParts: [AutomationPaymentPartSnapshot]
     let note: String?
     let merchantOrCounterparty: String?
@@ -54,7 +53,6 @@ struct AutomationTransactionSnapshot: Codable, Equatable {
         feeAmount = draft.feeAmount
         feeWalletID = draft.feeWallet?.id
         categoryID = draft.category?.id
-        tagIDs = draft.tags.map(\.id)
         paymentParts = draft.paymentParts.map {
             AutomationPaymentPartSnapshot(walletID: $0.wallet.id, amount: $0.amount)
         }
@@ -78,8 +76,7 @@ struct AutomationDraftCodec {
         }) else {
             throw AutomationDraftError.crossBookReference
         }
-        guard draft.category.map({ $0.bookID == nil || $0.bookID == bookID }) ?? true,
-              draft.tags.allSatisfy({ $0.bookID == bookID }) else {
+        guard draft.category.map({ $0.bookID == nil || $0.bookID == bookID }) ?? true else {
             throw AutomationDraftError.crossBookReference
         }
         return (bookID, try JSONEncoder().encode(AutomationTransactionSnapshot(draft: draft)))
@@ -90,8 +87,7 @@ struct AutomationDraftCodec {
         bookID: UUID,
         date: Date,
         wallets: [CurrencyWallet],
-        categories: [LedgerCategory],
-        tags: [TransactionTag]
+        categories: [LedgerCategory]
     ) throws -> TransactionDraft {
         guard let snapshot = try? JSONDecoder().decode(AutomationTransactionSnapshot.self, from: data) else {
             throw AutomationDraftError.corruptSnapshot
@@ -113,9 +109,6 @@ struct AutomationDraftCodec {
                 $0.id == id && !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID)
             }
         }
-        let resolvedTags = tags.filter {
-            snapshot.tagIDs.contains($0.id) && !$0.isArchived && $0.bookID == bookID
-        }
         let paymentParts = snapshot.paymentParts.compactMap { part in
             scopedWallets.first(where: { $0.id == part.walletID }).map {
                 TransactionPaymentPartDraft(wallet: $0, amount: part.amount)
@@ -125,7 +118,6 @@ struct AutomationDraftCodec {
         guard (snapshot.destinationWalletID == nil || destination != nil),
               (snapshot.feeWalletID == nil || feeWallet != nil),
               (snapshot.categoryID == nil || category != nil),
-              Set(resolvedTags.map(\.id)) == Set(snapshot.tagIDs),
               paymentParts.count == snapshot.paymentParts.count else {
             throw AutomationDraftError.invalidReference
         }
@@ -142,7 +134,6 @@ struct AutomationDraftCodec {
             note: snapshot.note,
             merchantOrCounterparty: snapshot.merchantOrCounterparty,
             category: category,
-            tags: resolvedTags,
             paymentParts: paymentParts,
             adjustmentDirection: snapshot.adjustmentDirection,
             adjustmentReason: snapshot.adjustmentReason

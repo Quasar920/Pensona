@@ -196,7 +196,8 @@ struct BudgetStatisticsService {
     func status(
         for budget: MonthlyBudget,
         transactions: [LedgerTransaction],
-        relations: [TransactionRelation]
+        relations: [TransactionRelation],
+        aaSplits: [AASplit] = []
     ) -> BudgetStatus {
         let serviceInterval = interval(for: budget)
         let bookTransactions = transactions.filter {
@@ -206,12 +207,19 @@ struct BudgetStatisticsService {
         let valuation = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
         var spent = Decimal.zero
         var missingCodes = Set<String>()
+        let aaSplitByOriginalID = Dictionary(uniqueKeysWithValues: aaSplits.map {
+            ($0.originalTransactionID, $0)
+        })
 
         for transaction in bookTransactions {
             let categoryMatches = budget.categoryID == nil || transaction.category?.id == budget.categoryID
             if transaction.type == .expense, categoryMatches {
                 add(
-                    transaction.sourceAmount ?? transaction.amount ?? 0,
+                    max(
+                        0,
+                        (transaction.sourceAmount ?? transaction.amount ?? 0)
+                            - (aaSplitByOriginalID[transaction.id]?.othersOwedAmount ?? 0)
+                    ),
                     code: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? baseCurrencyCode,
                     sign: 1,
                     total: &spent,

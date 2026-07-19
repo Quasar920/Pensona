@@ -11,7 +11,8 @@ final class TransactionDraftTests: XCTestCase {
     override func setUpWithError() throws {
         let schema = Schema([
             LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
-            LedgerTransaction.self, ExchangeRate.self, MonthlyBudget.self
+            LedgerTransaction.self, AASplit.self, AASettlement.self,
+            ExchangeRate.self, MonthlyBudget.self
         ])
         container = try ModelContainer(
             for: schema,

@@ -5,15 +5,16 @@ struct AddAccountView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @State private var name = ""
-    @State private var group: AssetGroup
+    @State private var type: AccountType
     @State private var note = ""
+    @State private var cardLastFour = ""
     @State private var errorMessage: String?
 
     let book: LedgerBook?
 
     init(book: LedgerBook? = nil, initialGroup: AssetGroup = .cash) {
         self.book = book
-        _group = State(initialValue: initialGroup)
+        _type = State(initialValue: initialGroup == .cash ? .bankCard : initialGroup.canonicalAccountType)
     }
 
     var body: some View {
@@ -21,12 +22,29 @@ struct AddAccountView: View {
             Form {
                 Section("基本信息") {
                     TextField("账户名称", text: $name)
-                    Picker("账户类型", selection: $group) {
-                        ForEach(AssetGroup.allCases) { item in
+                    Picker("账户类型", selection: $type) {
+                        ForEach(AccountType.allCases) { item in
                             Label(item.title, systemImage: item.symbolName).tag(item)
                         }
                     }
                     TextField("备注（可选）", text: $note, axis: .vertical)
+                }
+
+                if type.supportsCardLastFour {
+                    Section {
+                        TextField("选填", text: $cardLastFour)
+                            .keyboardType(.numberPad)
+                            .onChange(of: cardLastFour) { _, value in
+                                let sanitized = AccountCardIdentityStore.sanitizedInput(value)
+                                if sanitized != value { cardLastFour = sanitized }
+                            }
+                    } header: {
+                        Text("银行卡后四位")
+                    } footer: {
+                        Text("用于快捷指令记账时快速识别账户。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section {
@@ -56,8 +74,9 @@ struct AddAccountView: View {
         do {
             _ = try AccountService(context: context).createAccount(
                 name: name,
-                type: group.canonicalAccountType,
+                type: type,
                 note: note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+                cardLastFour: type.supportsCardLastFour ? cardLastFour : nil,
                 book: book
             )
             dismiss()

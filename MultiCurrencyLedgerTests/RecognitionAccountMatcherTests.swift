@@ -36,6 +36,54 @@ final class RecognitionAccountMatcherTests: XCTestCase {
         )
     }
 
+    func testMatchesConfiguredLastFourWithoutPuttingDigitsInAccountName() {
+        let option = RecognitionAccountOption(
+            walletID: cnyID,
+            accountName: "招商银行工资卡",
+            accountNote: nil,
+            accountLastFour: "1234",
+            currencyCode: "CNY"
+        )
+
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "招行尾号1234",
+                currency: .CNY,
+                options: [option]
+            ),
+            .matched(walletID: cnyID)
+        )
+    }
+
+    func testConfiguredDuplicateLastFourRemainsAmbiguous() {
+        let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+        let candidates = [
+            RecognitionAccountOption(
+                walletID: cnyID,
+                accountName: "招商银行工资卡",
+                accountNote: nil,
+                accountLastFour: "1234",
+                currencyCode: "CNY"
+            ),
+            RecognitionAccountOption(
+                walletID: secondID,
+                accountName: "招商银行生活卡",
+                accountNote: nil,
+                accountLastFour: "1234",
+                currencyCode: "CNY"
+            )
+        ]
+
+        XCTAssertEqual(
+            RecognitionAccountMatcher().match(
+                hint: "招行尾号1234",
+                currency: .CNY,
+                options: candidates
+            ),
+            .ambiguous(walletIDs: [cnyID, secondID])
+        )
+    }
+
     func testRejectsMissingCurrencyWallet() {
         XCTAssertEqual(
             RecognitionAccountMatcher().match(hint: "招行尾号1234", currency: .EUR, options: options),

@@ -6,7 +6,7 @@ struct BackupSettings: Codable, Equatable {
 }
 
 struct LedgerBackupDocument: Codable {
-    static let currentVersion = 4
+    static let currentVersion = 6
 
     var version: Int
     var exportedAt: Date
@@ -31,6 +31,8 @@ struct LedgerBackupDocument: Codable {
     var savingsAllocations: [SavingsAllocationBackup]
     var importBatches: [ImportBatchBackup]
     var importFingerprints: [ImportFingerprintBackup]
+    var aaSplits: [AASplitBackup]
+    var aaSettlements: [AASettlementBackup]
 
     init(
         version: Int = currentVersion,
@@ -44,7 +46,8 @@ struct LedgerBackupDocument: Codable {
         recognitionRecords: [RecognitionRecordBackup], exchangeRates: [ExchangeRateBackup],
         budgets: [BudgetBackup], savingsGoals: [SavingsGoalBackup],
         savingsAllocations: [SavingsAllocationBackup], importBatches: [ImportBatchBackup],
-        importFingerprints: [ImportFingerprintBackup]
+        importFingerprints: [ImportFingerprintBackup], aaSplits: [AASplitBackup] = [],
+        aaSettlements: [AASettlementBackup] = []
     ) {
         self.version = version; self.exportedAt = exportedAt; self.settings = settings
         self.books = books; self.accounts = accounts; self.wallets = wallets
@@ -55,6 +58,7 @@ struct LedgerBackupDocument: Codable {
         self.recognitionRecords = recognitionRecords; self.exchangeRates = exchangeRates
         self.budgets = budgets; self.savingsGoals = savingsGoals; self.savingsAllocations = savingsAllocations
         self.importBatches = importBatches; self.importFingerprints = importFingerprints
+        self.aaSplits = aaSplits; self.aaSettlements = aaSettlements
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -62,6 +66,7 @@ struct LedgerBackupDocument: Codable {
         case relations, attachments, templates, recurringSchedules, recurringOccurrences
         case installmentPlans, installmentOccurrences, recognitionRecords, exchangeRates
         case monthlyBudgets, budgets, savingsGoals, savingsAllocations, importBatches, importFingerprints
+        case aaSplits, aaSettlements
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +96,8 @@ struct LedgerBackupDocument: Codable {
         savingsAllocations = try c.decodeIfPresent([SavingsAllocationBackup].self, forKey: .savingsAllocations) ?? []
         importBatches = try c.decodeIfPresent([ImportBatchBackup].self, forKey: .importBatches) ?? []
         importFingerprints = try c.decodeIfPresent([ImportFingerprintBackup].self, forKey: .importFingerprints) ?? []
+        aaSplits = try c.decodeIfPresent([AASplitBackup].self, forKey: .aaSplits) ?? []
+        aaSettlements = try c.decodeIfPresent([AASettlementBackup].self, forKey: .aaSettlements) ?? []
         if books.isEmpty, !accounts.isEmpty {
             let legacyBook = BookBackup(id: UUID(), name: "恢复的账本", sortOrder: 0, createdAt: exportedAt, updatedAt: exportedAt)
             books = [legacyBook]
@@ -111,7 +118,6 @@ struct LedgerBackupDocument: Codable {
         try c.encode(accounts, forKey: .accounts)
         try c.encode(wallets, forKey: .wallets)
         try c.encode(categories, forKey: .categories)
-        try c.encode(tags, forKey: .tags)
         try c.encode(transactions, forKey: .transactions)
         try c.encode(relations, forKey: .relations)
         try c.encode(attachments, forKey: .attachments)
@@ -127,6 +133,8 @@ struct LedgerBackupDocument: Codable {
         try c.encode(savingsAllocations, forKey: .savingsAllocations)
         try c.encode(importBatches, forKey: .importBatches)
         try c.encode(importFingerprints, forKey: .importFingerprints)
+        try c.encode(aaSplits, forKey: .aaSplits)
+        try c.encode(aaSettlements, forKey: .aaSettlements)
     }
 }
 
@@ -162,6 +170,15 @@ struct TransactionBackup: Codable {
 }
 struct RelationBackup: Codable {
     var id: UUID; var kind: String; var originalTransactionID: UUID; var relatedTransactionID: UUID
+    var amount: Decimal; var createdAt: Date
+}
+struct AASplitBackup: Codable {
+    var id: UUID; var originalTransactionID: UUID; var otherPeopleCount: Int
+    var calculationMode: String; var othersOwedAmount: Decimal; var note: String?
+    var createdAt: Date; var updatedAt: Date
+}
+struct AASettlementBackup: Codable {
+    var id: UUID; var splitID: UUID; var recoveryTransactionID: UUID
     var amount: Decimal; var createdAt: Date
 }
 struct AttachmentBackup: Codable {
@@ -301,10 +318,7 @@ enum BackupService {
                                sortOrder: $0.sortOrder, isSystem: $0.isSystem, bookID: $0.bookID, parentID: $0.parentID,
                                isArchived: $0.isArchived, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
             },
-            tags: try context.fetch(FetchDescriptor<TransactionTag>()).map {
-                TagBackup(id: $0.id, name: $0.name, bookID: $0.bookID, colorHex: $0.colorHex,
-                          isArchived: $0.isArchived, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
-            },
+            tags: [],
             transactions: try context.fetch(FetchDescriptor<LedgerTransaction>()).map(transactionBackup),
             relations: try context.fetch(FetchDescriptor<TransactionRelation>()).map {
                 RelationBackup(id: $0.id, kind: $0.kindRawValue, originalTransactionID: $0.originalTransactionID,
@@ -315,7 +329,7 @@ enum BackupService {
                 TemplateBackup(id: $0.id, name: $0.name, bookID: $0.bookID, type: $0.typeRawValue, amount: $0.amount,
                                sourceWalletID: $0.sourceWalletID, destinationWalletID: $0.destinationWalletID,
                                destinationAmount: $0.destinationAmount, feeAmount: $0.feeAmount,
-                               feeWalletID: $0.feeWalletID, categoryID: $0.categoryID, tagIDs: $0.tagIDs,
+                               feeWalletID: $0.feeWalletID, categoryID: $0.categoryID, tagIDs: [],
                                paymentParts: $0.paymentPartReferences, note: $0.note,
                                merchantOrCounterparty: $0.merchantOrCounterparty,
                                adjustmentDirection: $0.adjustmentDirectionRawValue, adjustmentReason: $0.adjustmentReason,
@@ -388,6 +402,27 @@ enum BackupService {
             importFingerprints: try context.fetch(FetchDescriptor<TransactionImportFingerprint>()).map {
                 ImportFingerprintBackup(id: $0.id, value: $0.value, batchID: $0.batchID,
                                         transactionID: $0.transactionID, createdAt: $0.createdAt)
+            },
+            aaSplits: try context.fetch(FetchDescriptor<AASplit>()).map {
+                AASplitBackup(
+                    id: $0.id,
+                    originalTransactionID: $0.originalTransactionID,
+                    otherPeopleCount: $0.otherPeopleCount,
+                    calculationMode: $0.calculationModeRawValue,
+                    othersOwedAmount: $0.othersOwedAmount,
+                    note: $0.note,
+                    createdAt: $0.createdAt,
+                    updatedAt: $0.updatedAt
+                )
+            },
+            aaSettlements: try context.fetch(FetchDescriptor<AASettlement>()).map {
+                AASettlementBackup(
+                    id: $0.id,
+                    splitID: $0.splitID,
+                    recoveryTransactionID: $0.recoveryTransactionID,
+                    amount: $0.amount,
+                    createdAt: $0.createdAt
+                )
             }
         )
     }
@@ -477,7 +512,7 @@ enum BackupService {
             feeCurrencyCode: value.feeCurrencyCode, feeWalletID: value.feeWallet?.id,
             exchangeRate: value.exchangeRate, adjustmentDirection: value.adjustmentDirectionRawValue,
             adjustmentReason: value.adjustmentReason, categoryID: value.category?.id,
-            tagIDs: value.tags.map(\.id), paymentParts: value.paymentParts.map {
+            tagIDs: nil, paymentParts: value.paymentParts.map {
                 PaymentPartBackup(id: $0.id, walletID: $0.wallet?.id, amount: $0.amount,
                                   sortOrder: $0.sortOrder, createdAt: $0.createdAt)
             }, merchantOrCounterparty: value.merchantOrCounterparty, originalAmount: value.originalAmount,
@@ -500,13 +535,18 @@ enum BackupService {
         try requireUnique(document.accounts.map(\.id), "账户")
         try requireUnique(document.wallets.map(\.id), "钱包")
         try requireUnique(document.transactions.map(\.id), "流水")
+        try requireUnique(document.aaSplits.map(\.id), "AA 分摊")
+        try requireUnique(document.aaSplits.map(\.originalTransactionID), "AA 原支出")
+        try requireUnique(document.aaSettlements.map(\.id), "AA 收款")
+        try requireUnique(document.aaSettlements.map(\.recoveryTransactionID), "AA 收款流水")
         try requireUnique(document.importFingerprints.map(\.value), "导入指纹")
         let bookIDs = Set(document.books.map(\.id))
         let accountIDs = Set(document.accounts.map(\.id))
         let walletIDs = Set(document.wallets.map(\.id))
         let transactionIDs = Set(document.transactions.map(\.id))
+        let transactionByID = Dictionary(uniqueKeysWithValues: document.transactions.map { ($0.id, $0) })
+        let aaSplitIDs = Set(document.aaSplits.map(\.id))
         let categoryIDs = Set(document.categories.map(\.id))
-        let tagIDs = Set(document.tags.map(\.id))
         let scheduleIDs = Set(document.recurringSchedules.map(\.id))
         let planIDs = Set(document.installmentPlans.map(\.id))
         let goalIDs = Set(document.savingsGoals.map(\.id))
@@ -517,9 +557,8 @@ enum BackupService {
         for wallet in document.wallets where wallet.accountID.map({ !accountIDs.contains($0) }) == true {
             throw BackupServiceError.brokenReference("钱包 \(wallet.currencyCode) 的账户不存在")
         }
-        if document.categories.contains(where: { $0.bookID.map { !bookIDs.contains($0) } == true })
-            || document.tags.contains(where: { !bookIDs.contains($0.bookID) }) {
-            throw BackupServiceError.brokenReference("分类或标签的账本不存在")
+        if document.categories.contains(where: { $0.bookID.map { !bookIDs.contains($0) } == true }) {
+            throw BackupServiceError.brokenReference("分类的账本不存在")
         }
         for transaction in document.transactions {
             let referencedWallets = [transaction.sourceWalletID, transaction.destinationWalletID, transaction.feeWalletID]
@@ -527,9 +566,8 @@ enum BackupService {
             if referencedWallets.compactMap({ $0 }).contains(where: { !walletIDs.contains($0) }) {
                 throw BackupServiceError.brokenReference("流水 \(transaction.id) 的钱包不存在")
             }
-            if transaction.categoryID.map({ !categoryIDs.contains($0) }) == true
-                || (transaction.tagIDs ?? []).contains(where: { !tagIDs.contains($0) }) {
-                throw BackupServiceError.brokenReference("流水 \(transaction.id) 的分类或标签不存在")
+            if transaction.categoryID.map({ !categoryIDs.contains($0) }) == true {
+                throw BackupServiceError.brokenReference("流水 \(transaction.id) 的分类不存在")
             }
             if [transaction.sourceAccountID, transaction.destinationAccountID].compactMap({ $0 })
                 .contains(where: { !accountIDs.contains($0) }) {
@@ -539,6 +577,34 @@ enum BackupService {
         for relation in document.relations where
             !transactionIDs.contains(relation.originalTransactionID) || !transactionIDs.contains(relation.relatedTransactionID) {
             throw BackupServiceError.brokenReference("退款或报销关系指向不存在的流水")
+        }
+        let recoveryOriginalIDs = Set(document.relations.map(\.originalTransactionID))
+        for split in document.aaSplits {
+            guard let original = transactionByID[split.originalTransactionID],
+                  original.type == TransactionKind.expense.rawValue,
+                  split.otherPeopleCount > 0,
+                  AASplitCalculationMode(rawValue: split.calculationMode) != nil else {
+                throw BackupServiceError.brokenReference("AA 分摊指向的原支出或计算方式无效")
+            }
+            let total = original.sourceAmount ?? original.amount ?? 0
+            guard split.othersOwedAmount > 0,
+                  split.othersOwedAmount <= total,
+                  !recoveryOriginalIDs.contains(split.originalTransactionID) else {
+                throw BackupServiceError.brokenReference("AA 分摊金额无效或与退款报销冲突")
+            }
+            let collected = document.aaSettlements
+                .filter { $0.splitID == split.id }
+                .reduce(Decimal.zero) { $0 + $1.amount }
+            guard collected <= split.othersOwedAmount else {
+                throw BackupServiceError.brokenReference("AA 累计收款超过应收金额")
+            }
+        }
+        for settlement in document.aaSettlements {
+            guard aaSplitIDs.contains(settlement.splitID),
+                  transactionIDs.contains(settlement.recoveryTransactionID),
+                  settlement.amount > 0 else {
+                throw BackupServiceError.brokenReference("AA 收款指向不存在的分摊或流水")
+            }
         }
         for attachment in document.attachments {
             guard transactionIDs.contains(attachment.transactionID), bookIDs.contains(attachment.bookID) else {
@@ -554,8 +620,7 @@ enum BackupService {
                 + template.paymentParts.map(\.walletID)
             guard bookIDs.contains(template.bookID),
                   !referencedWallets.contains(where: { !walletIDs.contains($0) }),
-                  template.categoryID.map({ categoryIDs.contains($0) }) ?? true,
-                  !template.tagIDs.contains(where: { !tagIDs.contains($0) }) else {
+                  template.categoryID.map({ categoryIDs.contains($0) }) ?? true else {
                 throw BackupServiceError.brokenReference("模板 \(template.name) 的引用不存在")
             }
         }
@@ -686,14 +751,6 @@ private extension BackupService {
             context.insert(value); categories[item.id] = value
         }
 
-        var tags: [UUID: TransactionTag] = [:]
-        for item in document.tags {
-            let value = TransactionTag(id: item.id, name: item.name, bookID: item.bookID,
-                                       colorHex: item.colorHex, isArchived: item.isArchived,
-                                       createdAt: item.createdAt, updatedAt: item.updatedAt)
-            context.insert(value); tags[item.id] = value
-        }
-
         var transactions: [UUID: LedgerTransaction] = [:]
         for item in document.transactions {
             guard let type = TransactionKind(rawValue: item.type) else {
@@ -718,7 +775,7 @@ private extension BackupService {
                 feeWallet: item.feeWalletID.flatMap { wallets[$0] }, exchangeRate: item.exchangeRate,
                 adjustmentDirection: item.adjustmentDirection.flatMap(AdjustmentDirection.init(rawValue:)),
                 adjustmentReason: item.adjustmentReason, category: item.categoryID.flatMap { categories[$0] },
-                tags: (item.tagIDs ?? []).compactMap { tags[$0] }, paymentParts: parts,
+                paymentParts: parts,
                 merchantOrCounterparty: item.merchantOrCounterparty, originalAmount: item.originalAmount,
                 discountAmount: item.discountAmount, recognitionImportID: item.recognitionImportID,
                 createdAt: item.createdAt, updatedAt: item.updatedAt
@@ -736,6 +793,30 @@ private extension BackupService {
                                                relatedTransactionID: item.relatedTransactionID,
                                                amount: item.amount, createdAt: item.createdAt))
         }
+        for item in document.aaSplits {
+            guard let mode = AASplitCalculationMode(rawValue: item.calculationMode) else {
+                throw BackupServiceError.brokenReference("AA 分摊计算方式无效")
+            }
+            context.insert(AASplit(
+                id: item.id,
+                originalTransactionID: item.originalTransactionID,
+                otherPeopleCount: item.otherPeopleCount,
+                calculationMode: mode,
+                othersOwedAmount: item.othersOwedAmount,
+                note: item.note,
+                createdAt: item.createdAt,
+                updatedAt: item.updatedAt
+            ))
+        }
+        for item in document.aaSettlements {
+            context.insert(AASettlement(
+                id: item.id,
+                splitID: item.splitID,
+                recoveryTransactionID: item.recoveryTransactionID,
+                amount: item.amount,
+                createdAt: item.createdAt
+            ))
+        }
         for item in document.attachments {
             context.insert(TransactionAttachment(
                 id: item.id, transactionID: item.transactionID, bookID: item.bookID,
@@ -751,7 +832,7 @@ private extension BackupService {
                 id: item.id, name: item.name, bookID: item.bookID, type: type, amount: item.amount,
                 sourceWalletID: item.sourceWalletID, destinationWalletID: item.destinationWalletID,
                 destinationAmount: item.destinationAmount, feeAmount: item.feeAmount,
-                feeWalletID: item.feeWalletID, categoryID: item.categoryID, tagIDs: item.tagIDs,
+                feeWalletID: item.feeWalletID, categoryID: item.categoryID, tagIDs: [],
                 paymentParts: item.paymentParts, note: item.note,
                 merchantOrCounterparty: item.merchantOrCounterparty,
                 adjustmentDirection: item.adjustmentDirection.flatMap(AdjustmentDirection.init(rawValue:)),
@@ -881,6 +962,8 @@ private extension BackupService {
         for item in try context.fetch(FetchDescriptor<InstallmentPlan>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<TransactionAttachment>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<TransactionRelation>()) { context.delete(item) }
+        for item in try context.fetch(FetchDescriptor<AASettlement>()) { context.delete(item) }
+        for item in try context.fetch(FetchDescriptor<AASplit>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<TransactionTemplate>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<RecognitionImportRecord>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<TransactionPaymentPart>()) { context.delete(item) }

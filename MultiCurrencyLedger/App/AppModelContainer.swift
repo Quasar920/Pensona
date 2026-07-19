@@ -2,7 +2,7 @@ import SwiftData
 
 enum AppModelContainer {
     static func make() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LedgerSchemaV1.self)
+        let schema = Schema(versionedSchema: LedgerSchemaV2.self)
         let configuration = ModelConfiguration(
             nil,
             schema: schema,

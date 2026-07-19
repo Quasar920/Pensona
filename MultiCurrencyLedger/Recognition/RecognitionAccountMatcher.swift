@@ -59,8 +59,9 @@ struct RecognitionAccountMatcher {
         switch tailEvidence(in: expandedHint) {
         case let .single(tail):
             let tailMatches = options.filter { option in
-                guard case let .single(optionTail) = tailEvidence(in: option.accountName),
-                      optionTail == tail else {
+                let optionTail = option.accountLastFour
+                    ?? tailEvidenceValue(in: option.accountName)
+                guard optionTail == tail else {
                     return false
                 }
                 let searchable = searchableText(for: option)
@@ -96,6 +97,11 @@ struct RecognitionAccountMatcher {
 
     private func searchableText(for option: RecognitionAccountOption) -> String {
         [option.accountName, option.accountNote ?? ""].joined(separator: " ")
+    }
+
+    private func tailEvidenceValue(in text: String) -> String? {
+        guard case let .single(value) = tailEvidence(in: text) else { return nil }
+        return value
     }
 
     private func tailEvidence(in text: String) -> TailEvidence {
