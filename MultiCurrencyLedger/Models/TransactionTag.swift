@@ -31,3 +31,36 @@ final class TransactionTag {
         transactions = []
     }
 }
+
+/// Compatibility-only cleanup for stores created before tags were removed.
+///
+/// `TransactionTag` stays in the persisted schema so existing 2.0 stores can still
+/// open. The product no longer creates or exposes tags, and this cleanup makes the
+/// legacy relationship permanently empty without folding tag text into notes.
+enum LegacyTagRemovalService {
+    static func removeAll(context: ModelContext) throws {
+        var changed = false
+
+        for transaction in try context.fetch(FetchDescriptor<LedgerTransaction>())
+        where !transaction.tags.isEmpty {
+            transaction.tags.removeAll()
+            changed = true
+        }
+
+        for template in try context.fetch(FetchDescriptor<TransactionTemplate>())
+        where !template.tagIDsData.isEmpty {
+            template.tagIDsData = Data()
+            changed = true
+        }
+
+        let tags = try context.fetch(FetchDescriptor<TransactionTag>())
+        for tag in tags {
+            context.delete(tag)
+            changed = true
+        }
+
+        if changed {
+            try context.save()
+        }
+    }
+}

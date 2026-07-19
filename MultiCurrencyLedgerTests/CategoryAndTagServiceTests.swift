@@ -10,7 +10,8 @@ final class CategoryAndTagServiceTests: XCTestCase {
     override func setUpWithError() throws {
         let schema = Schema([
             LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
-            LedgerTransaction.self, TransactionTag.self
+            LedgerTransaction.self, TransactionTag.self, TransactionTemplate.self,
+            AASplit.self, AASettlement.self
         ])
         container = try ModelContainer(
             for: schema,
@@ -72,34 +73,33 @@ final class CategoryAndTagServiceTests: XCTestCase {
         ))
     }
 
-    func testTagsAreBookScopedAndCanBeAttachedToTransaction() throws {
+    func testLegacyTagsAreDiscardedWithoutChangingNotes() throws {
         let book = LedgerBook(name: "日常")
-        let otherBook = LedgerBook(name: "旅行")
         let account = Account(name: "现金", type: .cash, book: book)
         let wallet = CurrencyWallet(currency: .CNY, account: account)
+        let legacyTag = TransactionTag(name: "工作餐", bookID: book.id)
         let transaction = LedgerTransaction(
             type: .expense,
             amount: 10,
+            date: .now,
+            note: "用户自己填写的备注",
             sourceAccount: account,
             sourceWallet: wallet,
             sourceAmount: 10,
-            sourceCurrencyCode: "CNY"
+            sourceCurrencyCode: "CNY",
+            tags: [legacyTag]
         )
         context.insert(book)
-        context.insert(otherBook)
         context.insert(account)
         context.insert(wallet)
+        context.insert(legacyTag)
         context.insert(transaction)
         try context.save()
 
-        let service = TagService(context: context)
-        let meal = try service.create(name: "工作餐", colorHex: "#123456", bookID: book.id)
-        let travel = try service.create(name: "出差", colorHex: "#654321", bookID: otherBook.id)
-        try service.setTags([meal], on: transaction)
+        try LegacyTagRemovalService.removeAll(context: context)
 
-        XCTAssertEqual(transaction.tags.map(\.id), [meal.id])
-        XCTAssertThrowsError(try service.setTags([travel], on: transaction)) {
-            XCTAssertEqual($0 as? TagError, .wrongBook)
-        }
+        XCTAssertTrue(transaction.tags.isEmpty)
+        XCTAssertEqual(transaction.note, "用户自己填写的备注")
+        XCTAssertTrue(try context.fetch(FetchDescriptor<TransactionTag>()).isEmpty)
     }
 }

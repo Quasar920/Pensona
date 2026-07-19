@@ -39,7 +39,6 @@ struct URLDraftRequest: Equatable {
     let feeAmount: Decimal?
     let feeWalletSelector: String?
     let categorySelector: String?
-    let tagSelectors: [String]
     let merchantOrCounterparty: String?
     let note: String?
     let date: Date
@@ -53,7 +52,7 @@ struct URLDraftParser {
 
     private let allowedKeys: Set<String> = [
         "type", "amount", "currency", "book", "wallet", "destinationWallet",
-        "destinationAmount", "fee", "feeWallet", "category", "tags",
+        "destinationAmount", "fee", "feeWallet", "category",
         "merchant", "note", "date", "adjustmentDirection", "adjustmentReason"
     ]
 
@@ -95,11 +94,6 @@ struct URLDraftParser {
         } else {
             direction = nil
         }
-        let tagSelectors = values["tags"]?
-            .split(separator: ",", omittingEmptySubsequences: true)
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty } ?? []
-
         return URLDraftRequest(
             type: type,
             amount: amount,
@@ -111,7 +105,6 @@ struct URLDraftParser {
             feeAmount: fee,
             feeWalletSelector: values["feeWallet"]?.trimmed.nilIfEmpty,
             categorySelector: values["category"]?.trimmed.nilIfEmpty,
-            tagSelectors: tagSelectors,
             merchantOrCounterparty: values["merchant"]?.trimmed.nilIfEmpty,
             note: values["note"]?.trimmed.nilIfEmpty,
             date: date,
@@ -165,7 +158,6 @@ struct URLDraftResolver {
         books: [LedgerBook],
         wallets: [CurrencyWallet],
         categories: [LedgerCategory],
-        tags: [TransactionTag],
         preferredBookID: UUID? = nil
     ) throws -> TransactionDraft {
         let book = try resolveBook(
@@ -213,10 +205,6 @@ struct URLDraftResolver {
                 categories: categories
             )
         }
-        let resolvedTags = try request.tagSelectors.map { selector in
-            try resolveTag(selector: selector, bookID: book.id, tags: tags)
-        }
-
         let draft = TransactionDraft(
             type: request.type,
             amount: request.amount,
@@ -229,7 +217,6 @@ struct URLDraftResolver {
             note: request.note,
             merchantOrCounterparty: request.merchantOrCounterparty,
             category: request.type == .expense || request.type == .income ? category : nil,
-            tags: resolvedTags,
             adjustmentDirection: request.type == .adjustment ? request.adjustmentDirection : nil,
             adjustmentReason: request.type == .adjustment ? request.adjustmentReason : nil
         )
@@ -279,16 +266,6 @@ struct URLDraftResolver {
                 && ($0.bookID == nil || $0.bookID == bookID)
                 && matches(selector, id: $0.id, name: $0.name)
         }, label: "分类")
-    }
-
-    private func resolveTag(
-        selector: String,
-        bookID: UUID,
-        tags: [TransactionTag]
-    ) throws -> TransactionTag {
-        try unique(tags.filter {
-            !$0.isArchived && $0.bookID == bookID && matches(selector, id: $0.id, name: $0.name)
-        }, label: "标签")
     }
 
     private func matches(_ selector: String, id: UUID, name: String) -> Bool {

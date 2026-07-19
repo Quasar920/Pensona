@@ -24,6 +24,10 @@ final class URLDraftParserTests: XCTestCase {
         XCTAssertThrowsError(try URLDraftParser().parse(
             XCTUnwrap(URL(string: "multiledger://entry?type=expense&amount=1&wallet=x&token=secret"))
         )) { XCTAssertEqual($0 as? URLDraftError, .unknownParameter("token")) }
+
+        XCTAssertThrowsError(try URLDraftParser().parse(
+            XCTUnwrap(URL(string: "multiledger://entry?type=expense&amount=1&wallet=x&tags=legacy"))
+        )) { XCTAssertEqual($0 as? URLDraftError, .unknownParameter("tags")) }
     }
 
     func testRejectsDuplicateAndInvalidAmountParameters() throws {
