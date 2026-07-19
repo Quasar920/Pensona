@@ -1,3 +1,4 @@
+import Observation
 import SwiftData
 import SwiftUI
 import UIKit
@@ -5,7 +6,6 @@ import UIKit
 struct HomeView: View {
     @Environment(\.modelContext) private var context
     @AppStorage("baseCurrencyCode") private var baseCurrencyCode = SupportedCurrency.CNY.rawValue
-    @AppStorage("profileImagePath") private var profileImagePath = ""
     @AppStorage("selectedBookID") private var selectedBookID = ""
 
     @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
@@ -14,24 +14,19 @@ struct HomeView: View {
     @Query private var rates: [ExchangeRate]
     @Query(sort: \MonthlyBudget.monthStart, order: .reverse) private var budgets: [MonthlyBudget]
     @Query private var relations: [TransactionRelation]
+    @Query private var aaSplits: [AASplit]
+    @Query private var aaSettlements: [AASettlement]
 
     let addTransaction: () -> Void
 
     @State private var selectedMonth = Calendar.current.date(
         from: Calendar.current.dateComponents([.year, .month], from: .now)
     ) ?? .now
-    @State private var showingSettings = false
-    @State private var showingAddAsset = false
-    @State private var showingBookSwitcher = false
-    @State private var showingBookManagement = false
-    @State private var showingTransactions = false
-    @State private var showingMonthPicker = false
-    @State private var showingBudgetEditor = false
-    @State private var showingBudgetManagement = false
-    @State private var showingReports = false
-    @State private var showingCalendar = false
-    @State private var showingSmartDraft = false
+    @State private var presentation = HomePresentationState()
     @State private var appliedPreviewState = false
+    @State private var expandedTransactionID: UUID?
+    @State private var deletingTransaction: LedgerTransaction?
+    @State private var transactionActionError: String?
 
     init(addTransaction: @escaping () -> Void = {}) {
         self.addTransaction = addTransaction
@@ -72,8 +67,32 @@ struct HomeView: View {
                 for: selectedBookTransactions,
                 month: selectedMonth,
                 budget: currentBudget?.amount,
-                relations: relations
+                relations: relations,
+                aaSplits: aaSplits,
+                aaSettlements: aaSettlements
             )
+    }
+
+    private var aaItems: [AAReceivableItem] {
+        guard let bookID = selectedBook?.id else { return [] }
+        return AAQueryService().items(
+            splits: aaSplits,
+            settlements: aaSettlements,
+            transactions: transactions,
+            bookID: bookID
+        )
+    }
+
+    private var aaOverview: AAReceivableOverview {
+        AAQueryService().overview(
+            items: aaItems,
+            baseCurrencyCode: baseCurrencyCode,
+            rates: rates
+        )
+    }
+
+    private var aaRecoveryTransactionIDs: Set<UUID> {
+        Set(aaSettlements.map(\.recoveryTransactionID))
     }
 
     private var recentDayGroups: [TransactionDayGroup] {
@@ -99,30 +118,25 @@ struct HomeView: View {
                 HomePalette.background.ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 12) {
-                        HomeHeader(
-                            profileImagePath: profileImagePath,
-                            bookName: selectedBook?.name ?? "选择账本",
-                            openProfile: { showingSettings = true },
-                            switchBook: { showingBookSwitcher = true },
-                            manageBooks: { showingBookManagement = true },
-                            searchTransactions: { showingTransactions = true },
-                            addAsset: { showingAddAsset = true },
-                            openReports: { showingReports = true },
-                            openCalendar: { showingCalendar = true },
-                            manageBudgets: { showingBudgetManagement = true },
-                            openSmartDraft: { showingSmartDraft = true }
-                        )
-
+                    LazyVStack(spacing: 10) {
                         MonthlyOverviewCard(
                             currencyCode: baseCurrencyCode,
                             summary: monthlySummary,
                             setBudget: openBudgetEditor
                         )
 
+                        AAReceivableHomeCard(
+                            overview: aaOverview,
+                            currencyCode: baseCurrencyCode,
+                            open: {
+                                guard let bookID = selectedBook?.id else { return }
+                                presentation.present(.aaReceivables(bookID))
+                            }
+                        )
+
                         MonthNavigator(
                             selectedMonth: $selectedMonth,
-                            openPicker: { showingMonthPicker = true }
+                            openPicker: { presentation.present(.monthPicker) }
                         )
 
                         DailyRecordCards(
@@ -134,55 +148,93 @@ struct HomeView: View {
                                 equalTo: .now,
                                 toGranularity: .month
                             ),
-                            baseCurrencyCode: baseCurrencyCode,
-                            rates: rates,
-                            relations: relations,
-                            addTransaction: addTransaction
+                            addTransaction: addTransaction,
+                            expandedTransactionID: $expandedTransactionID,
+                            lockedTransactionIDs: aaRecoveryTransactionIDs,
+                            editTransaction: { transaction in
+                                expandedTransactionID = nil
+                                presentation.present(.editTransaction(transaction))
+                            },
+                            deleteTransaction: { transaction in
+                                expandedTransactionID = nil
+                                deletingTransaction = transaction
+                            }
                         )
                     }
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, 20)
                     .padding(.top, 8)
-                    .padding(.bottom, 104)
+                    .padding(.bottom, RootEntryLayout.scrollContentClearance)
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("流水")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { presentation.present(.bookSwitcher) } label: {
+                        Label(selectedBook?.name ?? "选择账本", systemImage: "book.closed")
+                    }
+                    .accessibilityHint("切换账本")
+                }
+
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { presentation.present(.transactions) } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .accessibilityLabel("搜索流水")
+
+                    Menu {
+                        Button { presentation.present(.bookManagement) } label: {
+                            Label("管理账本", systemImage: "slider.horizontal.3")
+                        }
+                        Button { presentation.present(.calendar) } label: {
+                            Label("账单日历", systemImage: "calendar")
+                        }
+                        Button { presentation.present(.smartDraft) } label: {
+                            Label("文本或语音记账", systemImage: "waveform.and.mic")
+                        }
+                        Button { presentation.present(.addAsset(selectedBook)) } label: {
+                            Label("新增账户", systemImage: "creditcard.badge.plus")
+                        }
+                        Divider()
+                        Button { presentation.present(.settings) } label: {
+                            Label("设置", systemImage: "gearshape")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("更多流水操作")
+                }
+            }
             .navigationDestination(for: LedgerTransaction.self) {
                 TransactionDetailView(transaction: $0)
                     .toolbar(.visible, for: .navigationBar)
+                    .rootEntryVisibility(.hidden, for: .ledger)
             }
-            .sheet(isPresented: $showingSettings) {
-                SettingsView()
-            }
-            .sheet(isPresented: $showingAddAsset) {
-                AddAccountView(book: selectedBook)
-            }
-            .sheet(isPresented: $showingBookSwitcher) {
-                LedgerBookSwitcherView(selectedBookID: $selectedBookID)
-            }
-            .sheet(isPresented: $showingBookManagement) {
-                LedgerBookManagementView()
-            }
-            .sheet(isPresented: $showingTransactions) {
-                TransactionListView()
-            }
-            .sheet(isPresented: $showingMonthPicker) {
-                MonthPickerView(selectedMonth: $selectedMonth)
-            }
-            .sheet(isPresented: $showingBudgetEditor) {
-                BudgetEditorSheet(
-                    month: selectedMonth,
-                    currencyCode: baseCurrencyCode,
-                    currentAmount: currentBudget?.amount,
-                    save: saveBudget
+            .background {
+                HomeSheetPresenter(
+                    presentation: presentation,
+                    selectedBookID: $selectedBookID,
+                    selectedMonth: $selectedMonth
                 )
             }
-            .sheet(isPresented: $showingBudgetManagement) {
-                NavigationStack { BudgetManagementView() }
+            .confirmationDialog(
+                "确定删除这笔交易？",
+                isPresented: Binding(
+                    get: { deletingTransaction != nil },
+                    set: { if !$0 { deletingTransaction = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("删除并回滚余额", role: .destructive, action: deletePendingTransaction)
+                Button("取消", role: .cancel) { deletingTransaction = nil }
+            } message: {
+                Text("删除后，相关账户余额会同步回滚。")
             }
-            .sheet(isPresented: $showingReports) { ReportsView() }
-            .sheet(isPresented: $showingCalendar) { TransactionCalendarView() }
-            .sheet(isPresented: $showingSmartDraft) {
-                NavigationStack { SmartDraftEntryView() }
+            .alert("操作失败", isPresented: Binding(
+                get: { transactionActionError != nil },
+                set: { if !$0 { transactionActionError = nil } }
+            )) { Button("好") {} } message: {
+                Text(transactionActionError ?? "未知错误")
             }
             .onAppear {
                 ensureSelectedBook()
@@ -201,7 +253,12 @@ struct HomeView: View {
 
     private func openBudgetEditor() {
         guard selectedBook != nil else { return }
-        showingBudgetEditor = true
+        presentation.present(.budgetEditor(
+            month: selectedMonth,
+            currencyCode: baseCurrencyCode,
+            currentAmount: currentBudget?.amount,
+            save: saveBudget
+        ))
     }
 
     private func saveBudget(_ amount: Decimal) throws {
@@ -214,13 +271,23 @@ struct HomeView: View {
         )
     }
 
+    private func deletePendingTransaction() {
+        guard let transaction = deletingTransaction else { return }
+        do {
+            try LedgerService(context: context).deleteTransaction(transaction)
+            deletingTransaction = nil
+        } catch {
+            transactionActionError = error.localizedDescription
+        }
+    }
+
     private func applyPreviewStateIfNeeded() {
         #if DEBUG
         guard !appliedPreviewState else { return }
         appliedPreviewState = true
         switch ProcessInfo.processInfo.environment["HOME_PREVIEW_STATE"] {
         case "book-switcher":
-            DispatchQueue.main.async { showingBookSwitcher = true }
+            DispatchQueue.main.async { presentation.present(.bookSwitcher) }
         case "previous-month":
             selectedMonth = Calendar.current.date(byAdding: .month, value: -1, to: selectedMonth) ?? selectedMonth
         case "future-month":
@@ -230,7 +297,7 @@ struct HomeView: View {
                 selectedBookID = travelBook.id.uuidString
             }
         case "budget-editor":
-            DispatchQueue.main.async { showingBudgetEditor = true }
+            DispatchQueue.main.async { openBudgetEditor() }
         default:
             break
         }
@@ -238,11 +305,100 @@ struct HomeView: View {
     }
 }
 
+private struct HomeSheetPresentation: Identifiable {
+    let id = UUID()
+    let destination: HomeSheetDestination
+}
+
+private enum HomeSheetDestination {
+    case settings
+    case addAsset(LedgerBook?)
+    case bookSwitcher
+    case bookManagement
+    case transactions
+    case monthPicker
+    case budgetEditor(
+        month: Date,
+        currencyCode: String,
+        currentAmount: Decimal?,
+        save: (Decimal) throws -> Void
+    )
+    case budgetManagement
+    case reports
+    case calendar
+    case smartDraft
+    case aaReceivables(UUID)
+    case editTransaction(LedgerTransaction)
+}
+
+@MainActor
+@Observable
+private final class HomePresentationState {
+    var sheet: HomeSheetPresentation?
+
+    func present(_ destination: HomeSheetDestination) {
+        sheet = HomeSheetPresentation(destination: destination)
+    }
+}
+
+private struct HomeSheetPresenter: View {
+    @Bindable var presentation: HomePresentationState
+    @Binding var selectedBookID: String
+    @Binding var selectedMonth: Date
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .sheet(item: $presentation.sheet) { presentation in
+                destination(for: presentation.destination)
+            }
+    }
+
+    @ViewBuilder
+    private func destination(for destination: HomeSheetDestination) -> some View {
+        switch destination {
+        case .settings:
+            SettingsView()
+        case .addAsset(let book):
+            AddAccountView(book: book)
+        case .bookSwitcher:
+            LedgerBookSwitcherView(selectedBookID: $selectedBookID)
+        case .bookManagement:
+            LedgerBookManagementView()
+        case .transactions:
+            TransactionListView()
+        case .monthPicker:
+            MonthPickerView(selectedMonth: $selectedMonth)
+        case let .budgetEditor(month, currencyCode, currentAmount, save):
+            BudgetEditorSheet(
+                month: month,
+                currencyCode: currencyCode,
+                currentAmount: currentAmount,
+                save: save
+            )
+        case .budgetManagement:
+            NavigationStack { BudgetManagementView() }
+        case .reports:
+            ReportsView()
+        case .calendar:
+            TransactionCalendarView()
+        case .smartDraft:
+            NavigationStack { SmartDraftEntryView() }
+        case .aaReceivables(let bookID):
+            AAReceivableListView(bookID: bookID)
+        case .editTransaction(let transaction):
+            TransactionEditView(transaction: transaction) {}
+        }
+    }
+}
+
 enum HomePalette {
+    static let accent = Color(red: 22 / 255, green: 134 / 255, blue: 232 / 255)
+
     static let background = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 0.045, green: 0.059, blue: 0.078, alpha: 1)
-            : UIColor(red: 0.957, green: 0.969, blue: 0.978, alpha: 1)
+            : UIColor(white: 0.965, alpha: 1)
     })
 
     static let expense = Color(uiColor: UIColor { traits in
@@ -256,168 +412,74 @@ enum HomePalette {
             ? UIColor(white: 1, alpha: 0.12)
             : UIColor(white: 1, alpha: 0.52)
     })
-}
 
-private struct HomeHeader: View {
-    let profileImagePath: String
-    let bookName: String
-    let openProfile: () -> Void
-    let switchBook: () -> Void
-    let manageBooks: () -> Void
-    let searchTransactions: () -> Void
-    let addAsset: () -> Void
-    let openReports: () -> Void
-    let openCalendar: () -> Void
-    let manageBudgets: () -> Void
-    let openSmartDraft: () -> Void
+    static let gaugeTrack = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.14)
+            : UIColor(white: 1, alpha: 0.88)
+    })
 
-    var body: some View {
-        HStack(spacing: 10) {
-            Button(action: openProfile) {
-                ProfileAvatar(path: profileImagePath)
-            }
-            .buttonStyle(PressableGlassButtonStyle())
-            .accessibilityLabel("个人中心")
+    static let gaugeProgress = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.90, alpha: 1)
+            : UIColor(white: 0.26, alpha: 1)
+    })
 
-            Spacer(minLength: 4)
-
-            Button(action: switchBook) {
-                HStack(spacing: 6) {
-                    Image(systemName: "book.closed.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                    Text(bookName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 13)
-                .frame(maxWidth: 200)
-                .frame(height: 40)
-                .background(Color.accentColor.opacity(0.08), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("当前账本：\(bookName)，点击切换")
-
-            Spacer(minLength: 4)
-
-            Menu {
-                Button(action: switchBook) {
-                    Label("切换账本", systemImage: "arrow.left.arrow.right")
-                }
-                Button(action: manageBooks) {
-                    Label("管理账本", systemImage: "slider.horizontal.3")
-                }
-                Button(action: searchTransactions) {
-                    Label("搜索账单", systemImage: "magnifyingglass")
-                }
-                Button(action: openCalendar) {
-                    Label("账单日历", systemImage: "calendar")
-                }
-                Button(action: openReports) {
-                    Label("统计报表", systemImage: "chart.bar.xaxis")
-                }
-                Button(action: manageBudgets) {
-                    Label("预算管理", systemImage: "gauge.with.dots.needle.50percent")
-                }
-                Button(action: openSmartDraft) {
-                    Label("文本或语音记账", systemImage: "waveform.and.mic")
-                }
-                Divider()
-                Button(action: addAsset) {
-                    Label("新增资产", systemImage: "creditcard.badge.plus")
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 44, height: 44)
-                    .background(.thinMaterial, in: Circle())
-                    .overlay(Circle().stroke(HomePalette.glassBorder, lineWidth: 0.8))
-            }
-            .buttonStyle(PressableGlassButtonStyle())
-            .accessibilityLabel("更多账本操作")
-        }
-        .frame(height: 50)
-    }
-}
-
-private struct ProfileAvatar: View {
-    let path: String
-
-    private var image: UIImage? {
-        guard !path.isEmpty else { return nil }
-        return UIImage(contentsOfFile: path)
-    }
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(Color.accentColor, Color.accentColor.opacity(0.14))
-                    .padding(3)
-            }
-        }
-        .frame(width: 46, height: 46)
-        .clipShape(Circle())
-        .background(.thinMaterial, in: Circle())
-        .overlay(Circle().stroke(HomePalette.glassBorder, lineWidth: 1))
-    }
+    static let glassHighlightShadow = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.025)
+            : UIColor(white: 1, alpha: 0.62)
+    })
 }
 
 private struct MonthNavigator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selectedMonth: Date
     let openPicker: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            monthButton(systemName: "chevron.left") { changeMonth(by: -1) }
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
+                monthButton(systemName: "chevron.left") { changeMonth(by: -1) }
 
-            Button(action: openPicker) {
-                HStack(spacing: 5) {
-                    Text(selectedMonth.chineseYearMonth)
-                        .font(.subheadline.weight(.semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
+                Button(action: openPicker) {
+                    HStack(spacing: 5) {
+                        Text(selectedMonth.chineseYearMonth)
+                            .font(.system(size: 13, weight: .semibold))
+                            .contentTransition(reduceMotion ? .identity : .numericText())
+                            .animation(
+                                reduceMotion ? nil : .easeOut(duration: 0.18),
+                                value: selectedMonth
+                            )
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minWidth: 126, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
-                .frame(minWidth: 126, minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("选择年月，当前\(selectedMonth.chineseYearMonth)")
+                .buttonStyle(.glass)
+                .accessibilityLabel("选择年月，当前\(selectedMonth.chineseYearMonth)")
 
-            monthButton(systemName: "chevron.right") { changeMonth(by: 1) }
+                monthButton(systemName: "chevron.right") { changeMonth(by: 1) }
+            }
         }
-        .padding(.horizontal, 6)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(HomePalette.glassBorder, lineWidth: 0.8))
-        .shadow(color: Color.black.opacity(0.035), radius: 12, y: 5)
     }
 
     private func monthButton(systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(HomePalette.accent)
                 .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
     }
 
     private func changeMonth(by offset: Int) {
         guard let month = Calendar.current.date(byAdding: .month, value: offset, to: selectedMonth) else { return }
-        withAnimation(.snappy(duration: 0.24)) { selectedMonth = month }
+        selectedMonth = month
     }
 }
 
@@ -450,31 +512,29 @@ private struct DailyRecordCards: View {
     let emptyTitle: String
     let emptyMessage: String
     let showAddAction: Bool
-    let baseCurrencyCode: String
-    let rates: [ExchangeRate]
-    let relations: [TransactionRelation]
     let addTransaction: () -> Void
+    @Binding var expandedTransactionID: UUID?
+    let lockedTransactionIDs: Set<UUID>
+    let editTransaction: (LedgerTransaction) -> Void
+    let deleteTransaction: (LedgerTransaction) -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 18) {
             if groups.isEmpty {
                 EmptyRecordsView(
                     title: emptyTitle,
                     message: emptyMessage,
                     addTransaction: showAddAction ? addTransaction : nil
                 )
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(HomePalette.glassBorder, lineWidth: 0.8)
-                }
+                .ledgerContentSurface(cornerRadius: 24)
             } else {
                 ForEach(groups) { group in
                     DailyRecordCard(
                         group: group,
-                        baseCurrencyCode: baseCurrencyCode,
-                        rates: rates,
-                        relations: relations
+                        expandedTransactionID: $expandedTransactionID,
+                        lockedTransactionIDs: lockedTransactionIDs,
+                        editTransaction: editTransaction,
+                        deleteTransaction: deleteTransaction
                     )
                 }
             }
@@ -484,92 +544,199 @@ private struct DailyRecordCards: View {
 
 private struct DailyRecordCard: View {
     let group: TransactionDayGroup
-    let baseCurrencyCode: String
-    let rates: [ExchangeRate]
-    let relations: [TransactionRelation]
+    @Binding var expandedTransactionID: UUID?
+    let lockedTransactionIDs: Set<UUID>
+    let editTransaction: (LedgerTransaction) -> Void
+    let deleteTransaction: (LedgerTransaction) -> Void
 
-    private var cashFlow: (income: Decimal, expense: Decimal) {
-        group.cashFlow(baseCurrencyCode: baseCurrencyCode, rates: rates, relations: relations)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(group.date.figmaHomeDayHeading)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary)
+                .padding(.leading, 6)
+
+            VStack(spacing: 14) {
+                ForEach(group.transactions) { transaction in
+                    if lockedTransactionIDs.contains(transaction.id) {
+                        NavigationLink(value: transaction) {
+                            HomeTransactionRow(transaction: transaction)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        SwipeableHomeTransactionRow(
+                            transaction: transaction,
+                            expandedTransactionID: $expandedTransactionID,
+                            edit: { editTransaction(transaction) },
+                            delete: { deleteTransaction(transaction) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SwipeableHomeTransactionRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private enum RevealedSide {
+        case edit
+        case delete
+    }
+
+    private let actionWidth: CGFloat = 82
+
+    let transaction: LedgerTransaction
+    @Binding var expandedTransactionID: UUID?
+    let edit: () -> Void
+    let delete: () -> Void
+
+    @State private var revealedSide: RevealedSide?
+    @GestureState private var dragTranslation: CGFloat = 0
+
+    private var restingOffset: CGFloat {
+        guard expandedTransactionID == transaction.id else { return 0 }
+        switch revealedSide {
+        case .edit: return actionWidth
+        case .delete: return -actionWidth
+        case nil: return 0
+        }
+    }
+
+    private var horizontalOffset: CGFloat {
+        let proposed = restingOffset + dragTranslation
+        return min(actionWidth, max(-actionWidth, proposed))
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(group.date.homeDayHeading)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 8)
-
-                HStack(spacing: 10) {
-                    Text("收 \(MoneyFormatter.currencySymbol(currencyCode: baseCurrencyCode))\(MoneyFormatter.plain(cashFlow.income, currencyCode: baseCurrencyCode))")
-                    Text("支 \(MoneyFormatter.currencySymbol(currencyCode: baseCurrencyCode))\(MoneyFormatter.plain(cashFlow.expense, currencyCode: baseCurrencyCode))")
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+        ZStack {
+            HStack(spacing: 0) {
+                swipeButton(
+                    title: "编辑",
+                    symbol: "pencil",
+                    color: HomePalette.accent,
+                    action: edit
+                )
+                .opacity(horizontalOffset > 0 ? 1 : 0)
+                .allowsHitTesting(horizontalOffset > 0)
+                Spacer(minLength: 0)
+                swipeButton(
+                    title: "删除",
+                    symbol: "trash",
+                    color: HomePalette.expense,
+                    action: delete
+                )
+                .opacity(horizontalOffset < 0 ? 1 : 0)
+                .allowsHitTesting(horizontalOffset < 0)
             }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 38)
+            .padding(.horizontal, 6)
 
-            Divider().padding(.leading, 16)
+            NavigationLink(value: transaction) {
+                HomeTransactionRow(transaction: transaction)
+            }
+            .buttonStyle(.plain)
+            .offset(x: horizontalOffset)
+            .simultaneousGesture(swipeGesture)
+            .accessibilityAction(named: "编辑交易", edit)
+            .accessibilityAction(named: "删除交易", delete)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+        .onChange(of: expandedTransactionID) { _, id in
+            if id != transaction.id { revealedSide = nil }
+        }
+    }
 
-            ForEach(Array(group.transactions.enumerated()), id: \.element.id) { index, transaction in
-                NavigationLink(value: transaction) {
-                    HomeTransactionRow(transaction: transaction)
-                }
-                .buttonStyle(.plain)
-
-                if index < group.transactions.count - 1 {
-                    Divider().padding(.leading, 68)
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 18)
+            .updating($dragTranslation) { value, state, _ in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                state = value.translation.width
+            }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical) {
+                    if value.translation.width > 34 {
+                        revealedSide = .edit
+                        expandedTransactionID = transaction.id
+                    } else if value.translation.width < -34 {
+                        revealedSide = .delete
+                        expandedTransactionID = transaction.id
+                    } else {
+                        revealedSide = nil
+                        expandedTransactionID = nil
+                    }
                 }
             }
+    }
+
+    private func swipeButton(
+        title: String,
+        symbol: String,
+        color: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.caption.bold())
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.white)
+                .frame(width: actionWidth, height: 80)
+                .background(color)
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(HomePalette.glassBorder, lineWidth: 0.8)
-        }
-        .shadow(color: Color.black.opacity(0.035), radius: 15, y: 7)
+        .buttonStyle(.plain)
     }
 }
 
 struct HomeTransactionRow: View {
+    @Environment(\.colorScheme) private var colorScheme
     let transaction: LedgerTransaction
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 13) {
             Image(systemName: transaction.category?.symbolName ?? transaction.type.symbolName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(transaction.homeTint)
-                .frame(width: 38, height: 38)
-                .background(transaction.homeTint.opacity(0.12), in: Circle())
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(HomePalette.accent)
+                .frame(width: 40, height: 40)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(transaction.homeTitle)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(transaction.homeRowSubtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(transaction.homeCategoryTitle)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text("/ \(transaction.figmaHomeTimestamp)")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 6)
+
+                    Text(transaction.summaryAmount)
+                        .font(.system(size: 14, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.70)
+                }
+
+                HStack(spacing: 8) {
+                    Text(transaction.homeDetailText)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(transaction.homeAccountName)
+                        .lineLimit(1)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
             }
-
-            Spacer(minLength: 8)
-
-            Text(transaction.summaryAmount)
-                .font(.subheadline.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
         }
-        .padding(.horizontal, 15)
-        .frame(minHeight: 54)
-        .contentShape(Rectangle())
+        .padding(.horizontal, 18)
+        .frame(maxWidth: .infinity)
+        .frame(height: 80)
+        .ledgerContentSurface(cornerRadius: 25)
+        .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+        .padding(.horizontal, 6)
     }
 }
 
@@ -659,34 +826,42 @@ private struct MonthPickerView: View {
 }
 
 private struct PressableGlassButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+            .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive, value: configuration.isPressed)
     }
 }
 
 extension LedgerTransaction {
-    var homeTitle: String {
-        if let note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return note
-        }
-        return category?.name ?? type.title
+    var homeCategoryTitle: String {
+        category?.name ?? type.title
     }
 
-    var homeRowSubtitle: String {
-        "\(category?.name ?? type.title) · \(date.formatted(.dateTime.hour().minute()))"
+    var homeDetailText: String {
+        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedNote.isEmpty ? type.title : trimmedNote
     }
 
-    var homeTint: Color {
-        switch type {
-        case .expense: HomePalette.expense
-        case .income: .green
-        case .transfer: .blue
-        case .exchange: .teal
-        case .adjustment: .orange
-        }
+    var homeAccountName: String {
+        sourceAccount?.name ?? destinationAccount?.name ?? "未指定账户"
+    }
+
+    var figmaHomeTimestamp: String {
+        let components = Calendar.current.dateComponents(
+            [.month, .day, .hour, .minute],
+            from: date
+        )
+        return String(
+            format: "%02d月%02d日 %02d:%02d",
+            components.month ?? 0,
+            components.day ?? 0,
+            components.hour ?? 0,
+            components.minute ?? 0
+        )
     }
 
 }
@@ -703,6 +878,15 @@ extension Date {
                 .locale(Locale(identifier: "zh_Hans_CN"))
                 .month()
                 .day()
+        )
+    }
+
+    var figmaHomeDayHeading: String {
+        let components = Calendar.current.dateComponents([.month, .day], from: self)
+        return String(
+            format: "%02d月%02d日",
+            components.month ?? 0,
+            components.day ?? 0
         )
     }
 }
