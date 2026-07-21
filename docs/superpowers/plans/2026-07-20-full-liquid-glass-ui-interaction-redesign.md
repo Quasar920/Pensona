@@ -1,9 +1,9 @@
 # 全应用透明玻璃 UI 与交互重构实施计划
 
-日期：2026-07-20  
-状态：待用户复核  
-依据规格：`docs/superpowers/specs/2026-07-20-full-liquid-glass-ui-interaction-redesign-design.md`  
-目标工程：`MultiCurrencyLedger.xcodeproj`  
+日期：2026-07-20
+状态：待用户复核
+依据规格：`docs/superpowers/specs/2026-07-20-full-liquid-glass-ui-interaction-redesign-design.md`
+目标工程：`MultiCurrencyLedger.xcodeproj`
 最低系统：iOS 26；主要真机：iPhone 17 Pro / iOS 27 beta 3
 
 ## 1. 计划目标
@@ -827,4 +827,3 @@ xcodebuild -project MultiCurrencyLedger.xcodeproj -scheme MultiCurrencyLedger \
 - 当前工作区状态已记录。
 - 基线 Debug、Release 和测试结果已保存。
 - 数据迁移策略、跨旧账本转账的来源账本优先规则和兼容字段保留策略未被用户否决。
-
