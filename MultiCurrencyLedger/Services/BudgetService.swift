@@ -7,8 +7,8 @@ enum BudgetError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidAmount: "预算金额必须大于 0"
-        case .invalidCategory: "分类预算必须使用当前账本的支出分类"
+        case .invalidAmount: AppLocalization.string( "预算金额必须大于 0")
+        case .invalidCategory: AppLocalization.string( "分类预算必须使用当前账本的支出分类")
         }
     }
 }
@@ -68,7 +68,6 @@ final class BudgetService {
                 $0.id == categoryID
                     && $0.type == .expense
                     && !$0.isArchived
-                    && ($0.bookID == nil || $0.bookID == bookID)
             }) else { throw BudgetError.invalidCategory }
         }
         let start = periodStart(period, containing: date)
@@ -201,8 +200,7 @@ struct BudgetStatisticsService {
     ) -> BudgetStatus {
         let serviceInterval = interval(for: budget)
         let bookTransactions = transactions.filter {
-            ($0.sourceAccount?.book?.id == budget.bookID || $0.destinationAccount?.book?.id == budget.bookID)
-                && serviceInterval.contains($0.date)
+            $0.bookID == budget.bookID && serviceInterval.contains($0.date)
         }
         let valuation = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
         var spent = Decimal.zero
@@ -245,7 +243,7 @@ struct BudgetStatisticsService {
             guard let original = byID[relation.originalTransactionID],
                   let related = byID[relation.relatedTransactionID],
                   serviceInterval.contains(related.date),
-                  original.sourceAccount?.book?.id == budget.bookID,
+                  original.bookID == budget.bookID,
                   budget.categoryID == nil || original.category?.id == budget.categoryID else { continue }
             add(
                 relation.amount,

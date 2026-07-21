@@ -15,8 +15,8 @@ enum PersistentStoreSnapshotError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .unsafeSnapshot: "恢复快照不在 App 的受控目录中"
-        case .emptySnapshot: "快照中没有可恢复的数据库文件"
+        case .unsafeSnapshot: AppLocalization.string( "恢复快照不在 App 的受控目录中")
+        case .emptySnapshot: AppLocalization.string( "快照中没有可恢复的数据库文件")
         }
     }
 }

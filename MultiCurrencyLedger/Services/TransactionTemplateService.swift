@@ -9,10 +9,10 @@ enum TransactionTemplateError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyName: "请输入模板名称"
-        case .duplicateName: "当前账本已存在同名模板"
-        case .missingBook: "模板必须归属一个账本"
-        case .invalidReference: "模板引用的钱包或分类已失效，请编辑或重新创建模板"
+        case .emptyName: AppLocalization.string( "请输入模板名称")
+        case .duplicateName: AppLocalization.string( "当前账本已存在同名模板")
+        case .missingBook: AppLocalization.string( "模板必须归属一个账本")
+        case .invalidReference: AppLocalization.string( "模板引用的钱包或分类已失效，请编辑或重新创建模板")
         }
     }
 }
@@ -32,11 +32,12 @@ final class TransactionTemplateService {
     }
 
     @discardableResult
-    func create(name: String, from draft: TransactionDraft) throws -> TransactionTemplate {
+    func create(name: String, bookID: UUID, from draft: TransactionDraft) throws -> TransactionTemplate {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw TransactionTemplateError.emptyName }
         guard let sourceWallet = draft.sourceWallet,
-              let bookID = sourceWallet.account?.book?.id else {
+              sourceWallet.isEnabled,
+              sourceWallet.account?.isArchived == false else {
             throw TransactionTemplateError.missingBook
         }
         let duplicate = try scoped(bookID: bookID, includeArchived: true).contains {
@@ -76,18 +77,17 @@ final class TransactionTemplateService {
         guard !template.isArchived,
               let source = wallets.first(where: { $0.id == template.sourceWalletID }),
               source.isEnabled,
-              source.account?.isArchived == false,
-              source.account?.book?.id == template.bookID else {
+              source.account?.isArchived == false else {
             throw TransactionTemplateError.invalidReference
         }
         let scopedWallets = wallets.filter {
-            $0.isEnabled && $0.account?.isArchived == false && $0.account?.book?.id == template.bookID
+            $0.isEnabled && $0.account?.isArchived == false
         }
         let destination = template.destinationWalletID.flatMap { id in scopedWallets.first { $0.id == id } }
         let feeWallet = template.feeWalletID.flatMap { id in scopedWallets.first { $0.id == id } }
         let category = template.categoryID.flatMap { id in
             categories.first {
-                $0.id == id && !$0.isArchived && ($0.bookID == nil || $0.bookID == template.bookID)
+                $0.id == id && !$0.isArchived
             }
         }
         let resolvedPaymentParts = template.paymentPartReferences.compactMap { reference in
@@ -107,6 +107,7 @@ final class TransactionTemplateService {
 
         return TransactionDraft(
             type: template.type,
+            bookID: template.bookID,
             amount: template.amount,
             sourceWallet: source,
             destinationWallet: destination,

@@ -32,6 +32,7 @@ final class TransactionFormStateTests: XCTestCase {
 
     func testContinuousEntryPreservesSelectionsButClearsPerEntryContent() {
         var state = TransactionFormState(kind: .expense)
+        let originalDate = state.date
         let walletID = UUID()
         let categoryID = UUID()
         state.sourceWalletID = walletID
@@ -45,12 +46,12 @@ final class TransactionFormStateTests: XCTestCase {
         state.resetForContinuousEntry(now: Date(timeIntervalSince1970: 123))
 
         XCTAssertEqual(state.sourceWalletID, walletID)
-        XCTAssertEqual(state.categoryID, categoryID)
+        XCTAssertNil(state.categoryID)
         XCTAssertEqual(state.amountText, "")
         XCTAssertEqual(state.note, "")
         XCTAssertEqual(state.merchantOrCounterparty, "")
         XCTAssertFalse(state.includesFee)
-        XCTAssertEqual(state.date, Date(timeIntervalSince1970: 123))
+        XCTAssertEqual(state.date, originalDate)
     }
 
     func testCopyRemovesRecognitionMetadataAndUsesNewDate() throws {

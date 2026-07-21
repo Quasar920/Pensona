@@ -5,7 +5,9 @@ enum InstallmentKind: String, CaseIterable, Codable, Identifiable {
     case consumption, bill
 
     var id: String { rawValue }
-    var title: String { self == .consumption ? "消费分期" : "账单分期" }
+    var title: String {
+        self == .consumption ? AppLocalization.string( "消费分期") : AppLocalization.string( "账单分期")
+    }
 }
 
 @Model

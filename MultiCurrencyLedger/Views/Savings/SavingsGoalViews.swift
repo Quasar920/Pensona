@@ -3,71 +3,31 @@ import SwiftUI
 
 struct SavingsGoalListView: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("selectedBookID") private var selectedBookID = ""
-    @AppStorage("baseCurrencyCode") private var baseCurrencyCode = SupportedCurrency.CNY.rawValue
     @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
     private var books: [LedgerBook]
-    @Query private var accounts: [Account]
-    @Query private var rates: [ExchangeRate]
+    @Query(sort: \Account.name) private var accounts: [Account]
     @Query(sort: \SavingsGoal.updatedAt, order: .reverse) private var goals: [SavingsGoal]
     @Query(sort: \SavingsAllocation.date, order: .reverse) private var allocations: [SavingsAllocation]
+    @Query(sort: \RepaymentReminder.dueDate) private var reminders: [RepaymentReminder]
 
-    @State private var showingAdd = false
-    @State private var showingSettings = false
-    @State private var showingBookSwitcher = false
-    @State private var showingBudgets = false
-    @State private var showingRecurring = false
-    @State private var showingInstallments = false
-    @State private var showsArchived = false
-    @State private var selectedSegment = SavingsGoalListSegment.inProgress
+    @State private var showingPlanChooser = false
+    @State private var showingGoalEditor = false
+    @State private var showingReminderEditor = false
+    @State private var allocationGoal: SavingsGoal?
+    @State private var editingReminder: RepaymentReminder?
+    @State private var errorMessage: String?
 
     private var selectedBook: LedgerBook? {
         books.first { $0.id.uuidString == selectedBookID } ?? books.first
     }
 
-    private var bookID: UUID? { selectedBook?.id }
-
-    private var bookGoals: [SavingsGoal] {
-        guard let bookID else { return [] }
-        return goals.filter { $0.bookID == bookID }
+    private var visibleGoals: [SavingsGoal] {
+        goals.filter { $0.isGloballyVisible && $0.status != .archived }
     }
 
-    private var displayedGoals: [SavingsGoal] {
-        if showsArchived {
-            return bookGoals.filter { $0.status == .archived }
-        }
-
-        switch selectedSegment {
-        case .inProgress:
-            return bookGoals.filter { $0.status == .active || $0.status == .paused }
-        case .completed:
-            return bookGoals.filter { $0.status == .completed }
-        }
-    }
-
-    private var summarizedGoals: [SavingsGoal] {
-        showsArchived
-            ? bookGoals.filter { $0.status == .archived }
-            : bookGoals.filter { $0.status != .archived }
-    }
-
-    private var allocationSummary: (allocated: Decimal, netWorth: Decimal, missing: Set<String>) {
-        guard let bookID else { return (0, 0, []) }
-        let valuation = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
-        var allocated = Decimal.zero
-        var missing = Set<String>()
-
-        for goal in summarizedGoals {
-            let amount = goalAllocations(for: goal).reduce(Decimal.zero) { $0 + $1.amount }
-            if let value = valuation.value(amount, currencyCode: goal.currencyCode) { allocated += value }
-            else { missing.insert(goal.currencyCode) }
-        }
-
-        let assetSummary = AssetSummaryService(baseCurrencyCode: baseCurrencyCode, rates: rates)
-            .summary(for: accounts.filter { $0.book?.id == bookID })
-        missing.formUnion(assetSummary.missingCodes)
-        return (allocated, assetSummary.ownerEquity, missing)
+    private var activeAccounts: [Account] {
+        accounts.filter { !$0.isArchived && !$0.allWallets.isEmpty }
     }
 
     var body: some View {
@@ -76,54 +36,53 @@ struct SavingsGoalListView: View {
                 HomePalette.background.ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 16) {
-                        PlanningQuickAccess(
-                            openBudgets: { showingBudgets = true },
-                            openRecurring: { showingRecurring = true },
-                            openInstallments: { showingInstallments = true }
-                        )
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        planSectionTitle("存钱目标", count: visibleGoals.count)
 
-                        if showsArchived {
-                            SavingsPageTitle(isArchivedMode: true)
-                        }
-
-                        SavingsAllocationSummaryCard(
-                            allocated: allocationSummary.allocated,
-                            netWorth: allocationSummary.netWorth,
-                            currencyCode: baseCurrencyCode,
-                            goalCount: summarizedGoals.count,
-                            isArchivedMode: showsArchived,
-                            missingCodes: allocationSummary.missing
-                        )
-
-                        SavingsGoalSegmentedControl(
-                            selectedSegment: $selectedSegment,
-                            isArchivedMode: showsArchived
-                        )
-
-                        if displayedGoals.isEmpty {
-                            SavingsGoalEmptyCard(
-                                isArchivedMode: showsArchived,
-                                segment: selectedSegment,
-                                createGoal: { showingAdd = true }
+                        if visibleGoals.isEmpty {
+                            PlanEmptyCard(
+                                title: AppLocalization.string("还没有存钱目标"),
+                                message: AppLocalization.string("建立目标后，可通过“存入”记录资金用途分配。"),
+                                symbol: "target"
                             )
                         } else {
-                            ForEach(displayedGoals) { goal in
-                                NavigationLink(value: goal) {
-                                    SavingsGoalCard(
-                                        goal: goal,
-                                        progress: SavingsGoalService(context: context).progress(
-                                            for: goal,
-                                            allocations: goalAllocations(for: goal)
-                                        )
-                                    )
+                            ForEach(visibleGoals) { goal in
+                                PlanSavingsGoalCard(
+                                    goal: goal,
+                                    progress: SavingsGoalService(context: context).progress(
+                                        for: goal,
+                                        allocations: goalAllocations(for: goal)
+                                    ),
+                                    allocate: { allocationGoal = goal }
+                                )
+                            }
+                        }
+
+                        planSectionTitle("还款提醒", count: reminders.count)
+                            .padding(.top, 8)
+
+                        if reminders.isEmpty {
+                            PlanEmptyCard(
+                                title: AppLocalization.string("还没有还款提醒"),
+                                message: AppLocalization.string("提醒只记录待还状态，不会自动记账或注册系统通知。"),
+                                symbol: "calendar.badge.clock"
+                            )
+                        } else {
+                            ForEach(reminders) { reminder in
+                                RepaymentReminderCard(
+                                    reminder: reminder,
+                                    accountName: accountName(for: reminder.accountID),
+                                    toggleCompletion: { toggleCompletion(reminder) },
+                                    edit: { editingReminder = reminder }
+                                )
+                                .contextMenu {
+                                    Button("删除提醒", role: .destructive) { delete(reminder) }
                                 }
-                                .buttonStyle(LedgerGlassPressStyle())
                             }
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
+                    .padding(.top, 12)
                     .padding(.bottom, RootEntryLayout.scrollContentClearance)
                 }
             }
@@ -131,47 +90,15 @@ struct SavingsGoalListView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showingBookSwitcher = true } label: {
-                        Label(selectedBook?.name ?? "选择账本", systemImage: "book.closed")
+                    Button { showingPlanChooser = true } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "plus")
+                            Text("新增计划")
+                        }
+                        .font(.subheadline.weight(.semibold))
                     }
-                    .accessibilityHint("切换账本")
-                }
-
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showingAdd = true } label: {
-                        Image(systemName: "plus")
-                    }
-                    .disabled(bookID == nil)
-                    .accessibilityLabel("新建存钱目标")
-
-                    Menu {
-                        Button { showingBudgets = true } label: {
-                            Label("预算管理", systemImage: "gauge.with.dots.needle.50percent")
-                        }
-                        Button { showingRecurring = true } label: {
-                            Label("周期账单", systemImage: "repeat")
-                        }
-                        Button { showingInstallments = true } label: {
-                            Label("分期计划", systemImage: "calendar.badge.clock")
-                        }
-                        Divider()
-                        Button {
-                            withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive) {
-                                showsArchived.toggle()
-                            }
-                        } label: {
-                            Label(
-                                showsArchived ? "返回进行中" : "查看已归档",
-                                systemImage: showsArchived ? "arrow.uturn.backward" : "archivebox"
-                            )
-                        }
-                        Button { showingSettings = true } label: {
-                            Label("设置", systemImage: "gearshape")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                    }
-                    .accessibilityLabel("更多计划操作")
+                    .disabled(selectedBook == nil || activeAccounts.isEmpty && books.isEmpty)
+                    .accessibilityHint("选择新增存钱目标或还款提醒")
                 }
             }
             .navigationDestination(for: SavingsGoal.self) { goal in
@@ -179,37 +106,320 @@ struct SavingsGoalListView: View {
                     .toolbar(.visible, for: .navigationBar)
                     .rootEntryVisibility(.hidden, for: .savings)
             }
-            .sheet(isPresented: $showingAdd) {
-                if let bookID { SavingsGoalEditorView(bookID: bookID, goal: nil) }
+            .confirmationDialog("新增计划", isPresented: $showingPlanChooser) {
+                Button("存钱目标") { showingGoalEditor = true }
+                Button("还款提醒") { showingReminderEditor = true }
+                Button("取消", role: .cancel) {}
             }
-            .sheet(isPresented: $showingSettings) {
-                SettingsView()
+            .sheet(isPresented: $showingGoalEditor) {
+                if let bookID = selectedBook?.id {
+                    SavingsGoalEditorView(bookID: bookID, goal: nil)
+                }
             }
-            .sheet(isPresented: $showingBookSwitcher) {
-                LedgerBookSwitcherView(selectedBookID: $selectedBookID)
+            .sheet(isPresented: $showingReminderEditor) {
+                RepaymentReminderEditorView(accounts: activeAccounts, reminder: nil)
             }
-            .sheet(isPresented: $showingBudgets) {
-                NavigationStack { BudgetManagementView() }
+            .sheet(item: $allocationGoal) { goal in
+                SavingsAllocationEditorView(goal: goal, accounts: activeAccounts)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showingRecurring) {
-                NavigationStack { RecurringScheduleManagementView() }
-            }
-            .sheet(isPresented: $showingInstallments) {
-                NavigationStack { InstallmentPlanManagementView() }
+            .sheet(item: $editingReminder) { reminder in
+                RepaymentReminderEditorView(accounts: activeAccounts, reminder: reminder)
             }
             .onAppear(perform: ensureSelectedBook)
             .onChange(of: books.count) { _, _ in ensureSelectedBook() }
+            .alert("操作失败", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("好") {}
+            } message: {
+                Text(errorMessage ?? AppLocalization.string("未知错误"))
+            }
         }
+    }
+
+    private func planSectionTitle(_ title: String, count: Int) -> some View {
+        HStack {
+            Text(title).font(.title3.bold())
+            Spacer()
+            Text("\(count) 项").font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func goalAllocations(for goal: SavingsGoal) -> [SavingsAllocation] {
         allocations.filter { $0.goal?.id == goal.id }
     }
 
+    private func accountName(for accountID: UUID) -> String {
+        accounts.first(where: { $0.id == accountID })?.name ?? AppLocalization.string("已删除账户")
+    }
+
+    private func toggleCompletion(_ reminder: RepaymentReminder) {
+        do {
+            try RepaymentReminderService(context: context).setCompleted(
+                !reminder.isCompleted,
+                reminder: reminder
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func delete(_ reminder: RepaymentReminder) {
+        do {
+            try RepaymentReminderService(context: context).delete(reminder)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func ensureSelectedBook() {
         guard let first = books.first else { return }
         if !books.contains(where: { $0.id.uuidString == selectedBookID }) {
             selectedBookID = first.id.uuidString
+        }
+    }
+}
+
+private struct PlanSavingsGoalCard: View {
+    let goal: SavingsGoal
+    let progress: SavingsGoalProgress
+    let allocate: () -> Void
+
+    private var tint: Color { Color.ledgerHex(goal.colorHex) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            NavigationLink(value: goal) {
+                HStack(spacing: 12) {
+                    Image(systemName: goal.symbolName)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 44, height: 44)
+                        .background(tint.opacity(0.12), in: Circle())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(goal.name).font(.headline).foregroundStyle(.primary)
+                        Text(targetDateText).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold()).foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(LedgerGlassPressStyle())
+
+            HStack(alignment: .firstTextBaseline) {
+                Text(MoneyFormatter.string(progress.allocated, currencyCode: goal.currencyCode))
+                    .font(.title3.bold()).monospacedDigit()
+                Text("/ \(MoneyFormatter.string(progress.target, currencyCode: goal.currencyCode))")
+                    .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                Spacer()
+                Text(progress.fraction, format: .percent.precision(.fractionLength(0)))
+                    .font(.caption.bold()).foregroundStyle(tint)
+            }
+
+            ProgressView(value: min(max(progress.fraction, 0), 1)).tint(tint)
+
+            Button(action: allocate) {
+                Label("存入", systemImage: "plus.circle.fill")
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(tint)
+            .disabled(goal.status == .completed || goal.status == .paused)
+        }
+        .padding(18)
+        .ledgerGlassCard(cornerRadius: 26, tint: tint)
+    }
+
+    private var targetDateText: String {
+        guard let date = goal.targetDate else { return AppLocalization.string( "未设置目标日期") }
+        return AppLocalization.string( "目标日期 \(date.formatted(date: .abbreviated, time: .omitted))")
+    }
+}
+
+private struct RepaymentReminderCard: View {
+    let reminder: RepaymentReminder
+    let accountName: String
+    let toggleCompletion: () -> Void
+    let edit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Button(action: edit) {
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(spacing: 7) {
+                        Text(accountName).font(.headline).foregroundStyle(.primary)
+                        if reminder.isCompleted {
+                            Text("已完成")
+                                .font(.caption2.bold()).foregroundStyle(.green)
+                        }
+                    }
+                    Text("待还 \(MoneyFormatter.string(reminder.outstandingAmount, currencyCode: reminder.currencyCode))")
+                        .font(.title3.bold()).foregroundStyle(.primary).monospacedDigit()
+                    HStack(spacing: 8) {
+                        Text(reminder.dueDate, format: .dateTime.year().month().day())
+                        Text(remainingDaysText)
+                    }
+                    .font(.caption).foregroundStyle(reminder.isCompleted ? .secondary : dueColor)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(LedgerGlassPressStyle())
+
+            Button(action: toggleCompletion) {
+                Image(systemName: reminder.isCompleted ? "checkmark" : "circle")
+                    .font(.headline.bold())
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.glass)
+            .tint(reminder.isCompleted ? .green : HomePalette.accent)
+            .accessibilityLabel(
+                reminder.isCompleted
+                    ? AppLocalization.string("恢复未完成")
+                    : AppLocalization.string("标记为已完成")
+            )
+        }
+        .padding(18)
+        .ledgerGlassCard(cornerRadius: 26, tint: reminder.isCompleted ? .green : HomePalette.accent)
+        .opacity(reminder.isCompleted ? 0.72 : 1)
+    }
+
+    private var remainingDays: Int {
+        let calendar = Calendar.current
+        return calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: .now),
+            to: calendar.startOfDay(for: reminder.dueDate)
+        ).day ?? 0
+    }
+
+    private var remainingDaysText: String {
+        if reminder.isCompleted { return AppLocalization.string( "已完成") }
+        if remainingDays == 0 { return AppLocalization.string( "今天到期") }
+        if remainingDays > 0 { return AppLocalization.string( "剩余 \(remainingDays) 天") }
+        return AppLocalization.string( "已逾期 \(-remainingDays) 天")
+    }
+
+    private var dueColor: Color { remainingDays < 0 ? .red : .secondary }
+}
+
+private struct PlanEmptyCard: View {
+    let title: String
+    let message: String
+    let symbol: String
+
+    var body: some View {
+        HStack(spacing: 13) {
+            Image(systemName: symbol)
+                .font(.title3).foregroundStyle(HomePalette.accent)
+                .frame(width: 42, height: 42)
+                .background(HomePalette.accent.opacity(0.1), in: Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.subheadline.bold())
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .ledgerGlassCard(cornerRadius: 22, tint: HomePalette.accent)
+    }
+}
+
+private struct RepaymentReminderEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    let accounts: [Account]
+    let reminder: RepaymentReminder?
+    @State private var accountID: UUID?
+    @State private var currencyCode: String
+    @State private var amountText: String
+    @State private var dueDate: Date
+    @State private var errorMessage: String?
+
+    init(accounts: [Account], reminder: RepaymentReminder?) {
+        self.accounts = accounts
+        self.reminder = reminder
+        let initialAccount = reminder.flatMap { item in accounts.first { $0.id == item.accountID } } ?? accounts.first
+        _accountID = State(initialValue: initialAccount?.id)
+        _currencyCode = State(initialValue: reminder?.currencyCode ?? initialAccount?.allWallets.first?.currencyCode ?? "CNY")
+        _amountText = State(initialValue: reminder.map { NSDecimalNumber(decimal: $0.outstandingAmount).stringValue } ?? "")
+        _dueDate = State(initialValue: reminder?.dueDate ?? Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now)
+    }
+
+    private var selectedAccount: Account? {
+        accounts.first { $0.id == accountID }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("还款账户", selection: $accountID) {
+                    ForEach(accounts) { account in
+                        Text(account.name).tag(account.id as UUID?)
+                    }
+                }
+                Picker("币种", selection: $currencyCode) {
+                    ForEach(selectedAccount?.allWallets ?? []) { wallet in
+                        Text(wallet.currencyCode).tag(wallet.currencyCode)
+                    }
+                }
+                TextField("待还金额", text: $amountText).keyboardType(.decimalPad)
+                DatePicker("还款日期", selection: $dueDate, displayedComponents: .date)
+                Text("完成提醒只更新提醒状态，不会创建交易或系统通知。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            .navigationTitle(
+                reminder == nil
+                    ? AppLocalization.string("新建还款提醒")
+                    : AppLocalization.string("编辑还款提醒")
+            )
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("保存", action: save) }
+            }
+            .onChange(of: accountID) { _, _ in
+                if let first = selectedAccount?.allWallets.first,
+                   !selectedAccount!.allWallets.contains(where: { $0.currencyCode == currencyCode }) {
+                    currencyCode = first.currencyCode
+                }
+            }
+            .alert("无法保存", isPresented: Binding(
+                get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
+        }
+    }
+
+    private func save() {
+        do {
+            guard let accountID else { throw RepaymentReminderError.invalidAccount }
+            guard let amount = DecimalParser.parse(amountText) else { throw RepaymentReminderError.invalidAmount }
+            let service = RepaymentReminderService(context: context)
+            if let reminder {
+                try service.update(
+                    reminder,
+                    accountID: accountID,
+                    currencyCode: currencyCode,
+                    outstandingAmount: amount,
+                    dueDate: dueDate
+                )
+            } else {
+                try service.create(
+                    accountID: accountID,
+                    currencyCode: currencyCode,
+                    outstandingAmount: amount,
+                    dueDate: dueDate
+                )
+            }
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
@@ -256,8 +466,8 @@ private enum SavingsGoalListSegment: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .inProgress: "未完成"
-        case .completed: "已完成"
+        case .inProgress: AppLocalization.string( "未完成")
+        case .completed: AppLocalization.string( "已完成")
         }
     }
 }
@@ -267,10 +477,14 @@ private struct SavingsPageTitle: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(isArchivedMode ? "已归档目标" : "存钱计划")
+            Text(isArchivedMode ? AppLocalization.string("已归档目标") : AppLocalization.string("存钱计划"))
                 .font(.system(.title, design: .rounded, weight: .bold))
                 .foregroundStyle(.primary)
-            Text(isArchivedMode ? "查看已归档目标及其分配记录" : "查看目标进度和每月建议金额")
+            Text(
+                isArchivedMode
+                    ? AppLocalization.string("查看已归档目标及其分配记录")
+                    : AppLocalization.string("查看目标进度和每月建议金额")
+            )
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -290,7 +504,7 @@ private struct SavingsAllocationSummaryCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(isArchivedMode ? "已归档已存入" : "总已存入")
+                    Text(isArchivedMode ? AppLocalization.string("已归档已存入") : AppLocalization.string("总已存入"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text(MoneyFormatter.string(allocated, currencyCode: currencyCode))
@@ -419,14 +633,16 @@ private struct SavingsGoalEmptyCard: View {
     }
 
     private var emptyTitle: String {
-        if isArchivedMode { return "还没有已归档目标" }
-        return segment == .completed ? "还没有完成的目标" : "设定一个存钱目标"
+        if isArchivedMode { return AppLocalization.string( "还没有已归档目标") }
+        return segment == .completed
+            ? AppLocalization.string( "还没有完成的目标")
+            : AppLocalization.string( "设定一个存钱目标")
     }
 
     private var emptyMessage: String {
-        if isArchivedMode { return "从目标详情将不再需要的计划归档后，会显示在这里。" }
-        if segment == .completed { return "已完成的存钱计划会集中收纳在这里。" }
-        return "目标分配只用于规划资金用途，不会改变真实钱包余额。"
+        if isArchivedMode { return AppLocalization.string( "从目标详情将不再需要的计划归档后，会显示在这里。") }
+        if segment == .completed { return AppLocalization.string( "已完成的存钱计划会集中收纳在这里。") }
+        return AppLocalization.string( "目标分配只用于规划资金用途，不会改变真实钱包余额。")
     }
 }
 
@@ -508,13 +724,15 @@ private struct SavingsGoalCard: View {
     }
 
     private var monthlyRecommendation: String {
-        if goal.status == .completed { return "目标已完成" }
-        if goal.status == .paused { return "计划已暂停" }
-        if goal.status == .archived { return "目标已归档" }
+        if goal.status == .completed { return AppLocalization.string( "目标已完成") }
+        if goal.status == .paused { return AppLocalization.string( "计划已暂停") }
+        if goal.status == .archived { return AppLocalization.string( "目标已归档") }
         if let amount = progress.recommendedMonthlyAmount {
-            return "建议每月 \(MoneyFormatter.string(amount, currencyCode: goal.currencyCode))"
+            return AppLocalization.string( "建议每月 \(MoneyFormatter.string(amount, currencyCode: goal.currencyCode))")
         }
-        return goal.targetDate == nil ? "未设置目标日期" : "已达成当前目标"
+        return goal.targetDate == nil
+            ? AppLocalization.string( "未设置目标日期")
+            : AppLocalization.string( "已达成当前目标")
     }
 
     private var statusColor: Color {
@@ -567,11 +785,11 @@ private struct SavingsGoalDetailView: View {
                     .ledgerGlassCard(cornerRadius: 30, tint: goalColor)
 
                     HStack(spacing: 10) {
-                        SavingsMetricCard(title: "还需", value: MoneyFormatter.string(progress.remaining, currencyCode: goal.currencyCode), tint: goalColor)
+                        SavingsMetricCard(title: AppLocalization.string("还需"), value: MoneyFormatter.string(progress.remaining, currencyCode: goal.currencyCode), tint: goalColor)
                         if let amount = progress.recommendedMonthlyAmount {
-                            SavingsMetricCard(title: "建议每月", value: MoneyFormatter.string(amount, currencyCode: goal.currencyCode), tint: goalColor)
+                            SavingsMetricCard(title: AppLocalization.string("建议每月"), value: MoneyFormatter.string(amount, currencyCode: goal.currencyCode), tint: goalColor)
                         } else if let date = goal.targetDate {
-                            SavingsMetricCard(title: "目标日期", value: date.formatted(date: .abbreviated, time: .omitted), tint: goalColor)
+                            SavingsMetricCard(title: AppLocalization.string("目标日期"), value: date.formatted(date: .abbreviated, time: .omitted), tint: goalColor)
                         }
                     }
 
@@ -601,7 +819,12 @@ private struct SavingsGoalDetailView: View {
                                 Image(systemName: allocation.amount >= 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                                     .font(.title3).foregroundStyle(allocation.amount >= 0 ? goalColor : .orange)
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(allocation.note ?? (allocation.amount > 0 ? "增加分配" : "取出分配"))
+                                    Text(
+                                        allocation.note
+                                            ?? (allocation.amount > 0
+                                                ? AppLocalization.string("增加分配")
+                                                : AppLocalization.string("取出分配"))
+                                    )
                                         .font(.subheadline.weight(.semibold))
                                     Text(allocation.date, format: .dateTime.year().month().day())
                                         .font(.caption).foregroundStyle(.secondary)
@@ -632,7 +855,7 @@ private struct SavingsGoalDetailView: View {
         .sheet(isPresented: $showingAllocation) {
             SavingsAllocationEditorView(
                 goal: goal,
-                accounts: accounts.filter { $0.book?.id == goal.bookID && !$0.isArchived }
+                accounts: accounts.filter { !$0.isArchived }
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
@@ -644,7 +867,7 @@ private struct SavingsGoalDetailView: View {
         }
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 
     private func setStatus(_ status: SavingsGoalStatus) {
@@ -708,7 +931,7 @@ private struct SavingsGoalEditorView: View {
                 Toggle("设置目标日期", isOn: $hasDate)
                 if hasDate { DatePicker("目标日期", selection: $targetDate, displayedComponents: .date) }
             }
-            .navigationTitle(goal == nil ? "新建目标" : "编辑目标")
+            .navigationTitle(goal == nil ? AppLocalization.string("新建目标") : AppLocalization.string("编辑目标"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
@@ -716,7 +939,7 @@ private struct SavingsGoalEditorView: View {
             }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -770,7 +993,7 @@ private struct SavingsAllocationEditorView: View {
                 Text("这里只记录资金用途分配，不会扣减或增加任何钱包余额。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            .navigationTitle(isWithdrawal ? "取出分配" : "增加分配")
+            .navigationTitle(isWithdrawal ? AppLocalization.string("取出分配") : AppLocalization.string("增加分配"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
@@ -778,7 +1001,7 @@ private struct SavingsAllocationEditorView: View {
             }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 

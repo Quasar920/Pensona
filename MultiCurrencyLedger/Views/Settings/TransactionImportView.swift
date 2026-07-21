@@ -26,9 +26,9 @@ struct TransactionImportView: View {
 
     private var selectedBookUUID: UUID? { UUID(uuidString: bookID) }
     private var scopedWallets: [CurrencyWallet] {
-        guard let selectedBookUUID else { return [] }
+        guard selectedBookUUID != nil else { return [] }
         return accounts
-            .filter { $0.book?.id == selectedBookUUID && !$0.isArchived }
+            .filter { !$0.isArchived }
             .flatMap(\.enabledWallets)
             .sorted {
                 ($0.account?.name ?? "", $0.currencyCode) < ($1.account?.name ?? "", $1.currencyCode)
@@ -87,7 +87,7 @@ struct TransactionImportView: View {
             Button {
                 showingFileImporter = true
             } label: {
-                Label(sourceName.isEmpty ? "选择 CSV / XLSX" : sourceName, systemImage: "doc.badge.plus")
+                Label(sourceName.isEmpty ? AppLocalization.string("选择 CSV / XLSX") : sourceName, systemImage: "doc.badge.plus")
             }
             Text("文件只在本机解析。导入前可检查字段映射与每一行结果，重复流水不会再次写入。")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -105,7 +105,7 @@ struct TransactionImportView: View {
             Picker("默认钱包", selection: $walletID) {
                 Text("不指定").tag("")
                 ForEach(scopedWallets) { wallet in
-                    Text("\(wallet.account?.name ?? "账户") · \(wallet.currencyCode)")
+                    Text("\(wallet.account?.name ?? AppLocalization.string("账户")) · \(wallet.currencyCode)")
                         .tag(wallet.id.uuidString)
                 }
             }
@@ -224,7 +224,7 @@ struct TransactionImportView: View {
             preview = nil
             errorReportURL = nil
         } catch {
-            message = ImportMessage(title: "无法读取文件", detail: error.localizedDescription)
+            message = ImportMessage(title: AppLocalization.string("无法读取文件"), detail: error.localizedDescription)
         }
     }
 
@@ -245,7 +245,7 @@ struct TransactionImportView: View {
             preview = result
             errorReportURL = try TransactionImportErrorReport.make(for: result)
         } catch {
-            message = ImportMessage(title: "无法生成预览", detail: error.localizedDescription)
+            message = ImportMessage(title: AppLocalization.string("无法生成预览"), detail: error.localizedDescription)
         }
     }
 
@@ -255,10 +255,13 @@ struct TransactionImportView: View {
             let batch = try TransactionImportService(context: context).commit(preview)
             self.preview = nil
             errorReportURL = nil
-            message = ImportMessage(title: "导入完成", detail: "已写入 \(batch.importedCount) 笔，重复跳过 \(batch.skippedCount) 笔。")
+            message = ImportMessage(
+                title: AppLocalization.string("导入完成"),
+                detail: AppLocalization.string("已写入 \(batch.importedCount) 笔，重复跳过 \(batch.skippedCount) 笔。")
+            )
         } catch {
             context.rollback()
-            message = ImportMessage(title: "导入失败", detail: error.localizedDescription)
+            message = ImportMessage(title: AppLocalization.string("导入失败"), detail: error.localizedDescription)
         }
     }
 
@@ -271,10 +274,13 @@ struct TransactionImportView: View {
                 transactions: transactions,
                 fingerprints: fingerprints
             )
-            message = ImportMessage(title: "已撤销", detail: "该批次流水与余额变化已经恢复。")
+            message = ImportMessage(
+                title: AppLocalization.string("已撤销"),
+                detail: AppLocalization.string("该批次流水与余额变化已经恢复。")
+            )
         } catch {
             context.rollback()
-            message = ImportMessage(title: "撤销失败", detail: error.localizedDescription)
+            message = ImportMessage(title: AppLocalization.string("撤销失败"), detail: error.localizedDescription)
         }
     }
 

@@ -47,7 +47,6 @@ struct LedgerScope: Equatable, Sendable {
     }
 
     func transactionBelongsToBook(_ transaction: LedgerTransaction) -> Bool {
-        transaction.sourceAccount?.book?.id == bookID
-            || transaction.destinationAccount?.book?.id == bookID
+        transaction.bookID == bookID
     }
 }

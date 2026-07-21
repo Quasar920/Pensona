@@ -18,19 +18,19 @@ enum AASplitError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .expenseRequired: "只有支出可以设置 AA 分摊"
-        case .invalidOtherPeopleCount: "请填写大于 0 的其他人数"
-        case .invalidOthersOwedAmount: "其他人应还金额必须大于 0，且不能超过本次实付"
-        case .customAmountNeedsConfirmation: "支出金额已变化，请重新确认 AA 的自定义金额"
-        case .collectedAmountExceedsOwed: "其他人应还金额不能低于已经收到的金额"
-        case .settlementAmountInvalid: "收款金额必须大于 0"
-        case .settlementExceedsRemaining: "收款金额不能超过剩余待收"
-        case .walletUnavailable: "请选择可用的收款账户"
-        case .currencyMismatch: "AA 收款账户必须与原支出币种一致"
-        case .bookMismatch: "AA 收款账户必须与原支出属于同一账本"
-        case .conflictingRecovery: "已有退款或报销的支出不能设置 AA"
-        case .settlementsMustBeRemovedFirst: "请先删除这笔 AA 的收款记录"
-        case .recoveryTransactionMissing: "找不到对应的 AA 收款流水"
+        case .expenseRequired: AppLocalization.string( "只有支出可以设置 AA 分摊")
+        case .invalidOtherPeopleCount: AppLocalization.string( "请填写大于 0 的其他人数")
+        case .invalidOthersOwedAmount: AppLocalization.string( "其他人应还金额必须大于 0，且不能超过本次实付")
+        case .customAmountNeedsConfirmation: AppLocalization.string( "支出金额已变化，请重新确认 AA 的自定义金额")
+        case .collectedAmountExceedsOwed: AppLocalization.string( "其他人应还金额不能低于已经收到的金额")
+        case .settlementAmountInvalid: AppLocalization.string( "收款金额必须大于 0")
+        case .settlementExceedsRemaining: AppLocalization.string( "收款金额不能超过剩余待收")
+        case .walletUnavailable: AppLocalization.string( "请选择可用的收款账户")
+        case .currencyMismatch: AppLocalization.string( "AA 收款账户必须与原支出币种一致")
+        case .bookMismatch: AppLocalization.string( "AA 收款账户必须与原支出属于同一账本")
+        case .conflictingRecovery: AppLocalization.string( "已有退款或报销的支出不能设置 AA")
+        case .settlementsMustBeRemovedFirst: AppLocalization.string( "请先删除这笔 AA 的收款记录")
+        case .recoveryTransactionMissing: AppLocalization.string( "找不到对应的 AA 收款流水")
         }
     }
 }
@@ -128,12 +128,12 @@ struct AAQueryService {
         splits: [AASplit],
         settlements: [AASettlement],
         transactions: [LedgerTransaction],
-        bookID: UUID
+        bookID: UUID?
     ) -> [AAReceivableItem] {
         let transactionByID = Dictionary(uniqueKeysWithValues: transactions.map { ($0.id, $0) })
         return splits.compactMap { split in
             guard let transaction = transactionByID[split.originalTransactionID],
-                  transaction.sourceAccount?.book?.id == bookID else { return nil }
+                  bookID == nil || transaction.bookID == bookID else { return nil }
             return AAReceivableItem(
                 split: split,
                 transaction: transaction,
@@ -227,8 +227,8 @@ final class AASplitService {
                 guard recoveries.count == recoveryIDs.count else {
                     throw AASplitError.recoveryTransactionMissing
                 }
-                let originalBookID = transaction.sourceAccount?.book?.id
-                guard recoveries.allSatisfy({ $0.sourceAccount?.book?.id == originalBookID }) else {
+                let originalBookID = transaction.bookID
+                guard recoveries.allSatisfy({ $0.bookID == originalBookID }) else {
                     throw AASplitError.bookMismatch
                 }
                 guard recoveries.allSatisfy({
@@ -299,8 +299,7 @@ final class AASettlementService {
         guard wallet.isEnabled, wallet.account?.isArchived == false else {
             throw AASplitError.walletUnavailable
         }
-        let originalBookID = original.sourceAccount?.book?.id
-        guard wallet.account?.book?.id == originalBookID else { throw AASplitError.bookMismatch }
+        guard let originalBookID = original.bookID else { throw LedgerError.missingBook }
         let originalCode = original.sourceCurrencyCode ?? original.currencyCode
         guard wallet.currencyCode == originalCode else { throw AASplitError.currencyMismatch }
 
@@ -317,7 +316,7 @@ final class AASettlementService {
             note: cleanNote?.isEmpty == false ? cleanNote : nil,
             merchantOrCounterparty: "AA 收回",
             category: nil
-        )) { recovery in
+        ), bookID: originalBookID) { recovery in
             context.insert(AASettlement(
                 splitID: split.id,
                 recoveryTransactionID: recovery.id,

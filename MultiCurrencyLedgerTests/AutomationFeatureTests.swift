@@ -54,6 +54,7 @@ final class AutomationFeatureTests: XCTestCase {
         let service = RecurringScheduleService(context: context)
         let schedule = try service.create(
             name: "会员费",
+            bookID: fixture.book.id,
             draft: TransactionDraft(
                 type: .expense,
                 amount: 10,
@@ -71,6 +72,7 @@ final class AutomationFeatureTests: XCTestCase {
 
         XCTAssertEqual(firstRun.count, 3)
         XCTAssertTrue(secondRun.isEmpty)
+        XCTAssertTrue(firstRun.allSatisfy { $0.bookID == fixture.book.id })
         XCTAssertEqual(fixture.source.balance, 970)
         XCTAssertEqual(try context.fetch(FetchDescriptor<RecurringOccurrence>()).count, 3)
     }
@@ -91,6 +93,7 @@ final class AutomationFeatureTests: XCTestCase {
         let service = InstallmentPlanService(context: context)
         let plan = try service.create(
             name: "信用卡账单分期",
+            bookID: fixture.book.id,
             kind: .bill,
             totalPrincipal: 300,
             totalFee: 30,
@@ -109,6 +112,7 @@ final class AutomationFeatureTests: XCTestCase {
         XCTAssertEqual(generated.first?.type, .transfer)
         XCTAssertEqual(generated.first?.sourceAmount, 100)
         XCTAssertEqual(generated.first?.feeAmount, 10)
+        XCTAssertEqual(generated.first?.bookID, fixture.book.id)
         XCTAssertEqual(fixture.source.balance, 890)
         XCTAssertEqual(fixture.destination.balance, -900)
     }
@@ -116,7 +120,7 @@ final class AutomationFeatureTests: XCTestCase {
     private func makeFixture(
         sourceBalance: Decimal,
         destinationBalance: Decimal = 0
-    ) -> (source: CurrencyWallet, destination: CurrencyWallet, expenseCategory: LedgerCategory) {
+    ) -> (book: LedgerBook, source: CurrencyWallet, destination: CurrencyWallet, expenseCategory: LedgerCategory) {
         let book = LedgerBook(name: "日常")
         let sourceAccount = Account(name: "储蓄卡", type: .bankCard, book: book)
         let destinationAccount = Account(name: "信用卡", type: .creditCard, book: book)
@@ -135,7 +139,7 @@ final class AutomationFeatureTests: XCTestCase {
         context.insert(source)
         context.insert(destination)
         context.insert(category)
-        return (source, destination, category)
+        return (book, source, destination, category)
     }
 
     private func date(_ year: Int, _ month: Int, _ day: Int, hour: Int = 9) -> Date {

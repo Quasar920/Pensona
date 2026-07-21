@@ -11,7 +11,7 @@ enum ExportService {
         baseCurrencyCode: String
     ) throws -> URL {
         let backup = BackupDTO(
-            version: 2,
+            version: 3,
             exportedAt: .now,
             settings: .init(baseCurrencyCode: baseCurrencyCode),
             accounts: accounts.map(AccountDTO.init),
@@ -32,7 +32,7 @@ enum ExportService {
 
     static func makeCSV(transactions: [LedgerTransaction]) throws -> URL {
         let headers = [
-            "日期", "交易类型", "账户", "来源币种", "来源金额",
+            "日期", "交易类型", "账本ID", "报销状态", "账户", "来源币种", "来源金额",
             "目标账户", "目标币种", "目标金额", "分类", "手续费", "手续费币种", "备注"
         ]
         let formatter = ISO8601DateFormatter()
@@ -40,6 +40,8 @@ enum ExportService {
             [
                 formatter.string(from: transaction.date),
                 transaction.type.rawValue,
+                transaction.bookID?.uuidString ?? "",
+                transaction.reimbursementStatusRawValue,
                 transaction.sourceAccount?.name ?? "",
                 transaction.sourceCurrencyCode ?? transaction.currencyCode ?? "",
                 decimalString(transaction.sourceAmount ?? transaction.amount),
@@ -84,7 +86,7 @@ enum ExportService {
 
 enum ExportError: LocalizedError {
     case encodingFailed
-    var errorDescription: String? { "无法编码导出文件" }
+    var errorDescription: String? { AppLocalization.string( "无法编码导出文件") }
 }
 
 private struct BackupDTO: Codable {
@@ -111,12 +113,14 @@ private struct AccountDTO: Codable {
     let createdAt: Date
     let updatedAt: Date
     let walletIDs: [UUID]
+    let legacyBookID: UUID?
 
     init(_ value: Account) {
         id = value.id; name = value.name; type = value.typeRawValue; note = value.note
         isHidden = value.isHidden; sortOrder = value.sortOrder
         createdAt = value.createdAt; updatedAt = value.updatedAt
         walletIDs = value.wallets.map(\.id)
+        legacyBookID = value.book?.id
     }
 }
 
@@ -143,10 +147,17 @@ private struct CategoryDTO: Codable {
     let symbolName: String
     let sortOrder: Int
     let isSystem: Bool
+    let systemLocalizationKey: String?
+    let iconSource: String
+    let placeholderResourceName: String?
+    let userIconRelativePath: String?
 
     init(_ value: LedgerCategory) {
         id = value.id; name = value.name; type = value.typeRawValue
         symbolName = value.symbolName; sortOrder = value.sortOrder; isSystem = value.isSystem
+        systemLocalizationKey = value.systemLocalizationKey; iconSource = value.iconSourceRawValue
+        placeholderResourceName = value.placeholderResourceName
+        userIconRelativePath = value.userIconRelativePath
     }
 }
 
@@ -174,6 +185,8 @@ private struct TransactionDTO: Codable {
     let adjustmentDirection: String?
     let adjustmentReason: String?
     let categoryID: UUID?
+    let bookID: UUID?
+    let reimbursementStatus: String
 
     init(_ value: LedgerTransaction) {
         id = value.id; type = value.typeRawValue; date = value.date; note = value.note
@@ -186,6 +199,7 @@ private struct TransactionDTO: Codable {
         feeAmount = value.feeAmount; feeCurrencyCode = value.feeCurrencyCode; feeWalletID = value.feeWallet?.id
         exchangeRate = value.exchangeRate; adjustmentDirection = value.adjustmentDirectionRawValue
         adjustmentReason = value.adjustmentReason; categoryID = value.category?.id
+        bookID = value.bookID; reimbursementStatus = value.reimbursementStatusRawValue
     }
 }
 

@@ -10,18 +10,18 @@ enum TransactionImportField: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .date: "日期"
-        case .type: "收支类型"
-        case .amount: "金额"
-        case .currency: "币种"
-        case .account: "账户"
-        case .category: "分类"
-        case .merchant: "商家/对方"
-        case .note: "备注"
-        case .destinationAccount: "目标账户"
-        case .destinationAmount: "目标金额"
-        case .destinationCurrency: "目标币种"
-        case .fee: "手续费"
+        case .date: AppLocalization.string( "日期")
+        case .type: AppLocalization.string( "收支类型")
+        case .amount: AppLocalization.string( "金额")
+        case .currency: AppLocalization.string( "币种")
+        case .account: AppLocalization.string( "账户")
+        case .category: AppLocalization.string( "分类")
+        case .merchant: AppLocalization.string( "商家/对方")
+        case .note: AppLocalization.string( "备注")
+        case .destinationAccount: AppLocalization.string( "目标账户")
+        case .destinationAmount: AppLocalization.string( "目标金额")
+        case .destinationCurrency: AppLocalization.string( "目标币种")
+        case .fee: AppLocalization.string( "手续费")
         }
     }
 
@@ -107,8 +107,8 @@ enum TransactionImportRowStatus: Equatable {
 
     var title: String {
         switch self {
-        case .ready: "可导入"
-        case .duplicate: "重复，已跳过"
+        case .ready: AppLocalization.string( "可导入")
+        case .duplicate: AppLocalization.string( "重复，已跳过")
         case .invalid(let reason): reason
         }
     }
@@ -147,11 +147,11 @@ enum TransactionImportError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .missingAmountMapping: "请至少映射金额列"
-        case .missingBook: "请选择导入账本"
-        case .missingDefaultWallet: "请选择默认钱包，或确保每一行都能匹配账户"
-        case .noValidRows: "没有可导入的新流水"
-        case .alreadyUndone: "这个导入批次已经撤销"
+        case .missingAmountMapping: AppLocalization.string( "请至少映射金额列")
+        case .missingBook: AppLocalization.string( "请选择导入账本")
+        case .missingDefaultWallet: AppLocalization.string( "请选择默认钱包，或确保每一行都能匹配账户")
+        case .noValidRows: AppLocalization.string( "没有可导入的新流水")
+        case .alreadyUndone: AppLocalization.string( "这个导入批次已经撤销")
         }
     }
 }
@@ -178,10 +178,10 @@ final class TransactionImportService {
             throw TransactionImportError.missingBook
         }
         let scopedWallets = wallets.filter {
-            $0.account?.book?.id == bookID && $0.isEnabled && $0.account?.isArchived == false
+            $0.isEnabled && $0.account?.isArchived == false
         }
         let scopedCategories = categories.filter {
-            ($0.bookID == bookID || $0.bookID == nil) && !$0.isArchived
+            !$0.isArchived
         }
         let existing = Set(existingFingerprints.map(\.value))
         var seen = Set<String>()
@@ -220,7 +220,7 @@ final class TransactionImportService {
             errorCount: preview.errorCount
         )
         let drafts = ready.compactMap(\.draft)
-        _ = try LedgerService(context: context).createBatch(drafts) { transactions in
+        _ = try LedgerService(context: context).createBatch(drafts, bookID: preview.bookID) { transactions in
             context.insert(batch)
             for (row, transaction) in zip(ready, transactions) {
                 guard let value = row.fingerprint else { continue }
@@ -274,16 +274,16 @@ final class TransactionImportService {
             return values[index].trimmingCharacters(in: .whitespacesAndNewlines)
         }
         guard let signedAmount = Self.parseAmount(value(.amount)), signedAmount != 0 else {
-            return invalidRow(line, values, "第 \(line) 行金额无效")
+            return invalidRow(line, values, AppLocalization.string("第 \(line) 行金额无效"))
         }
         let amount = abs(signedAmount)
         let rawType = value(.type)
         guard let kind = Self.parseKind(rawType, signedAmount: signedAmount) else {
-            return invalidRow(line, values, "第 \(line) 行无法识别收支类型")
+            return invalidRow(line, values, AppLocalization.string("第 \(line) 行无法识别收支类型"))
         }
         let requestedCurrency = Self.parseCurrency(value(.currency))
         if !value(.currency).isEmpty, requestedCurrency == nil {
-            return invalidRow(line, values, "第 \(line) 行币种不受支持")
+            return invalidRow(line, values, AppLocalization.string("第 \(line) 行币种不受支持"))
         }
         guard let sourceWallet = Self.matchWallet(
             name: value(.account),
@@ -291,7 +291,7 @@ final class TransactionImportService {
             wallets: wallets,
             fallback: defaultWallet
         ) else {
-            return invalidRow(line, values, "第 \(line) 行找不到可用账户钱包")
+            return invalidRow(line, values, AppLocalization.string("第 \(line) 行找不到可用账户钱包"))
         }
         let date: Date
         if value(.date).isEmpty {
@@ -299,11 +299,11 @@ final class TransactionImportService {
         } else if let parsed = Self.parseDate(value(.date)) {
             date = parsed
         } else {
-            return invalidRow(line, values, "第 \(line) 行日期格式无效")
+            return invalidRow(line, values, AppLocalization.string("第 \(line) 行日期格式无效"))
         }
         let category = Self.matchCategory(value(.category), kind: kind, categories: categories)
         if !value(.category).isEmpty, category == nil, (kind == .expense || kind == .income) {
-            return invalidRow(line, values, "第 \(line) 行找不到同类型分类")
+            return invalidRow(line, values, AppLocalization.string("第 \(line) 行找不到同类型分类"))
         }
 
         var destinationWallet: CurrencyWallet?
@@ -317,12 +317,12 @@ final class TransactionImportService {
                 fallback: nil
             )
             guard destinationWallet != nil else {
-                return invalidRow(line, values, "第 \(line) 行缺少目标账户")
+                return invalidRow(line, values, AppLocalization.string("第 \(line) 行缺少目标账户"))
             }
             if kind == .exchange {
                 destinationAmount = Self.parseAmount(value(.destinationAmount)).map(abs)
                 guard destinationAmount != nil else {
-                    return invalidRow(line, values, "第 \(line) 行缺少换入金额")
+                    return invalidRow(line, values, AppLocalization.string("第 \(line) 行缺少换入金额"))
                 }
             }
         }
@@ -345,7 +345,7 @@ final class TransactionImportService {
         do {
             _ = try TransactionImpactCalculator().deltas(for: draft)
         } catch {
-            return invalidRow(line, values, "第 \(line) 行：\(error.localizedDescription)")
+            return invalidRow(line, values, AppLocalization.string("第 \(line) 行：\(error.localizedDescription)"))
         }
         let fingerprint = Self.fingerprint(
             bookID: bookID,

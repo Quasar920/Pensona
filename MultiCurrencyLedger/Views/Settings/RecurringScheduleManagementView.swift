@@ -24,8 +24,8 @@ struct RecurringScheduleManagementView: View {
     }
 
     private var wallets: [CurrencyWallet] {
-        guard let bookID = selectedBook?.id else { return [] }
-        return accounts.filter { !$0.isArchived && $0.book?.id == bookID }.flatMap(\.enabledWallets)
+        guard selectedBook != nil else { return [] }
+        return accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
     }
 
     var body: some View {
@@ -59,15 +59,13 @@ struct RecurringScheduleManagementView: View {
                 RecurringScheduleEditorView(
                     book: book,
                     wallets: wallets,
-                    categories: categories.filter {
-                        !$0.isArchived && ($0.bookID == nil || $0.bookID == book.id)
-                    }
+                    categories: categories.filter { !$0.isArchived }
                 )
             }
         }
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 
     @ViewBuilder
@@ -90,7 +88,9 @@ struct RecurringScheduleManagementView: View {
                 Button("补生成到今天") { generate(schedule) }
                     .buttonStyle(.bordered)
                     .disabled(schedule.isPaused)
-                Button(schedule.isPaused ? "恢复" : "暂停") { togglePause(schedule) }
+                Button(schedule.isPaused ? AppLocalization.string("恢复") : AppLocalization.string("暂停")) {
+                    togglePause(schedule)
+                }
                     .buttonStyle(.bordered)
                 Spacer()
                 Button("归档", role: .destructive) { archive(schedule) }
@@ -104,7 +104,9 @@ struct RecurringScheduleManagementView: View {
         do {
             let count = try RecurringScheduleService(context: context)
                 .generateDue(for: schedule).count
-            resultMessage = count == 0 ? "当前没有到期账单" : "已生成 \(count) 笔周期交易"
+            resultMessage = count == 0
+                ? AppLocalization.string("当前没有到期账单")
+                : AppLocalization.string("已生成 \(count) 笔周期交易")
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -170,7 +172,7 @@ private struct RecurringScheduleEditorView: View {
             .onChange(of: form.sourceWalletID) { _, _ in ensureMovementSelections() }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -211,6 +213,7 @@ private struct RecurringScheduleEditorView: View {
             let draft = try form.makeDraft(wallets: wallets, categories: categories)
             try RecurringScheduleService(context: context).create(
                 name: name,
+                bookID: book.id,
                 draft: draft,
                 frequency: frequency,
                 interval: interval,

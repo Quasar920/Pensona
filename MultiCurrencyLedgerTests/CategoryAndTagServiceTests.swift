@@ -20,7 +20,7 @@ final class CategoryAndTagServiceTests: XCTestCase {
         context = container.mainContext
     }
 
-    func testBookScopedCategoryTreeIncludesGlobalSystemCategories() throws {
+    func testCategoryTreeIsGlobalAcrossBooks() throws {
         let book = LedgerBook(name: "日常")
         let otherBook = LedgerBook(name: "旅行")
         let global = LedgerCategory(
@@ -51,7 +51,7 @@ final class CategoryAndTagServiceTests: XCTestCase {
         )
 
         let scoped = try service.scoped(bookID: book.id, type: .expense)
-        XCTAssertEqual(Set(scoped.map(\.name)), Set(["餐饮", "早餐"]))
+        XCTAssertEqual(Set(scoped.map(\.name)), Set(["餐饮", "早餐", "机票"]))
         XCTAssertEqual(try service.children(of: global.id, bookID: book.id, type: .expense).first?.id, child.id)
     }
 

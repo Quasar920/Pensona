@@ -13,12 +13,12 @@ enum TransactionImportPreset: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .automatic: "自动识别"
-        case .generic: "通用表格"
+        case .automatic: AppLocalization.string( "自动识别")
+        case .generic: AppLocalization.string( "通用表格")
         case .iCost: "iCost"
-        case .alipay: "支付宝"
-        case .wechat: "微信支付"
-        case .unionPay: "云闪付"
+        case .alipay: AppLocalization.string( "支付宝")
+        case .wechat: AppLocalization.string( "微信支付")
+        case .unionPay: AppLocalization.string( "云闪付")
         }
     }
 }

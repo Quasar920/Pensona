@@ -43,6 +43,7 @@ final class RecognitionWorkflowService {
             }
             let transaction = try RecognitionEntryService(context: context).confirm(
                 draft,
+                bookID: book.id,
                 wallet: wallet,
                 category: category,
                 importStatus: .autoEntered
@@ -76,7 +77,9 @@ final class RecognitionWorkflowService {
     }
 
     private func wallets(in book: LedgerBook) -> [CurrencyWallet] {
-        book.accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
+        (try? context.fetch(FetchDescriptor<Account>()))?
+            .filter { !$0.isArchived }
+            .flatMap(\.enabledWallets) ?? []
     }
 
     private func matchingCategory(for candidate: NormalizedRecognitionCandidate) -> LedgerCategory? {

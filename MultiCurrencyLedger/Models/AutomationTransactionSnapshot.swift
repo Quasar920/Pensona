@@ -8,10 +8,10 @@ enum AutomationDraftError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .missingBook: "自动记账规则必须归属一个账本"
-        case .crossBookReference: "自动记账规则不能引用其他账本的钱包或分类"
-        case .invalidReference: "自动记账规则引用的钱包或分类已失效"
-        case .corruptSnapshot: "自动记账规则的数据已损坏，请重新创建"
+        case .missingBook: AppLocalization.string( "自动记账规则必须归属一个账本")
+        case .crossBookReference: AppLocalization.string( "自动记账规则不能引用其他账本的钱包或分类")
+        case .invalidReference: AppLocalization.string( "自动记账规则引用的钱包或分类已失效")
+        case .corruptSnapshot: AppLocalization.string( "自动记账规则的数据已损坏，请重新创建")
         }
     }
 }
@@ -64,20 +64,11 @@ struct AutomationTransactionSnapshot: Codable, Equatable {
 }
 
 struct AutomationDraftCodec {
-    func encode(_ draft: TransactionDraft) throws -> (bookID: UUID, data: Data) {
+    func encode(_ draft: TransactionDraft, bookID: UUID) throws -> (bookID: UUID, data: Data) {
         guard let sourceWallet = draft.sourceWallet,
-              let bookID = sourceWallet.account?.book?.id else {
+              sourceWallet.isEnabled,
+              sourceWallet.account?.isArchived == false else {
             throw AutomationDraftError.missingBook
-        }
-        let referencedWallets = [draft.destinationWallet, draft.feeWallet]
-            + draft.paymentParts.map { Optional($0.wallet) }
-        guard referencedWallets.compactMap({ $0 }).allSatisfy({
-            $0.account?.book?.id == bookID
-        }) else {
-            throw AutomationDraftError.crossBookReference
-        }
-        guard draft.category.map({ $0.bookID == nil || $0.bookID == bookID }) ?? true else {
-            throw AutomationDraftError.crossBookReference
         }
         return (bookID, try JSONEncoder().encode(AutomationTransactionSnapshot(draft: draft)))
     }
@@ -93,7 +84,7 @@ struct AutomationDraftCodec {
             throw AutomationDraftError.corruptSnapshot
         }
         let scopedWallets = wallets.filter {
-            $0.isEnabled && $0.account?.isArchived == false && $0.account?.book?.id == bookID
+            $0.isEnabled && $0.account?.isArchived == false
         }
         guard let source = scopedWallets.first(where: { $0.id == snapshot.sourceWalletID }) else {
             throw AutomationDraftError.invalidReference
@@ -106,7 +97,7 @@ struct AutomationDraftCodec {
         }
         let category = snapshot.categoryID.flatMap { id in
             categories.first {
-                $0.id == id && !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID)
+                $0.id == id && !$0.isArchived
             }
         }
         let paymentParts = snapshot.paymentParts.compactMap { part in
@@ -124,6 +115,7 @@ struct AutomationDraftCodec {
 
         return TransactionDraft(
             type: snapshot.type,
+            bookID: bookID,
             amount: snapshot.amount,
             sourceWallet: source,
             destinationWallet: destination,

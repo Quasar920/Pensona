@@ -18,7 +18,7 @@ final class CloudSyncServiceTests: XCTestCase {
             MonthlyBudget.self, SavingsGoal.self, SavingsAllocation.self,
             TransactionImportBatch.self, TransactionImportFingerprint.self,
             CloudSyncTombstone.self, CloudSyncConflictCopy.self,
-            AASplit.self, AASettlement.self
+            AASplit.self, AASettlement.self, RepaymentReminder.self
         ])
         container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         context = container.mainContext
@@ -32,7 +32,7 @@ final class CloudSyncServiceTests: XCTestCase {
         let category = LedgerCategory(name: "餐饮", type: .expense, symbolName: "fork.knife", sortOrder: 0, bookID: book.id)
         context.insert(book); context.insert(account); context.insert(wallet); context.insert(category)
         let transaction = try LedgerService(context: context).createExpense(
-            amount: 20, wallet: wallet, category: category, date: .now, note: nil
+            bookID: book.id, amount: 20, wallet: wallet, category: category, date: .now, note: nil
         )
 
         let transport = FakeCloudTransport()

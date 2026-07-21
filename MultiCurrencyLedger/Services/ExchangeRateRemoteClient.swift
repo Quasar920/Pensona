@@ -28,5 +28,5 @@ struct ExchangeRateRemoteClient {
 
 enum RemoteRateError: LocalizedError {
     case invalidResponse
-    var errorDescription: String? { "远程汇率服务返回了无效响应" }
+    var errorDescription: String? { AppLocalization.string( "远程汇率服务返回了无效响应") }
 }

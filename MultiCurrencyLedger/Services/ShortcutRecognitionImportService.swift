@@ -25,6 +25,7 @@ final class ShortcutRecognitionImportService {
         let envelope = try parser.parse(Data(responseJSON.utf8))
         let localContext = contextBuilder.makeContext(
             book: book,
+            accounts: try context.fetch(FetchDescriptor<Account>()),
             categories: try context.fetch(FetchDescriptor<LedgerCategory>())
         )
         evaluator.now = { now }

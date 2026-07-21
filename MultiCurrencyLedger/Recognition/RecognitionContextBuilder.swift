@@ -41,8 +41,12 @@ struct RecognitionContextBuilder {
         self.cardIdentityStore = cardIdentityStore
     }
 
-    func makeContext(book: LedgerBook, categories: [LedgerCategory]) -> RecognitionRequestContext {
-        let accounts = book.accounts
+    func makeContext(
+        book: LedgerBook,
+        accounts: [Account],
+        categories: [LedgerCategory]
+    ) -> RecognitionRequestContext {
+        let accountOptions = accounts
             .filter { !$0.isArchived }
             .flatMap { account in
                 account.enabledWallets.map { wallet in
@@ -67,7 +71,7 @@ struct RecognitionContextBuilder {
         return RecognitionRequestContext(
             bookID: book.id,
             bookName: book.name,
-            accounts: accounts,
+            accounts: accountOptions,
             categories: categoryOptions
         )
     }

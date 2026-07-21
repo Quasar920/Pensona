@@ -15,11 +15,11 @@ enum SpreadsheetImportError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyFile: "文件中没有可导入的数据"
-        case .unsupportedFormat: "仅支持 CSV、TSV 和 XLSX 文件"
-        case .malformedCSV: "表格文本格式不完整，请检查引号和换行"
-        case .malformedXLSX: "XLSX 文件已损坏或使用了暂不支持的压缩格式"
-        case .missingWorksheet: "XLSX 中没有可读取的工作表"
+        case .emptyFile: AppLocalization.string( "文件中没有可导入的数据")
+        case .unsupportedFormat: AppLocalization.string( "仅支持 CSV、TSV 和 XLSX 文件")
+        case .malformedCSV: AppLocalization.string( "表格文本格式不完整，请检查引号和换行")
+        case .malformedXLSX: AppLocalization.string( "XLSX 文件已损坏或使用了暂不支持的压缩格式")
+        case .missingWorksheet: AppLocalization.string( "XLSX 中没有可读取的工作表")
         }
     }
 }

@@ -13,7 +13,7 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         let coordinator = ScreenshotRecognitionCoordinator(ocr: ocr, apiClient: api)
 
         let analysis = try await coordinator.analyze(
-            image: Self.onePixelImage(), book: book, categories: [category],
+            image: Self.onePixelImage(), book: book, accounts: book.accounts, categories: [category],
             allowIncomeAutoEntry: false, now: Self.date("2026-07-11 23:59")
         )
 
@@ -35,7 +35,7 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
             ocr: CountingOCR(), apiClient: api,
             evaluator: RecognitionSafetyEvaluator(now: { .distantFuture })
         ).analyze(
-            image: Self.onePixelImage(), book: book, categories: [category],
+            image: Self.onePixelImage(), book: book, accounts: book.accounts, categories: [category],
             allowIncomeAutoEntry: false, now: injectedNow
         )
 
@@ -53,7 +53,7 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         let analysis = try await ScreenshotRecognitionCoordinator(
             ocr: CountingOCR(), apiClient: StubRecognitionAPIClient(response: response)
         ).analyze(
-            image: Self.onePixelImage(), book: book, categories: [category],
+            image: Self.onePixelImage(), book: book, accounts: book.accounts, categories: [category],
             allowIncomeAutoEntry: false, now: Self.date("2026-07-11 23:59")
         )
 
@@ -74,7 +74,7 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         let analysis = try await ScreenshotRecognitionCoordinator(
             ocr: CountingOCR(), apiClient: StubRecognitionAPIClient(response: response)
         ).analyze(
-            image: Self.onePixelImage(), book: book, categories: [category],
+            image: Self.onePixelImage(), book: book, accounts: book.accounts, categories: [category],
             allowIncomeAutoEntry: false, now: Self.date("2026-07-11 23:59")
         )
 
@@ -95,7 +95,7 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
             try await ScreenshotRecognitionCoordinator(
                 ocr: CancelingReturningOCR(), apiClient: api
             ).analyze(
-                image: Self.onePixelImage(), book: book, categories: [category],
+                image: Self.onePixelImage(), book: book, accounts: book.accounts, categories: [category],
                 allowIncomeAutoEntry: false
             )
         }
@@ -116,7 +116,7 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
             try await ScreenshotRecognitionCoordinator(
                 ocr: CountingOCR(), apiClient: api
             ).analyze(
-                image: Self.onePixelImage(), book: book, categories: [category],
+                image: Self.onePixelImage(), book: book, accounts: book.accounts, categories: [category],
                 allowIncomeAutoEntry: false
             )
         }
@@ -148,7 +148,9 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         )
         let income = LedgerCategory(name: "工资", type: .income, symbolName: "banknote", sortOrder: 0)
         let local = RecognitionContextBuilder().makeContext(
-            book: book, categories: [income, duplicateCategory, category]
+            book: book,
+            accounts: book.accounts,
+            categories: [income, duplicateCategory, category]
         )
         let request = RecognitionAPIRequest(
             ocrText: "CNY 85", context: .init(localContext: local),
@@ -179,7 +181,10 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         do {
             _ = try await ScreenshotRecognitionCoordinator(
                 ocr: ThrowingOCR(error: RecognitionError.noRecognizableText), apiClient: api
-            ).analyze(image: Self.onePixelImage(), book: book, categories: [category], allowIncomeAutoEntry: false)
+            ).analyze(
+                image: Self.onePixelImage(), book: book, accounts: book.accounts,
+                categories: [category], allowIncomeAutoEntry: false
+            )
             XCTFail("Expected OCR failure")
         } catch {
             XCTAssertEqual(error as? RecognitionError, .noRecognizableText)
@@ -193,7 +198,10 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         do {
             _ = try await ScreenshotRecognitionCoordinator(
                 ocr: CountingOCR(), apiClient: ThrowingRecognitionAPIClient(error: URLError(.timedOut))
-            ).analyze(image: Self.onePixelImage(), book: book, categories: [category], allowIncomeAutoEntry: false)
+            ).analyze(
+                image: Self.onePixelImage(), book: book, accounts: book.accounts,
+                categories: [category], allowIncomeAutoEntry: false
+            )
             XCTFail("Expected timeout")
         } catch {
             XCTAssertEqual((error as? URLError)?.code, .timedOut)
@@ -206,7 +214,10 @@ final class ScreenshotRecognitionCoordinatorTests: XCTestCase {
         do {
             _ = try await ScreenshotRecognitionCoordinator(
                 ocr: CountingOCR(), apiClient: StubRecognitionAPIClient(response: Data("not json".utf8))
-            ).analyze(image: Self.onePixelImage(), book: book, categories: [category], allowIncomeAutoEntry: false)
+            ).analyze(
+                image: Self.onePixelImage(), book: book, accounts: book.accounts,
+                categories: [category], allowIncomeAutoEntry: false
+            )
             XCTFail("Expected invalid response")
         } catch {
             XCTAssertEqual(error as? RecognitionError, .invalidResponse)

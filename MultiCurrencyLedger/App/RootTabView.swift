@@ -4,15 +4,18 @@ import Observation
 
 struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppPreferences.self) private var preferences
     @StateObject private var appLock = AppLockManager()
     @State private var selection: LedgerTab = .ledger
     @State private var presentation = RootPresentationState()
     @State private var entryVisibilityByTab: [RootEntryTab: RootEntryVisibility] = [:]
+    @State private var isLedgerDetailPresented = false
+    @State private var isAssetsDetailPresented = false
     @State private var appliedPreviewScreen = false
+    @State private var showingPreviewSettings = false
     @State private var appliedQuickLaunch = false
     @AppStorage("selectedBookID") private var selectedBookID = ""
     @AppStorage("quickLaunchEntry") private var quickLaunchEntry = false
-    @AppStorage("appearanceMode") private var appearanceMode = AppAppearance.system.rawValue
     @AppStorage(RecognitionPendingRoute.recordIDDefaultsKey) private var pendingRecognitionRecordID = ""
     @AppStorage(URLDraftPendingRoute.defaultsKey) private var pendingExternalURL = ""
     @Query(sort: \LedgerBook.createdAt) private var books: [LedgerBook]
@@ -22,51 +25,55 @@ struct RootTabView: View {
     private var recognitionRecords: [RecognitionImportRecord]
     @State private var pendingRecognitionRecord: RecognitionImportRecord?
     @State private var externalRouteError: String?
+    @State private var entrySavedToastID: UUID?
 
     var body: some View {
-        TabView(selection: $selection) {
-            Tab("流水", systemImage: "list.bullet.rectangle", value: LedgerTab.ledger) {
-                HomeView(addTransaction: presentation.presentNewEntry)
+        ZStack {
+            persistentTab(.ledger) {
+                HomeView(
+                    addTransaction: presentation.presentNewEntry,
+                    isDetailPresented: $isLedgerDetailPresented
+                )
                     .rootEntryVisibility(.visible, for: .ledger)
             }
-
-            Tab("资产", systemImage: "creditcard", value: LedgerTab.assets) {
-                AccountListView()
+            persistentTab(.assets) {
+                AccountListView(isDetailPresented: $isAssetsDetailPresented)
                     .rootEntryVisibility(.visible, for: .assets)
             }
-
-            Tab("计划", systemImage: "target", value: LedgerTab.savings) {
+            persistentTab(.savings) {
                 SavingsGoalListView()
                     .rootEntryVisibility(.visible, for: .savings)
             }
-
-            Tab("报表", systemImage: "chart.bar.xaxis", value: LedgerTab.statistics) {
+            persistentTab(.statistics) {
                 ReportsView()
                     .rootEntryVisibility(.visible, for: .statistics)
             }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
         .onPreferenceChange(RootEntryVisibilityPreferenceKey.self) { visibility in
             entryVisibilityByTab = visibility
         }
-        .overlay {
-            GeometryReader { proxy in
-                RootEntryButton(action: presentation.presentNewEntry)
-                    .opacity(isRootEntryVisible ? 1 : 0)
-                    .allowsHitTesting(isRootEntryVisible)
-                    .accessibilityHidden(!isRootEntryVisible)
-                    .position(
-                        x: proxy.size.width - RootEntryLayout.trailingSpacing - RootEntryLayout.radius,
-                        y: proxy.size.height
-                            - RootEntryLayout.tabBarContentHeight
-                            - RootEntryLayout.tabBarSpacing
-                            - RootEntryLayout.radius
-                    )
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if isRootEntryVisible {
+                LedgerBottomBar(selection: $selection, addEntry: presentation.presentNewEntry)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
-        .background {
-            RootEntryPresenter(presentation: presentation)
+        .overlay {
+            EntryExpansionContainer(presentation: presentation, onEntrySaved: showEntrySavedToast)
+                .zIndex(900)
+        }
+        .overlay(alignment: .bottom) {
+            if entrySavedToastID != nil {
+                Label("已记账", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: 44)
+                    .ledgerSurface(.centeredActionPanel, cornerRadius: 22)
+                    .padding(.bottom, 92)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(850)
+            }
         }
         .sheet(item: $pendingRecognitionRecord, onDismiss: {
             pendingRecognitionRecordID = ""
@@ -76,6 +83,9 @@ struct RootTabView: View {
             } else {
                 ContentUnavailableView("找不到对应账本", systemImage: "book.closed")
             }
+        }
+        .sheet(isPresented: $showingPreviewSettings) {
+            SettingsView()
         }
         .onAppear {
             applyPreviewScreenIfNeeded()
@@ -104,7 +114,9 @@ struct RootTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .appLockConfigurationChanged)) { _ in
             appLock.refreshConfiguration()
         }
-        .preferredColorScheme(AppAppearance(rawValue: appearanceMode)?.colorScheme)
+        .preferredColorScheme(preferences.appearance.colorScheme)
+        .environment(\.locale, preferences.locale)
+        .id(preferences.language.rawValue)
         .overlay {
             if appLock.isLocked {
                 AppLockGateView(manager: appLock, allowsUnlock: true)
@@ -115,19 +127,46 @@ struct RootTabView: View {
         .alert("无法打开记账链接", isPresented: Binding(
             get: { externalRouteError != nil },
             set: { if !$0 { externalRouteError = nil } }
-        )) { Button("好") {} } message: { Text(externalRouteError ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(externalRouteError ?? AppLocalization.string("未知错误")) }
+    }
+
+    private func persistentTab<Content: View>(
+        _ tab: LedgerTab,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .opacity(selection == tab ? 1 : 0)
+            .allowsHitTesting(selection == tab)
+            .accessibilityHidden(selection != tab)
+            .zIndex(selection == tab ? 1 : 0)
     }
 
     private var isRootEntryVisible: Bool {
         !appLock.isLocked
             && !presentation.isPresentingEntry
+            && !selectedTabHasPresentedDetail
             && entryVisibilityByTab[selection.rootEntryTab] != .hidden
+    }
+
+    private var selectedTabHasPresentedDetail: Bool {
+        switch selection {
+        case .ledger: isLedgerDetailPresented
+        case .assets: isAssetsDetailPresented
+        case .savings, .statistics: false
+        }
     }
 
     private func applyPreviewScreenIfNeeded() {
         #if DEBUG
         guard !appliedPreviewScreen else { return }
         appliedPreviewScreen = true
+        switch ProcessInfo.processInfo.environment["APP_PREVIEW_LANGUAGE"] {
+        case "en": preferences.language = .english
+        case "ja": preferences.language = .japanese
+        case "zh-Hant": preferences.language = .traditionalChinese
+        case "zh-Hans": preferences.language = .simplifiedChinese
+        default: break
+        }
         switch ProcessInfo.processInfo.environment["APP_PREVIEW_SCREEN"] {
         case "assets":
             selection = .assets
@@ -137,6 +176,8 @@ struct RootTabView: View {
             selection = .statistics
         case "entry":
             DispatchQueue.main.async { presentation.presentNewEntry() }
+        case "settings":
+            DispatchQueue.main.async { showingPreviewSettings = true }
         default:
             break
         }
@@ -198,9 +239,19 @@ struct RootTabView: View {
             PrivacyShieldController.show(manager: appLock, allowsUnlock: false)
         }
     }
+
+    private func showEntrySavedToast() {
+        let id = UUID()
+        withAnimation(LedgerMotion.responsive) { entrySavedToastID = id }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.4))
+            guard entrySavedToastID == id else { return }
+            withAnimation(LedgerMotion.reduced) { entrySavedToastID = nil }
+        }
+    }
 }
 
-private struct RootEntryPresentation: Identifiable {
+struct RootEntryPresentation: Identifiable {
     enum Mode {
         case new
         case external(TransactionDraft)
@@ -212,7 +263,7 @@ private struct RootEntryPresentation: Identifiable {
 
 @MainActor
 @Observable
-private final class RootPresentationState {
+final class RootPresentationState {
     var entry: RootEntryPresentation?
 
     var isPresentingEntry: Bool { entry != nil }
@@ -223,33 +274,12 @@ private final class RootPresentationState {
     }
 
     func presentExternalEntry(_ draft: TransactionDraft) {
+        guard entry == nil else { return }
         entry = RootEntryPresentation(mode: .external(draft))
     }
-}
 
-private struct RootEntryPresenter: View {
-    @Bindable var presentation: RootPresentationState
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .sheet(item: $presentation.entry) { route in
-                Group {
-                    switch route.mode {
-                    case .new:
-                        EntryView()
-                    case let .external(draft):
-                        EntryView(
-                            seed: draft,
-                            dismissAfterSave: true,
-                            resetSeedDate: false,
-                            presentationTitle: "确认外部记账"
-                        )
-                    }
-                }
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-            }
+    func finishDismissal() {
+        entry = nil
     }
 }
 
@@ -355,17 +385,17 @@ extension View {
     }
 }
 
-private enum LedgerTab: String, CaseIterable, Identifiable {
+enum LedgerTab: String, CaseIterable, Identifiable {
     case ledger, assets, savings, statistics
 
     var id: Self { self }
 
     var title: String {
         switch self {
-        case .ledger: "流水"
-        case .assets: "资产"
-        case .savings: "计划"
-        case .statistics: "报表"
+        case .ledger: AppLocalization.string( "tab.ledger")
+        case .assets: AppLocalization.string( "tab.assets")
+        case .savings: AppLocalization.string( "tab.plans")
+        case .statistics: AppLocalization.string( "tab.reports")
         }
     }
 

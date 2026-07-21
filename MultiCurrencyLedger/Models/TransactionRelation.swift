@@ -6,7 +6,9 @@ enum TransactionRelationKind: String, CaseIterable, Identifiable {
     case reimbursement
 
     var id: String { rawValue }
-    var title: String { self == .refund ? "退款" : "报销" }
+    var title: String {
+        self == .refund ? AppLocalization.string( "退款") : AppLocalization.string( "报销")
+    }
 }
 
 @Model

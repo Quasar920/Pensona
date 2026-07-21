@@ -2,7 +2,7 @@ import Charts
 import SwiftData
 import SwiftUI
 
-struct ReportsView: View {
+private struct LegacyReportsView: View {
     @AppStorage("baseCurrencyCode") private var baseCurrencyCode = SupportedCurrency.CNY.rawValue
     @AppStorage("selectedBookID") private var selectedBookID = ""
     @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
@@ -52,9 +52,7 @@ struct ReportsView: View {
 
     private var scopedTransactions: [LedgerTransaction] {
         guard let id = selectedBook?.id else { return [] }
-        return transactions.filter {
-            $0.sourceAccount?.book?.id == id || $0.destinationAccount?.book?.id == id
-        }
+        return transactions.filter { $0.bookID == id }
     }
 
     private var service: ReportQueryService {
@@ -80,6 +78,7 @@ struct ReportsView: View {
             interval: interval,
             metric: metric,
             dimension: dimension,
+            books: books,
             aaSplits: aaSplits,
             aaSettlements: aaSettlements
         )
@@ -131,7 +130,7 @@ struct ReportsView: View {
             slices.append(
                 ReportSlice(
                     id: "other",
-                    title: "其他 \(remaining.count) 项",
+                    title: AppLocalization.string("其他 \(remaining.count) 项"),
                     value: remaining.reduce(Decimal.zero) { $0 + $1.value },
                     magnitude: remaining.reduce(0) { $0 + absDouble($1.value) },
                     color: ReportPalette.sectorColors[visibleCount % ReportPalette.sectorColors.count]
@@ -207,7 +206,7 @@ struct ReportsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showingBookSwitcher = true } label: {
-                        Label(selectedBook?.name ?? "选择账本", systemImage: "book.closed")
+                        Label(selectedBook?.name ?? AppLocalization.string("选择账本"), systemImage: "book.closed")
                     }
                     .accessibilityHint("切换账本")
                 }
@@ -460,16 +459,16 @@ private struct ReportTrendCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ReportSectionHeader(
-                title: "\(metric.title)趋势",
-                subtitle: "按\(granularity.title)汇总 · \(points.count) 个周期",
+                title: AppLocalization.string("\(metric.title)趋势"),
+                subtitle: AppLocalization.string("按\(granularity.title)汇总 · \(points.count) 个周期"),
                 systemImage: "chart.bar.fill",
                 accent: accent
             )
 
             if points.isEmpty {
                 ReportEmptyState(
-                    title: "当前范围没有趋势数据",
-                    message: "调整日期或统计指标后再看看",
+                    title: AppLocalization.string("当前范围没有趋势数据"),
+                    message: AppLocalization.string("调整日期或统计指标后再看看"),
                     systemImage: "chart.bar.xaxis"
                 )
                 .frame(height: 190)
@@ -547,16 +546,16 @@ private struct ReportCompositionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ReportSectionHeader(
-                title: "\(metric.title)构成",
-                subtitle: "按\(dimension.title)分类",
+                title: AppLocalization.string("\(metric.title)构成"),
+                subtitle: AppLocalization.string("按\(dimension.title)分类"),
                 systemImage: "chart.pie.fill",
                 accent: ReportPalette.violet
             )
 
             if slices.isEmpty {
                 ReportEmptyState(
-                    title: "当前范围没有构成数据",
-                    message: "记账后会在这里显示\(dimension.title)分布",
+                    title: AppLocalization.string("当前范围没有构成数据"),
+                    message: AppLocalization.string("记账后会在这里显示\(dimension.title)分布"),
                     systemImage: "chart.pie"
                 )
                 .frame(height: 190)
@@ -621,7 +620,7 @@ private struct ReportCompositionCard: View {
     }
 
     private var compositionNote: String {
-        return "扇区按金额绝对值绘制，明细金额保留正负号。"
+        return AppLocalization.string( "扇区按金额绝对值绘制，明细金额保留正负号。")
     }
 }
 
@@ -753,9 +752,7 @@ struct TransactionCalendarView: View {
 
     private var scoped: [LedgerTransaction] {
         guard let id = UUID(uuidString: selectedBookID) ?? books.first?.id else { return [] }
-        return transactions.filter {
-            $0.sourceAccount?.book?.id == id || $0.destinationAccount?.book?.id == id
-        }
+        return transactions.filter { $0.bookID == id }
     }
 
     private var days: [Date?] {

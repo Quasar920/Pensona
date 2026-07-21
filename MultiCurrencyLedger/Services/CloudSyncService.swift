@@ -80,9 +80,9 @@ enum CloudSnapshotTransportError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .accountUnavailable: "当前设备没有可用的 iCloud 私有数据库"
-        case .malformedRecord: "iCloud 中的同步记录不完整"
-        case .remoteChanged: "同步期间云端内容发生变化，请重新同步"
+        case .accountUnavailable: AppLocalization.string( "当前设备没有可用的 iCloud 私有数据库")
+        case .malformedRecord: AppLocalization.string( "iCloud 中的同步记录不完整")
+        case .remoteChanged: AppLocalization.string( "同步期间云端内容发生变化，请重新同步")
         }
     }
 }
@@ -182,10 +182,10 @@ enum CloudSyncOutcome: Equatable {
 
     var message: String {
         switch self {
-        case .uploaded: "本机数据已上传到 iCloud 私有数据库"
-        case .downloaded: "已应用云端数据；恢复前快照保留在本机"
-        case .noChanges: "本机与 iCloud 已是最新状态"
-        case .conflictCreated: "检测到两端同时修改，已保留本机并生成冲突副本"
+        case .uploaded: AppLocalization.string( "本机数据已上传到 iCloud 私有数据库")
+        case .downloaded: AppLocalization.string( "已应用云端数据；恢复前快照保留在本机")
+        case .noChanges: AppLocalization.string( "本机与 iCloud 已是最新状态")
+        case .conflictCreated: AppLocalization.string( "检测到两端同时修改，已保留本机并生成冲突副本")
         }
     }
 }

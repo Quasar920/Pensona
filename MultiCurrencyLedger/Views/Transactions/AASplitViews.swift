@@ -9,8 +9,7 @@ struct AASplitEditorView: View {
     let initialDraft: AASplitDraft?
     let save: (AASplitDraft) throws -> Void
 
-    @State private var otherPeopleText: String
-    @State private var calculationMode: AASplitCalculationMode
+    @State private var totalPeopleText: String
     @State private var customOthersOwedText: String
     @State private var note: String
     @State private var errorMessage: String?
@@ -27,8 +26,7 @@ struct AASplitEditorView: View {
         self.currencyCode = currencyCode
         self.initialDraft = initialDraft
         self.save = save
-        _otherPeopleText = State(initialValue: initialDraft.map { String($0.otherPeopleCount) } ?? "")
-        _calculationMode = State(initialValue: initialDraft?.calculationMode ?? .equal)
+        _totalPeopleText = State(initialValue: initialDraft.map { String($0.otherPeopleCount + 1) } ?? "2")
         _customOthersOwedText = State(initialValue: initialDraft.map {
             NSDecimalNumber(decimal: $0.othersOwedAmount).stringValue
         } ?? "")
@@ -36,12 +34,13 @@ struct AASplitEditorView: View {
     }
 
     private var preview: AASplitAmounts? {
-        guard let count = Int(otherPeopleText), count > 0 else { return nil }
+        guard let totalPeople = Int(totalPeopleText), totalPeople >= 2 else { return nil }
+        let count = totalPeople - 1
         let customAmount = DecimalParser.parse(customOthersOwedText) ?? 0
         return try? calculator.amounts(
             totalAmount: totalAmount,
             otherPeopleCount: count,
-            mode: calculationMode,
+            mode: initialDraft?.calculationMode == .custom ? .custom : .equal,
             customOthersOwedAmount: customAmount,
             currencyCode: currencyCode
         )
@@ -66,9 +65,9 @@ struct AASplitEditorView: View {
                         .ledgerGlassCard(cornerRadius: 24)
 
                         HStack(spacing: 10) {
-                            Text("我和其他")
+                            Text("总人数（包含自己）")
                                 .font(.headline)
-                            TextField("人数", text: $otherPeopleText)
+                            TextField("人数", text: $totalPeopleText)
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.center)
                                 .font(.title3.weight(.semibold).monospacedDigit())
@@ -82,17 +81,14 @@ struct AASplitEditorView: View {
                         .ledgerGlassCard(cornerRadius: 22)
 
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("分摊方式")
+                            Text(
+                                initialDraft?.calculationMode == .custom
+                                    ? AppLocalization.string("历史自定义分摊")
+                                    : AppLocalization.string("按总人数均分")
+                            )
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                            Picker("分摊方式", selection: $calculationMode) {
-                                ForEach(AASplitCalculationMode.allCases) { mode in
-                                    Text(mode.title).tag(mode)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-
-                            if calculationMode == .custom {
+                            if initialDraft?.calculationMode == .custom {
                                 HStack {
                                     Text("其他人合计应还")
                                     Spacer()
@@ -146,24 +142,7 @@ struct AASplitEditorView: View {
                         .fontWeight(.semibold)
                 }
             }
-            .onChange(of: calculationMode) { _, mode in
-                errorMessage = nil
-                if mode == .custom,
-                   customOthersOwedText.isEmpty,
-                   let count = Int(otherPeopleText),
-                   let equalAmounts = try? calculator.amounts(
-                       totalAmount: totalAmount,
-                       otherPeopleCount: count,
-                       mode: .equal,
-                       customOthersOwedAmount: 0,
-                       currencyCode: currencyCode
-                   ) {
-                    customOthersOwedText = NSDecimalNumber(
-                        decimal: equalAmounts.othersOwedAmount
-                    ).stringValue
-                }
-            }
-            .onChange(of: otherPeopleText) { _, _ in errorMessage = nil }
+            .onChange(of: totalPeopleText) { _, _ in errorMessage = nil }
             .onChange(of: customOthersOwedText) { _, _ in errorMessage = nil }
         }
     }
@@ -179,13 +158,15 @@ struct AASplitEditorView: View {
 
     private func validateAndSave() {
         do {
-            guard let count = Int(otherPeopleText), count > 0 else {
+            guard let totalPeople = Int(totalPeopleText), totalPeople >= 2 else {
                 throw AASplitError.invalidOtherPeopleCount
             }
+            let count = totalPeople - 1
             let customAmount = DecimalParser.parse(customOthersOwedText) ?? 0
+            let mode: AASplitCalculationMode = initialDraft?.calculationMode == .custom ? .custom : .equal
             let raw = AASplitDraft(
                 otherPeopleCount: count,
-                calculationMode: calculationMode,
+                calculationMode: mode,
                 othersOwedAmount: customAmount,
                 note: note,
                 basedOnAmount: totalAmount
@@ -254,7 +235,7 @@ struct AASettlementEntryView: View {
                     }
                     Picker("收款账户", selection: $walletID) {
                         ForEach(wallets) { wallet in
-                            Text("\(wallet.account?.name ?? "未知账户") · \(wallet.currencyCode)")
+                            Text("\(wallet.account?.name ?? AppLocalization.string("未知账户")) · \(wallet.currencyCode)")
                                 .tag(wallet.id as UUID?)
                         }
                     }
@@ -401,7 +382,7 @@ struct AASplitDetailCard: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.transaction.date.formatted(date: .abbreviated, time: .shortened))
                                 .font(.subheadline.weight(.medium))
-                            Text(item.transaction.note ?? item.transaction.sourceAccount?.name ?? "AA 收回")
+                            Text(item.transaction.note ?? item.transaction.sourceAccount?.name ?? AppLocalization.string("AA 收回"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -459,7 +440,7 @@ struct AAReceivableHomeCard: View {
                         .font(.subheadline.weight(.semibold))
                     Text(overview.missingCodes.isEmpty
                          ? MoneyFormatter.string(overview.amount, currencyCode: currencyCode)
-                         : "部分币种缺少汇率")
+                         : AppLocalization.string("部分币种缺少汇率"))
                         .font(.title3.weight(.semibold).monospacedDigit())
                 }
                 Spacer()
@@ -512,7 +493,9 @@ struct AAReceivableListView: View {
 
                         if items.isEmpty {
                             ContentUnavailableView(
-                                showsSettled ? "还没有已结清的 AA" : "没有待收 AA",
+                                showsSettled
+                                    ? AppLocalization.string("还没有已结清的 AA")
+                                    : AppLocalization.string("没有待收 AA"),
                                 systemImage: showsSettled ? "checkmark.circle" : "person.2"
                             )
                             .padding(.top, 50)
@@ -549,7 +532,7 @@ struct AAReceivableListView: View {
                 Text(item.transaction.merchantOrCounterparty
                      ?? item.transaction.category?.name
                      ?? item.transaction.note
-                     ?? "AA 支出")
+                     ?? AppLocalization.string("AA 支出"))
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()

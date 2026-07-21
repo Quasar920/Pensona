@@ -6,7 +6,7 @@ enum MonthlyBudgetError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidAmount: "月度预算必须大于 0"
+        case .invalidAmount: AppLocalization.string( "月度预算必须大于 0")
         }
     }
 }

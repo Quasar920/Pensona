@@ -78,7 +78,7 @@ private struct EditExchangeRateView: View {
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -88,7 +88,7 @@ private struct EditExchangeRateView: View {
 
     private func save() {
         guard let value = DecimalParser.parse(rateText), value > 0 else {
-            errorMessage = "请输入大于 0 的有效汇率"
+            errorMessage = AppLocalization.string( "请输入大于 0 的有效汇率")
             return
         }
         do {

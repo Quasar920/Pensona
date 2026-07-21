@@ -11,11 +11,11 @@ enum TransactionDateFilter: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .all: "全部时间"
-        case .thisMonth: "本月"
-        case .last30Days: "最近 30 天"
-        case .thisYear: "今年"
-        case .custom: "自定义"
+        case .all: AppLocalization.string( "全部时间")
+        case .thisMonth: AppLocalization.string( "本月")
+        case .last30Days: AppLocalization.string( "最近 30 天")
+        case .thisYear: AppLocalization.string( "今年")
+        case .custom: AppLocalization.string( "自定义")
         }
     }
 }
@@ -30,10 +30,10 @@ enum TransactionSortOrder: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .dateDescending: "日期从新到旧"
-        case .dateAscending: "日期从旧到新"
-        case .amountDescending: "金额从高到低"
-        case .amountAscending: "金额从低到高"
+        case .dateDescending: AppLocalization.string( "日期从新到旧")
+        case .dateAscending: AppLocalization.string( "日期从旧到新")
+        case .amountDescending: AppLocalization.string( "金额从高到低")
+        case .amountAscending: AppLocalization.string( "金额从低到高")
         }
     }
 }
@@ -118,8 +118,7 @@ struct TransactionQueryState: Equatable, Sendable {
 
     private func matchesBook(_ transaction: LedgerTransaction) -> Bool {
         guard let bookID else { return true }
-        return transaction.sourceAccount?.book?.id == bookID
-            || transaction.destinationAccount?.book?.id == bookID
+        return transaction.bookID == bookID
     }
 
     private func matchesDate(_ date: Date, referenceDate: Date, calendar: Calendar) -> Bool {

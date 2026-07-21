@@ -74,7 +74,7 @@ struct TransactionListView: View {
         if let kind = query.kind { parts.append(kind.title) }
         if let category = categories.first(where: { $0.id == query.categoryID }) { parts.append(category.name) }
         if query.sortOrder != .dateDescending { parts.append(query.sortOrder.title) }
-        return parts.isEmpty ? "当前账本 · 全部时间" : parts.joined(separator: " · ")
+        return parts.isEmpty ? AppLocalization.string( "当前账本 · 全部时间") : parts.joined(separator: " · ")
     }
 
     var body: some View {
@@ -82,9 +82,15 @@ struct TransactionListView: View {
             Group {
                 if filtered.isEmpty {
                     ContentUnavailableView(
-                        hasFilters ? "没有符合条件的明细" : "暂无明细",
+                        hasFilters
+                            ? AppLocalization.string("没有符合条件的明细")
+                            : AppLocalization.string("暂无明细"),
                         systemImage: query.keyword.isEmpty ? "list.bullet.rectangle" : "magnifyingglass",
-                        description: Text(hasFilters ? "当前条件：\(filterSummary)" : "保存第一笔交易后会显示在这里。")
+                        description: Text(
+                            hasFilters
+                                ? AppLocalization.string("当前条件：\(filterSummary)")
+                                : AppLocalization.string("保存第一笔交易后会显示在这里。")
+                        )
                     )
                 } else {
                     List(selection: $selectedTransactionIDs) {
@@ -198,7 +204,7 @@ struct TransactionListView: View {
             }
             .alert("批量操作失败", isPresented: Binding(
                 get: { bulkErrorMessage != nil }, set: { if !$0 { bulkErrorMessage = nil } }
-            )) { Button("好") {} } message: { Text(bulkErrorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(bulkErrorMessage ?? AppLocalization.string("未知错误")) }
             .onAppear(perform: configureQueryIfNeeded)
             .onChange(of: books.count) { _, _ in configureQueryIfNeeded() }
             .onChange(of: selectedBookID) { _, _ in
@@ -300,10 +306,8 @@ private struct BulkTransactionEditView: View {
     private var availableCategories: [LedgerCategory] {
         guard let commonKind, commonKind == .expense || commonKind == .income else { return [] }
         let type: CategoryKind = commonKind == .expense ? .expense : .income
-        let bookIDs = Set(transactions.compactMap { $0.sourceAccount?.book?.id })
         return categories.filter {
             !$0.isArchived && $0.type == type
-                && ($0.bookID == nil || (bookIDs.count == 1 && bookIDs.contains($0.bookID!)))
         }
     }
 
@@ -334,7 +338,7 @@ private struct BulkTransactionEditView: View {
             }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 

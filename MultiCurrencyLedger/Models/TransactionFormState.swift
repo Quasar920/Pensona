@@ -5,6 +5,7 @@ struct TransactionFormState {
     var kind: TransactionKind
     var amountText: String
     var destinationAmountText: String
+    var exchangeRateText: String
     var sourceWalletID: UUID?
     var destinationWalletID: UUID?
     var categoryID: UUID?
@@ -13,7 +14,9 @@ struct TransactionFormState {
     var note: String
     var merchantOrCounterparty: String
     var adjustmentDirection: AdjustmentDirection
+    var adjustmentInputMode: AdjustmentInputMode
     var adjustmentReason: String
+    var reimbursementStatus: ReimbursementStatus
     var includesFee: Bool
     var feeText: String
     var usesSplitPayment: Bool
@@ -24,10 +27,23 @@ struct TransactionFormState {
     private var discountAmount: Decimal?
     private var recognitionImportID: UUID?
 
+    var hasUserEnteredContent: Bool {
+        !amountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !destinationAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !exchangeRateText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !merchantOrCounterparty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || (includesFee && !feeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            || paymentParts.contains { !$0.amountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            || aaSplitDraft != nil
+            || reimbursementStatus == .pending
+    }
+
     init(kind: TransactionKind = .expense, date: Date = .now) {
         self.kind = kind
         amountText = ""
         destinationAmountText = ""
+        exchangeRateText = ""
         sourceWalletID = nil
         destinationWalletID = nil
         categoryID = nil
@@ -36,7 +52,9 @@ struct TransactionFormState {
         note = ""
         merchantOrCounterparty = ""
         adjustmentDirection = .increase
+        adjustmentInputMode = .delta
         adjustmentReason = "手动校准"
+        reimbursementStatus = .none
         includesFee = false
         feeText = ""
         usesSplitPayment = false
@@ -51,6 +69,11 @@ struct TransactionFormState {
         kind = draft.type
         amountText = Self.string(draft.amount)
         destinationAmountText = draft.destinationAmount.map(Self.string) ?? ""
+        if draft.type == .exchange, draft.amount > 0, let destinationAmount = draft.destinationAmount {
+            exchangeRateText = Self.string(destinationAmount / draft.amount)
+        } else {
+            exchangeRateText = ""
+        }
         sourceWalletID = draft.sourceWallet?.id
         destinationWalletID = draft.destinationWallet?.id
         categoryID = draft.category?.id
@@ -59,7 +82,9 @@ struct TransactionFormState {
         note = draft.note ?? ""
         merchantOrCounterparty = draft.merchantOrCounterparty ?? ""
         adjustmentDirection = draft.adjustmentDirection ?? .increase
+        adjustmentInputMode = .delta
         adjustmentReason = draft.adjustmentReason ?? "手动校准"
+        reimbursementStatus = draft.reimbursementStatus
         includesFee = draft.feeAmount != nil
         feeText = draft.feeAmount.map(Self.string) ?? ""
         usesSplitPayment = draft.paymentParts.count >= 2
@@ -81,26 +106,31 @@ struct TransactionFormState {
         destinationWalletID = nil
         feeWalletID = nil
         destinationAmountText = ""
+        exchangeRateText = ""
         includesFee = false
         feeText = ""
         adjustmentDirection = .increase
+        adjustmentInputMode = .delta
         adjustmentReason = "手动校准"
+        reimbursementStatus = .none
         usesSplitPayment = false
         paymentParts = []
         aaSplitDraft = nil
     }
 
-    mutating func resetForContinuousEntry(now: Date = .now) {
+    mutating func resetForContinuousEntry(now _: Date = .now) {
         amountText = ""
         destinationAmountText = ""
+        exchangeRateText = ""
+        categoryID = nil
         feeText = ""
         includesFee = false
         feeWalletID = sourceWalletID
-        date = now
         note = ""
         merchantOrCounterparty = ""
         for index in paymentParts.indices { paymentParts[index].amountText = "" }
         aaSplitDraft = nil
+        reimbursementStatus = .none
         originalAmount = nil
         discountAmount = nil
         recognitionImportID = nil
@@ -118,11 +148,24 @@ struct TransactionFormState {
         wallets: [CurrencyWallet],
         categories: [LedgerCategory]
     ) throws -> TransactionDraft {
-        guard let amount = DecimalParser.parse(amountText), amount > 0 else {
-            throw ValidationError("请输入大于 0 的有效金额")
-        }
         guard let sourceWallet = wallets.first(where: { $0.id == sourceWalletID }) else {
             throw ValidationError("请选择来源钱包")
+        }
+        guard let enteredAmount = DecimalParser.parse(amountText), enteredAmount >= 0 else {
+            throw ValidationError("请输入大于 0 的有效金额")
+        }
+
+        let amount: Decimal
+        let resolvedAdjustmentDirection: AdjustmentDirection
+        if kind == .adjustment, adjustmentInputMode == .finalBalance {
+            let difference = enteredAmount - sourceWallet.balance
+            guard difference != 0 else { throw ValidationError("最终余额必须与当前余额不同") }
+            amount = abs(difference)
+            resolvedAdjustmentDirection = difference > 0 ? .increase : .decrease
+        } else {
+            guard enteredAmount > 0 else { throw ValidationError("请输入大于 0 的有效金额") }
+            amount = enteredAmount
+            resolvedAdjustmentDirection = adjustmentDirection
         }
 
         let isMovement = kind == .transfer || kind == .exchange
@@ -195,13 +238,14 @@ struct TransactionFormState {
             merchantOrCounterparty: cleanMerchant.isEmpty ? nil : cleanMerchant,
             category: categories.first(where: { $0.id == categoryID }),
             paymentParts: resolvedPaymentParts,
-            adjustmentDirection: kind == .adjustment ? adjustmentDirection : nil,
+            adjustmentDirection: kind == .adjustment ? resolvedAdjustmentDirection : nil,
             adjustmentReason: kind == .adjustment
                 ? (cleanAdjustmentReason.isEmpty ? "手动校准" : cleanAdjustmentReason)
                 : nil,
             originalAmount: originalAmount,
             discountAmount: discountAmount,
-            recognitionImportID: recognitionImportID
+            recognitionImportID: recognitionImportID,
+            reimbursementStatus: kind == .expense ? reimbursementStatus : .none
         )
     }
 

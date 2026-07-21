@@ -5,9 +5,9 @@ enum ReportMetric: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .expense: "支出"
-        case .income: "收入"
-        case .net: "净额"
+        case .expense: AppLocalization.string( "支出")
+        case .income: AppLocalization.string( "收入")
+        case .net: AppLocalization.string( "净额")
         }
     }
 }
@@ -17,10 +17,10 @@ enum ReportGranularity: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .daily: "日"
-        case .weekly: "周"
-        case .monthly: "月"
-        case .yearly: "年"
+        case .daily: AppLocalization.string( "日")
+        case .weekly: AppLocalization.string( "周")
+        case .monthly: AppLocalization.string( "月")
+        case .yearly: AppLocalization.string( "年")
         }
     }
 }
@@ -30,9 +30,9 @@ enum ReportDimension: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .category: "分类"
-        case .account: "账户"
-        case .book: "账本"
+        case .category: AppLocalization.string( "分类")
+        case .account: AppLocalization.string( "账户")
+        case .book: AppLocalization.string( "账本")
         }
     }
 }
@@ -83,10 +83,12 @@ struct ReportQueryService {
         interval: DateInterval,
         metric: ReportMetric,
         dimension: ReportDimension,
+        books: [LedgerBook] = [],
         aaSplits: [AASplit] = [],
         aaSettlements: [AASettlement] = []
     ) -> ReportResult {
-        aggregate(
+        let bookNames = Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0.name) })
+        return aggregate(
             transactions: transactions,
             relations: relations,
             aaSplits: aaSplits,
@@ -97,11 +99,12 @@ struct ReportQueryService {
             let semantic = originalForRecovery ?? transaction
             switch dimension {
             case .category:
-                return [(semantic.category?.id.uuidString ?? "none", semantic.category?.name ?? "未分类")]
+                return [(semantic.category?.id.uuidString ?? "none", semantic.category?.name ?? AppLocalization.string("未分类"))]
             case .account:
-                return [(semantic.sourceAccount?.id.uuidString ?? "none", semantic.sourceAccount?.name ?? "未知账户")]
+                return [(semantic.sourceAccount?.id.uuidString ?? "none", semantic.sourceAccount?.name ?? AppLocalization.string("未知账户"))]
             case .book:
-                return [(semantic.sourceAccount?.book?.id.uuidString ?? "none", semantic.sourceAccount?.book?.name ?? "未知账本")]
+                guard let bookID = semantic.bookID else { return [("none", "未知账本")] }
+                return [(bookID.uuidString, bookNames[bookID] ?? AppLocalization.string("未知账本"))]
             }
         }
     }
@@ -126,7 +129,7 @@ struct ReportQueryService {
         var missing = Set<String>()
 
         for transaction in transactions
-        where transaction.date >= interval.start && transaction.date < interval.end {
+        where contains(transaction.date, in: interval) {
             let recoveryRelation = relationByRelatedID[transaction.id]
             let original = recoveryRelation.flatMap { byID[$0.originalTransactionID] }
             let signed = signedValue(
@@ -227,11 +230,16 @@ struct ReportQueryService {
     private func periodTitle(_ granularity: ReportGranularity, date: Date) -> String {
         switch granularity {
         case .daily: date.formatted(.dateTime.month().day())
-        case .weekly: "第 \(calendar.component(.weekOfYear, from: date)) 周"
+        case .weekly: AppLocalization.string( "第 \(calendar.component(.weekOfYear, from: date)) 周")
         case .monthly: date.formatted(.dateTime.year().month())
         case .yearly: date.formatted(.dateTime.year())
         }
     }
 
     private func absDecimal(_ value: Decimal) -> Decimal { value < 0 ? -value : value }
+
+    /// All report ranges use the same half-open boundary rule as the statistics dashboard.
+    func contains(_ date: Date, in interval: DateInterval) -> Bool {
+        date >= interval.start && date < interval.end
+    }
 }

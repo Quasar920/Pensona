@@ -33,7 +33,7 @@ struct TransactionFilterView: View {
 
     private var availableAccounts: [Account] {
         accounts.filter { account in
-            !account.isHidden && (draft.bookID == nil || account.book?.id == draft.bookID)
+            !account.isHidden && !account.isArchived
         }
     }
 
@@ -51,9 +51,7 @@ struct TransactionFilterView: View {
     }
 
     private var scopedCategories: [LedgerCategory] {
-        categories.filter {
-            !$0.isArchived && (draft.bookID == nil || $0.bookID == nil || $0.bookID == draft.bookID)
-        }
+        categories.filter { !$0.isArchived }
     }
 
     private var parsedMinimum: Decimal? {

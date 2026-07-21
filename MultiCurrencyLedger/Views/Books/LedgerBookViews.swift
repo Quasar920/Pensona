@@ -144,7 +144,7 @@ struct AddLedgerBookView: View {
             )) {
                 Button("好") {}
             } message: {
-                Text(errorMessage ?? "未知错误")
+                Text(errorMessage ?? AppLocalization.string("未知错误"))
             }
         }
     }
@@ -258,7 +258,7 @@ private struct EditLedgerBookView: View {
         )) {
             Button("好") {}
         } message: {
-            Text(errorMessage ?? "未知错误")
+            Text(errorMessage ?? AppLocalization.string("未知错误"))
         }
     }
 

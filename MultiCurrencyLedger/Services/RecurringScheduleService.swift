@@ -10,11 +10,11 @@ enum RecurringScheduleError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyName: "请输入周期账单名称"
-        case .invalidInterval: "周期必须大于 0"
-        case .invalidDateRange: "结束日期不能早于开始日期"
-        case .invalidTimeZone: "周期账单的时区无效"
-        case .generationLimitReached: "一次最多补生成 500 笔，请缩小日期范围后重试"
+        case .emptyName: AppLocalization.string( "请输入周期账单名称")
+        case .invalidInterval: AppLocalization.string( "周期必须大于 0")
+        case .invalidDateRange: AppLocalization.string( "结束日期不能早于开始日期")
+        case .invalidTimeZone: AppLocalization.string( "周期账单的时区无效")
+        case .generationLimitReached: AppLocalization.string( "一次最多补生成 500 笔，请缩小日期范围后重试")
         }
     }
 }
@@ -116,6 +116,7 @@ final class RecurringScheduleService {
     @discardableResult
     func create(
         name: String,
+        bookID: UUID,
         draft: TransactionDraft,
         frequency: RecurringFrequency,
         interval: Int,
@@ -133,7 +134,7 @@ final class RecurringScheduleService {
             throw RecurringScheduleError.invalidTimeZone
         }
         _ = try TransactionImpactCalculator().deltas(for: draft)
-        let encoded = try codec.encode(draft)
+        let encoded = try codec.encode(draft, bookID: bookID)
         let schedule = RecurringSchedule(
             name: cleanName,
             bookID: encoded.bookID,
@@ -201,7 +202,7 @@ final class RecurringScheduleService {
             )
             schedule.nextDueDate = nextDate
             schedule.updatedAt = .now
-            let transaction = try LedgerService(context: context).create(draft) { transaction in
+            let transaction = try LedgerService(context: context).create(draft, bookID: schedule.bookID) { transaction in
                 context.insert(RecurringOccurrence(
                     generationKey: key,
                     scheduleID: schedule.id,

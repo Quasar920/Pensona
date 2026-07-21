@@ -12,9 +12,13 @@ struct AddAccountView: View {
 
     let book: LedgerBook?
 
-    init(book: LedgerBook? = nil, initialGroup: AssetGroup = .cash) {
+    init(
+        book: LedgerBook? = nil,
+        initialGroup: AssetGroup = .cash,
+        initialType: AccountType? = nil
+    ) {
         self.book = book
-        _type = State(initialValue: initialGroup == .cash ? .bankCard : initialGroup.canonicalAccountType)
+        _type = State(initialValue: initialType ?? (initialGroup == .cash ? .bankCard : initialGroup.canonicalAccountType))
     }
 
     var body: some View {
@@ -23,7 +27,7 @@ struct AddAccountView: View {
                 Section("基本信息") {
                     TextField("账户名称", text: $name)
                     Picker("账户类型", selection: $type) {
-                        ForEach(AccountType.allCases) { item in
+                        ForEach(AccountType.allCases.filter { $0 != .other }) { item in
                             Label(item.title, systemImage: item.symbolName).tag(item)
                         }
                     }
@@ -66,7 +70,7 @@ struct AddAccountView: View {
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -76,8 +80,7 @@ struct AddAccountView: View {
                 name: name,
                 type: type,
                 note: note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-                cardLastFour: type.supportsCardLastFour ? cardLastFour : nil,
-                book: book
+                cardLastFour: type.supportsCardLastFour ? cardLastFour : nil
             )
             dismiss()
         } catch {

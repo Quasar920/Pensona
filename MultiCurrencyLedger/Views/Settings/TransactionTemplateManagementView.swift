@@ -24,8 +24,8 @@ struct TransactionTemplateManagementView: View {
     }
 
     private var wallets: [CurrencyWallet] {
-        guard let bookID = selectedBook?.id else { return [] }
-        return accounts.filter { !$0.isArchived && $0.book?.id == bookID }.flatMap(\.enabledWallets)
+        guard selectedBook != nil else { return [] }
+        return accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
     }
 
     var body: some View {
@@ -35,7 +35,7 @@ struct TransactionTemplateManagementView: View {
                     ForEach(books) { Text($0.name).tag($0.id.uuidString) }
                 }
             }
-            Section(showsArchived ? "已归档模板" : "可用模板") {
+            Section(showsArchived ? AppLocalization.string("已归档模板") : AppLocalization.string("可用模板")) {
                 if scopedTemplates.isEmpty {
                     Text("可在任意交易详情中保存模板").foregroundStyle(.secondary)
                 }
@@ -52,7 +52,7 @@ struct TransactionTemplateManagementView: View {
                         }
                     }
                     .swipeActions {
-                        Button(template.isArchived ? "恢复" : "归档") {
+                        Button(template.isArchived ? AppLocalization.string("恢复") : AppLocalization.string("归档")) {
                             updateArchived(!template.isArchived, template: template)
                         }
                         .tint(template.isArchived ? .green : .orange)
@@ -72,16 +72,15 @@ struct TransactionTemplateManagementView: View {
         }
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 
     private func use(_ template: TransactionTemplate) {
         do {
-            let bookID = template.bookID
             draftToUse = try TransactionTemplateService(context: context).resolve(
                 template,
                 wallets: wallets,
-                categories: categories.filter { !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID) }
+                categories: categories.filter { !$0.isArchived }
             )
         } catch {
             errorMessage = error.localizedDescription

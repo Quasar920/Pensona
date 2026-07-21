@@ -10,211 +10,137 @@ struct HomeView: View {
 
     @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
     private var books: [LedgerBook]
-    @Query(sort: \LedgerTransaction.date, order: .reverse) private var transactions: [LedgerTransaction]
-    @Query private var rates: [ExchangeRate]
-    @Query(sort: \MonthlyBudget.monthStart, order: .reverse) private var budgets: [MonthlyBudget]
-    @Query private var relations: [TransactionRelation]
-    @Query private var aaSplits: [AASplit]
-    @Query private var aaSettlements: [AASettlement]
 
     let addTransaction: () -> Void
+    @Binding private var isDetailPresented: Bool
 
-    @State private var selectedMonth = Calendar.current.date(
+    @State private var billState = BillPageState(selectedMonth: Calendar.current.date(
         from: Calendar.current.dateComponents([.year, .month], from: .now)
-    ) ?? .now
+    ) ?? .now)
+    @State private var snapshot: BillPageSnapshot?
+    @State private var refreshGeneration = 0
+    @State private var loadError: String?
     @State private var presentation = HomePresentationState()
     @State private var appliedPreviewState = false
     @State private var expandedTransactionID: UUID?
+    @State private var detailPath = NavigationPath()
     @State private var deletingTransaction: LedgerTransaction?
     @State private var transactionActionError: String?
 
-    init(addTransaction: @escaping () -> Void = {}) {
+    init(
+        addTransaction: @escaping () -> Void = {},
+        isDetailPresented: Binding<Bool> = .constant(false)
+    ) {
         self.addTransaction = addTransaction
+        _isDetailPresented = isDetailPresented
     }
 
     private var selectedBook: LedgerBook? {
         books.first { $0.id.uuidString == selectedBookID } ?? books.first
     }
 
-    private var ledgerScope: LedgerScope? {
-        selectedBook.map {
-            LedgerScope(
-                bookID: $0.id,
-                selectedMonth: selectedMonth,
-                baseCurrencyCode: baseCurrencyCode
-            )
-        }
-    }
-
-    private var selectedBookTransactions: [LedgerTransaction] {
-        guard let ledgerScope else { return [] }
-        return transactions.filter(ledgerScope.transactionBelongsToBook)
-    }
-
-    private var selectedMonthTransactions: [LedgerTransaction] {
-        guard let ledgerScope else { return [] }
-        return selectedBookTransactions.filter { ledgerScope.contains(date: $0.date) }
-    }
-
-    private var currentBudget: MonthlyBudget? {
-        guard let ledgerScope else { return nil }
-        return budgets.first(where: ledgerScope.matches)
-    }
-
-    private var monthlySummary: MonthlySummaryResult {
-        MonthlySummaryService(baseCurrencyCode: baseCurrencyCode, rates: rates)
-            .summary(
-                for: selectedBookTransactions,
-                month: selectedMonth,
-                budget: currentBudget?.amount,
-                relations: relations,
-                aaSplits: aaSplits,
-                aaSettlements: aaSettlements
-            )
-    }
-
-    private var aaItems: [AAReceivableItem] {
-        guard let bookID = selectedBook?.id else { return [] }
-        return AAQueryService().items(
-            splits: aaSplits,
-            settlements: aaSettlements,
-            transactions: transactions,
-            bookID: bookID
+    private var loadKey: BillLoadKey {
+        BillLoadKey(
+            bookID: selectedBook?.id,
+            month: billState.selectedMonth,
+            keyword: billState.searchText,
+            generation: refreshGeneration
         )
-    }
-
-    private var aaOverview: AAReceivableOverview {
-        AAQueryService().overview(
-            items: aaItems,
-            baseCurrencyCode: baseCurrencyCode,
-            rates: rates
-        )
-    }
-
-    private var aaRecoveryTransactionIDs: Set<UUID> {
-        Set(aaSettlements.map(\.recoveryTransactionID))
-    }
-
-    private var recentDayGroups: [TransactionDayGroup] {
-        TransactionDayGroup.make(from: Array(selectedMonthTransactions.prefix(6)))
     }
 
     private var emptyState: (title: String, message: String) {
         let monthStart = Calendar.current.date(
             from: Calendar.current.dateComponents([.year, .month], from: .now)
         ) ?? .now
-        if selectedMonth > monthStart {
-            return ("这个月还没有记录", "未来的收支记录会显示在这里")
+        if billState.selectedMonth > monthStart {
+            return (
+                AppLocalization.string( "这个月还没有记录"),
+                AppLocalization.string( "未来的收支记录会显示在这里")
+            )
         }
-        if Calendar.current.isDate(selectedMonth, equalTo: .now, toGranularity: .month) {
-            return ("还没有记账记录", "点击下方 + 开始添加第一笔交易")
+        if Calendar.current.isDate(billState.selectedMonth, equalTo: .now, toGranularity: .month) {
+            return (
+                AppLocalization.string( "还没有记账记录"),
+                AppLocalization.string( "点击下方 + 开始添加第一笔交易")
+            )
         }
-        return ("当月没有记录", "可以切换其他月份继续查看")
+        return (
+            AppLocalization.string( "当月没有记录"),
+            AppLocalization.string( "可以切换其他月份继续查看")
+        )
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $detailPath) {
             ZStack {
                 HomePalette.background.ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 10) {
-                        MonthlyOverviewCard(
-                            currencyCode: baseCurrencyCode,
-                            summary: monthlySummary,
-                            setBudget: openBudgetEditor
+                    LazyVStack(spacing: LedgerLayout.sectionSpacing) {
+                        BillTopControls(
+                            bookName: selectedBook?.name ?? AppLocalization.string("选择账本"),
+                            searchText: $billState.searchText,
+                            isSearchExpanded: $billState.isSearchExpanded,
+                            openBook: { presentation.present(.bookSwitcher) },
+                            openSettings: { presentation.present(.settings) }
                         )
 
-                        AAReceivableHomeCard(
-                            overview: aaOverview,
-                            currencyCode: baseCurrencyCode,
-                            open: {
-                                guard let bookID = selectedBook?.id else { return }
-                                presentation.present(.aaReceivables(bookID))
+                        BillMonthHeader(
+                            selectedMonth: billState.selectedMonth,
+                            openPicker: { presentation.present(.monthPicker) },
+                            changeMonth: changeMonth
+                        )
+
+                        if let snapshot {
+                            BillMonthlySummaryPanel(
+                                summary: snapshot.summary,
+                                currencyCode: baseCurrencyCode,
+                                openBudget: openBudgetEditor
+                            )
+
+                            if snapshot.dayGroups.isEmpty {
+                                EmptyRecordsView(
+                                    title: billState.searchText.isEmpty
+                                        ? emptyState.title
+                                        : AppLocalization.string("没有匹配的账单"),
+                                    message: billState.searchText.isEmpty
+                                        ? emptyState.message
+                                        : AppLocalization.string("试试其他关键词"),
+                                    addTransaction: billState.searchText.isEmpty ? addTransaction : nil
+                                )
+                                .ledgerSurface(.functional)
+                            } else {
+                                ForEach(snapshot.dayGroups) { group in
+                                    BillDailyGroup(
+                                        group: group,
+                                        expandedTransactionID: $expandedTransactionID,
+                                        open: openTransaction,
+                                        edit: edit,
+                                        delete: requestDelete
+                                    )
+                                }
                             }
-                        )
-
-                        MonthNavigator(
-                            selectedMonth: $selectedMonth,
-                            openPicker: { presentation.present(.monthPicker) }
-                        )
-
-                        DailyRecordCards(
-                            groups: recentDayGroups,
-                            emptyTitle: emptyState.title,
-                            emptyMessage: emptyState.message,
-                            showAddAction: Calendar.current.isDate(
-                                selectedMonth,
-                                equalTo: .now,
-                                toGranularity: .month
-                            ),
-                            addTransaction: addTransaction,
-                            expandedTransactionID: $expandedTransactionID,
-                            lockedTransactionIDs: aaRecoveryTransactionIDs,
-                            editTransaction: { transaction in
-                                expandedTransactionID = nil
-                                presentation.present(.editTransaction(transaction))
-                            },
-                            deleteTransaction: { transaction in
-                                expandedTransactionID = nil
-                                deletingTransaction = transaction
-                            }
-                        )
+                        } else {
+                            ProgressView("正在加载账单")
+                                .frame(maxWidth: .infinity, minHeight: 180)
+                                .ledgerSurface(.functional)
+                        }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
+                    .padding(.horizontal, LedgerLayout.pagePadding)
+                    .padding(.top, 12)
                     .padding(.bottom, RootEntryLayout.scrollContentClearance)
                 }
             }
-            .navigationTitle("流水")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { presentation.present(.bookSwitcher) } label: {
-                        Label(selectedBook?.name ?? "选择账本", systemImage: "book.closed")
-                    }
-                    .accessibilityHint("切换账本")
-                }
-
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { presentation.present(.transactions) } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .accessibilityLabel("搜索流水")
-
-                    Menu {
-                        Button { presentation.present(.bookManagement) } label: {
-                            Label("管理账本", systemImage: "slider.horizontal.3")
-                        }
-                        Button { presentation.present(.calendar) } label: {
-                            Label("账单日历", systemImage: "calendar")
-                        }
-                        Button { presentation.present(.smartDraft) } label: {
-                            Label("文本或语音记账", systemImage: "waveform.and.mic")
-                        }
-                        Button { presentation.present(.addAsset(selectedBook)) } label: {
-                            Label("新增账户", systemImage: "creditcard.badge.plus")
-                        }
-                        Divider()
-                        Button { presentation.present(.settings) } label: {
-                            Label("设置", systemImage: "gearshape")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                    }
-                    .accessibilityLabel("更多流水操作")
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: LedgerTransaction.self) {
                 TransactionDetailView(transaction: $0)
                     .toolbar(.visible, for: .navigationBar)
-                    .rootEntryVisibility(.hidden, for: .ledger)
             }
             .background {
                 HomeSheetPresenter(
                     presentation: presentation,
                     selectedBookID: $selectedBookID,
-                    selectedMonth: $selectedMonth
+                    selectedMonth: $billState.selectedMonth
                 )
             }
             .confirmationDialog(
@@ -234,13 +160,34 @@ struct HomeView: View {
                 get: { transactionActionError != nil },
                 set: { if !$0 { transactionActionError = nil } }
             )) { Button("好") {} } message: {
-                Text(transactionActionError ?? "未知错误")
+                Text(transactionActionError ?? AppLocalization.string("未知错误"))
             }
             .onAppear {
                 ensureSelectedBook()
                 applyPreviewStateIfNeeded()
             }
             .onChange(of: books.count) { _, _ in ensureSelectedBook() }
+            .task(id: loadKey) {
+                if !billState.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard !Task.isCancelled else { return }
+                }
+                loadSnapshot()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .ledgerTransactionsDidChange)) { _ in
+                refreshGeneration += 1
+            }
+            .alert("账单加载失败", isPresented: Binding(
+                get: { loadError != nil },
+                set: { if !$0 { loadError = nil } }
+            )) { Button("好") {} } message: {
+                Text(loadError ?? AppLocalization.string("未知错误"))
+            }
+        }
+        .rootEntryVisibility(detailPath.isEmpty ? .visible : .hidden, for: .ledger)
+        .onAppear { isDetailPresented = !detailPath.isEmpty }
+        .onChange(of: detailPath.count) { _, count in
+            isDetailPresented = count > 0
         }
     }
 
@@ -254,9 +201,9 @@ struct HomeView: View {
     private func openBudgetEditor() {
         guard selectedBook != nil else { return }
         presentation.present(.budgetEditor(
-            month: selectedMonth,
+            month: billState.selectedMonth,
             currencyCode: baseCurrencyCode,
-            currentAmount: currentBudget?.amount,
+            currentAmount: snapshot?.summary.budget,
             save: saveBudget
         ))
     }
@@ -266,9 +213,10 @@ struct HomeView: View {
         _ = try MonthlyBudgetService(context: context).upsert(
             amount: amount,
             bookID: bookID,
-            month: selectedMonth,
+            month: billState.selectedMonth,
             currencyCode: baseCurrencyCode
         )
+        refreshGeneration += 1
     }
 
     private func deletePendingTransaction() {
@@ -276,6 +224,7 @@ struct HomeView: View {
         do {
             try LedgerService(context: context).deleteTransaction(transaction)
             deletingTransaction = nil
+            refreshGeneration += 1
         } catch {
             transactionActionError = error.localizedDescription
         }
@@ -289,20 +238,68 @@ struct HomeView: View {
         case "book-switcher":
             DispatchQueue.main.async { presentation.present(.bookSwitcher) }
         case "previous-month":
-            selectedMonth = Calendar.current.date(byAdding: .month, value: -1, to: selectedMonth) ?? selectedMonth
+            billState.changeMonth(by: -1)
         case "future-month":
-            selectedMonth = Calendar.current.date(byAdding: .month, value: 1, to: selectedMonth) ?? selectedMonth
+            billState.changeMonth(by: 1)
         case "travel-book":
             if let travelBook = books.first(where: { $0.name == "旅行账本" }) {
                 selectedBookID = travelBook.id.uuidString
             }
         case "budget-editor":
             DispatchQueue.main.async { openBudgetEditor() }
+        case "bill-search":
+            billState.isSearchExpanded = true
+            billState.searchText = "餐饮"
         default:
             break
         }
         #endif
     }
+
+    private func changeMonth(_ offset: Int) {
+        expandedTransactionID = nil
+        billState.changeMonth(by: offset)
+    }
+
+    private func edit(_ transaction: LedgerTransaction) {
+        expandedTransactionID = nil
+        presentation.present(.editTransaction(transaction))
+    }
+
+    private func openTransaction(_ transaction: LedgerTransaction) {
+        expandedTransactionID = nil
+        detailPath.append(transaction)
+    }
+
+    private func requestDelete(_ transaction: LedgerTransaction) {
+        expandedTransactionID = nil
+        deletingTransaction = transaction
+    }
+
+    private func loadSnapshot() {
+        guard let bookID = selectedBook?.id else {
+            snapshot = nil
+            return
+        }
+        do {
+            snapshot = try BillQueryService(context: context).load(
+                bookID: bookID,
+                month: billState.selectedMonth,
+                baseCurrencyCode: baseCurrencyCode,
+                keyword: billState.searchText
+            )
+            loadError = nil
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+}
+
+private struct BillLoadKey: Hashable {
+    let bookID: UUID?
+    let month: Date
+    let keyword: String
+    let generation: Int
 }
 
 private struct HomeSheetPresentation: Identifiable {
@@ -434,6 +431,7 @@ enum HomePalette {
 
 private struct MonthNavigator: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @Binding var selectedMonth: Date
     let openPicker: () -> Void
 
@@ -444,7 +442,7 @@ private struct MonthNavigator: View {
 
                 Button(action: openPicker) {
                     HStack(spacing: 5) {
-                        Text(selectedMonth.chineseYearMonth)
+                        Text(selectedMonth.yearMonthText(locale: locale))
                             .font(.system(size: 13, weight: .semibold))
                             .contentTransition(reduceMotion ? .identity : .numericText())
                             .animation(
@@ -459,7 +457,7 @@ private struct MonthNavigator: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.glass)
-                .accessibilityLabel("选择年月，当前\(selectedMonth.chineseYearMonth)")
+                .accessibilityLabel("选择年月，当前\(selectedMonth.yearMonthText(locale: locale))")
 
                 monthButton(systemName: "chevron.right") { changeMonth(by: 1) }
             }
@@ -586,6 +584,8 @@ private struct SwipeableHomeTransactionRow: View {
     }
 
     private let actionWidth: CGFloat = 82
+    private let openThreshold: CGFloat = 48
+    private let closeThreshold: CGFloat = 32
 
     let transaction: LedgerTransaction
     @Binding var expandedTransactionID: UUID?
@@ -606,7 +606,17 @@ private struct SwipeableHomeTransactionRow: View {
 
     private var horizontalOffset: CGFloat {
         let proposed = restingOffset + dragTranslation
-        return min(actionWidth, max(-actionWidth, proposed))
+        switch revealedSide {
+        case .edit:
+            // Once one side is open, a reverse gesture only closes it. This
+            // prevents a single gesture from jumping through center and
+            // revealing the action on the other side.
+            return min(actionWidth, max(0, proposed))
+        case .delete:
+            return min(0, max(-actionWidth, proposed))
+        case nil:
+            return min(actionWidth, max(-actionWidth, proposed))
+        }
     }
 
     var body: some View {
@@ -656,15 +666,19 @@ private struct SwipeableHomeTransactionRow: View {
             .onEnded { value in
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
                 withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical) {
-                    if value.translation.width > 34 {
+                    switch revealedSide {
+                    case nil where value.translation.width >= openThreshold:
                         revealedSide = .edit
                         expandedTransactionID = transaction.id
-                    } else if value.translation.width < -34 {
+                    case nil where value.translation.width <= -openThreshold:
                         revealedSide = .delete
                         expandedTransactionID = transaction.id
-                    } else {
+                    case .edit where value.translation.width <= -closeThreshold,
+                         .delete where value.translation.width >= closeThreshold:
                         revealedSide = nil
                         expandedTransactionID = nil
+                    default:
+                        break
                     }
                 }
             }
@@ -847,7 +861,7 @@ extension LedgerTransaction {
     }
 
     var homeAccountName: String {
-        sourceAccount?.name ?? destinationAccount?.name ?? "未指定账户"
+        sourceAccount?.name ?? destinationAccount?.name ?? AppLocalization.string("未指定账户")
     }
 
     var figmaHomeTimestamp: String {
@@ -867,18 +881,17 @@ extension LedgerTransaction {
 }
 
 extension Date {
-    var chineseYearMonth: String {
-        let components = Calendar.current.dateComponents([.year, .month], from: self)
-        return "\(components.year ?? 0)年\(components.month ?? 0)月"
+    func yearMonthText(locale: Locale) -> String {
+        formatted(
+            .dateTime
+                .locale(locale)
+                .year()
+                .month(.wide)
+        )
     }
 
-    var homeDayHeading: String {
-        return formatted(
-            .dateTime
-                .locale(Locale(identifier: "zh_Hans_CN"))
-                .month()
-                .day()
-        )
+    func dayHeading(locale: Locale) -> String {
+        formatted(.dateTime.locale(locale).month().day())
     }
 
     var figmaHomeDayHeading: String {

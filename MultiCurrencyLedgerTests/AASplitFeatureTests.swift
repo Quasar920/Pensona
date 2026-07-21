@@ -63,7 +63,7 @@ final class AASplitFeatureTests: XCTestCase {
             date: date,
             merchantOrCounterparty: "聚餐",
             category: fixture.category
-        )) { transaction in
+        ), bookID: fixture.book.id) { transaction in
             createdSplit = try AASplitService(context: context).upsert(
                 splitDraft,
                 for: transaction,
@@ -143,6 +143,7 @@ final class AASplitFeatureTests: XCTestCase {
     func testSettlementDeletionRollsBackWalletAndOriginalDeletionIsGuarded() throws {
         let fixture = makeFixture(balance: 1_000)
         let expense = try LedgerService(context: context).createExpense(
+            bookID: fixture.book.id,
             amount: 300,
             wallet: fixture.wallet,
             category: fixture.category,
@@ -178,6 +179,7 @@ final class AASplitFeatureTests: XCTestCase {
                 $0.id == settlement.recoveryTransactionID
             }
         )
+        XCTAssertEqual(recovery.bookID, expense.bookID)
         XCTAssertThrowsError(try LedgerService(context: context).deleteTransaction(recovery)) {
             XCTAssertEqual($0 as? LedgerError, .aaRecoveryManaged)
         }
@@ -199,9 +201,10 @@ final class AASplitFeatureTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<AASplit>()), 0)
     }
 
-    func testOverpaymentCurrencyBookAndRecoveryConflictsAreRejected() throws {
+    func testOverpaymentCurrencyAndRecoveryConflictsAreRejectedWhileAccountsStayGlobal() throws {
         let fixture = makeFixture(balance: 1_000)
         let expense = try LedgerService(context: context).createExpense(
+            bookID: fixture.book.id,
             amount: 300,
             wallet: fixture.wallet,
             category: fixture.category,
@@ -250,16 +253,39 @@ final class AASplitFeatureTests: XCTestCase {
         context.insert(otherBook)
         context.insert(otherAccount)
         context.insert(otherWallet)
-        XCTAssertThrowsError(try AASettlementService(context: context).record(
+        _ = try AASettlementService(context: context).record(
             split: split,
             original: expense,
             amount: 10,
             wallet: otherWallet,
             date: .now,
             note: nil
-        )) {
-            XCTAssertEqual($0 as? AASplitError, .bookMismatch)
-        }
+        )
+        XCTAssertEqual(otherWallet.balance, 10)
+        let allTransactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        let recovery = try XCTUnwrap(allTransactions.first { $0.id != expense.id })
+        XCTAssertEqual(recovery.bookID, fixture.book.id)
+
+        let splits = try context.fetch(FetchDescriptor<AASplit>())
+        let settlements = try context.fetch(FetchDescriptor<AASettlement>())
+        XCTAssertEqual(AAQueryService().items(
+            splits: splits,
+            settlements: settlements,
+            transactions: allTransactions,
+            bookID: nil
+        ).count, 1)
+        XCTAssertEqual(AAQueryService().items(
+            splits: splits,
+            settlements: settlements,
+            transactions: allTransactions,
+            bookID: fixture.book.id
+        ).count, 1)
+        XCTAssertTrue(AAQueryService().items(
+            splits: splits,
+            settlements: settlements,
+            transactions: allTransactions,
+            bookID: otherBook.id
+        ).isEmpty)
 
         XCTAssertThrowsError(try TransactionRelationService(context: context).record(
             kind: .reimbursement,
@@ -274,6 +300,7 @@ final class AASplitFeatureTests: XCTestCase {
     func testCollectedAmountCapsLaterSplitEdits() throws {
         let fixture = makeFixture(balance: 1_000)
         let expense = try LedgerService(context: context).createExpense(
+            bookID: fixture.book.id,
             amount: 300,
             wallet: fixture.wallet,
             category: fixture.category,

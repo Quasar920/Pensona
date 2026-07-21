@@ -50,7 +50,7 @@ struct RecognitionConfirmationView: View {
     private var wallets: [CurrencyWallet] {
         guard let draft else { return [] }
         return accounts
-            .filter { !$0.isArchived && $0.book?.id == book.id }
+            .filter { !$0.isArchived }
             .flatMap(\.enabledWallets)
             .filter { $0.currencyCode == draft.currency.rawValue }
             .sorted { ($0.account?.name ?? "", $0.currencyCode) < ($1.account?.name ?? "", $1.currencyCode) }
@@ -108,7 +108,7 @@ struct RecognitionConfirmationView: View {
             .onAppear(perform: configureSelections)
             .alert("无法入账", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -136,7 +136,7 @@ struct RecognitionConfirmationView: View {
                 Picker("钱包", selection: $walletID) {
                     Text("请选择").tag(nil as UUID?)
                     ForEach(wallets) { wallet in
-                        Text("\(wallet.account?.name ?? "未命名账户") · \(wallet.currencyCode)")
+                        Text("\(wallet.account?.name ?? AppLocalization.string("未命名账户")) · \(wallet.currencyCode)")
                             .tag(wallet.id as UUID?)
                     }
                 }
@@ -181,13 +181,14 @@ struct RecognitionConfirmationView: View {
     private func save() {
         guard let draft else { return }
         guard let wallet = wallets.first(where: { $0.id == walletID }) else {
-            errorMessage = "请选择与交易币种一致的钱包"
+            errorMessage = AppLocalization.string( "请选择与交易币种一致的钱包")
             return
         }
         let category = availableCategories.first(where: { $0.id == categoryID })
         do {
             let transaction = try RecognitionEntryService(context: context).confirm(
                 draft,
+                bookID: book.id,
                 wallet: wallet,
                 category: category,
                 importRecord: importRecord,
@@ -203,21 +204,24 @@ struct RecognitionConfirmationView: View {
 
     private func reasonText(_ reason: RecognitionDecisionReason) -> String {
         switch reason {
-        case .eligible: "请确认后入账"
-        case .accountUnmatched, .accountAmbiguous, .currencyWalletMismatch: "请确认入账钱包"
-        case .categoryUnmatched, .lowConfidence: "请确认分类与金额"
-        case .amountRelationshipMismatch, .amountNotVisibleInOCR: "请核对金额"
-        default: "此交易需要人工确认"
+        case .eligible: AppLocalization.string( "请确认后入账")
+        case .accountUnmatched, .accountAmbiguous, .currencyWalletMismatch:
+            AppLocalization.string( "请确认入账钱包")
+        case .categoryUnmatched, .lowConfidence: AppLocalization.string( "请确认分类与金额")
+        case .amountRelationshipMismatch, .amountNotVisibleInOCR: AppLocalization.string( "请核对金额")
+        default: AppLocalization.string( "此交易需要人工确认")
         }
     }
 
     private func unsupportedDescription(for draft: RecognitionConfirmationDraft) -> String {
-        if draft.feeAmount > 0 { return "该交易包含手续费。请先在手动记账中确认手续费的钱包归属。" }
+        if draft.feeAmount > 0 {
+            return AppLocalization.string( "该交易包含手续费。请先在手动记账中确认手续费的钱包归属。")
+        }
         switch draft.type {
-        case .transfer: return "转账需要确认来源和目标钱包，暂不会被记成普通收支。"
-        case .exchange: return "换汇需要确认换出和换入金额，暂不会被记成普通收支。"
-        case .refund: return "退款需要关联原交易，暂不会被记成普通收入。"
-        default: return "该识别类型还不能安全入账。"
+        case .transfer: return AppLocalization.string( "转账需要确认来源和目标钱包，暂不会被记成普通收支。")
+        case .exchange: return AppLocalization.string( "换汇需要确认换出和换入金额，暂不会被记成普通收支。")
+        case .refund: return AppLocalization.string( "退款需要关联原交易，暂不会被记成普通收入。")
+        default: return AppLocalization.string( "该识别类型还不能安全入账。")
         }
     }
 }

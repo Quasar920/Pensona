@@ -137,18 +137,18 @@ struct BudgetManagementView: View {
         .sheet(item: $detailRoute) { route in TransactionListView(initialQuery: route.query) }
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 
-    private func scopedCategories(_ bookID: UUID) -> [LedgerCategory] {
+    private func scopedCategories(_: UUID) -> [LedgerCategory] {
         categories.filter {
-            !$0.isArchived && $0.type == .expense && ($0.bookID == nil || $0.bookID == bookID)
+            !$0.isArchived && $0.type == .expense
         }
     }
 
     private func categoryName(_ id: UUID?) -> String {
-        guard let id else { return "总支出" }
-        return categories.first { $0.id == id }?.name ?? "已归档分类"
+        guard let id else { return AppLocalization.string( "总支出") }
+        return categories.first { $0.id == id }?.name ?? AppLocalization.string( "已归档分类")
     }
 
     private func copyPrevious() {
@@ -195,7 +195,11 @@ private struct BudgetStatusRow: View {
             HStack {
                 Text(categoryName).font(.headline)
                 Spacer()
-                Text(status.isOver ? "超支" : "剩余 " + MoneyFormatter.plain(status.remaining, currencyCode: currencyCode))
+                Text(
+                    status.isOver
+                        ? AppLocalization.string("超支")
+                        : AppLocalization.string("剩余 \(MoneyFormatter.plain(status.remaining, currencyCode: currencyCode))")
+                )
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(status.isOver ? .red : .secondary)
             }
@@ -252,7 +256,7 @@ private struct BudgetEditorView: View {
                     TextField("预算金额", text: $amountText).keyboardType(.decimalPad)
                 }
             }
-            .navigationTitle(budget == nil ? "添加预算" : "编辑预算")
+            .navigationTitle(budget == nil ? AppLocalization.string("添加预算") : AppLocalization.string("编辑预算"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
@@ -260,7 +264,7 @@ private struct BudgetEditorView: View {
             }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 

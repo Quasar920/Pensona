@@ -49,9 +49,9 @@ enum BudgetPeriod: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .weekly: "周"
-        case .monthly: "月"
-        case .yearly: "年"
+        case .weekly: AppLocalization.string( "周")
+        case .monthly: AppLocalization.string( "月")
+        case .yearly: AppLocalization.string( "年")
         }
     }
 }

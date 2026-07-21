@@ -4,24 +4,41 @@ import SwiftUI
 struct AccountDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Query(sort: \LedgerTransaction.date, order: .reverse) private var transactions: [LedgerTransaction]
+    @Query(sort: \LedgerBook.sortOrder) private var books: [LedgerBook]
+    @AppStorage("selectedBookID") private var selectedBookID = ""
     let account: Account
     @State private var showingAddWallet = false
     @State private var showingEdit = false
     @State private var errorMessage: String?
+    @State private var accountTransactions: [LedgerTransaction] = []
+    @State private var currentBookOnly = false
+    @State private var refreshGeneration = 0
 
-    private var accountTransactions: [LedgerTransaction] {
-        transactions.filter { $0.sourceAccount === account || $0.destinationAccount === account }
+    private var selectedBook: LedgerBook? {
+        books.first { $0.id.uuidString == selectedBookID } ?? books.first
     }
 
     var body: some View {
         List {
+            Section {
+                Picker("交易范围", selection: $currentBookOnly) {
+                    Text("全部账本").tag(false)
+                    Text("当前账本").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
+
             Section("账户信息") {
                 LabeledContent("类型", value: account.type.assetGroup.title)
                 if let note = account.note, !note.isEmpty {
                     LabeledContent("备注", value: note)
                 }
-                LabeledContent("状态", value: account.isArchived ? "已归档" : (account.isHidden ? "已隐藏" : "正常"))
+                LabeledContent(
+                    "状态",
+                    value: account.isArchived
+                        ? AppLocalization.string("已归档")
+                        : (account.isHidden ? AppLocalization.string("已隐藏") : AppLocalization.string("正常"))
+                )
             }
 
             Section {
@@ -33,7 +50,10 @@ struct AccountDetailView: View {
                             HStack {
                             VStack(alignment: .leading) {
                                 Text(wallet.currencyCode).font(.headline)
-                                Text((wallet.currency?.localizedName ?? wallet.currencyCode) + (wallet.isEnabled ? "" : " · 已停用"))
+                                Text(
+                                    (wallet.currency?.localizedName ?? wallet.currencyCode)
+                                        + (wallet.isEnabled ? "" : AppLocalization.string(" · 已停用"))
+                                )
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -43,7 +63,9 @@ struct AccountDetailView: View {
                             HStack {
                                 reconciliationLabel(for: wallet)
                                 Spacer()
-                                Button(wallet.isEnabled ? "停用" : "恢复") { toggleWallet(wallet) }
+                                Button(wallet.isEnabled ? AppLocalization.string("停用") : AppLocalization.string("恢复")) {
+                                    toggleWallet(wallet)
+                                }
                                     .buttonStyle(.bordered)
                                 if wallet.balance == 0 {
                                     Button("删除", role: .destructive) { deleteWallet(wallet) }
@@ -76,25 +98,34 @@ struct AccountDetailView: View {
                 }
             }
         }
+        .accessibilityIdentifier("account-detail-screen")
         .navigationTitle(account.name)
         .toolbar {
             Menu {
                 Button("编辑账户") { showingEdit = true }
-                Button(account.isArchived ? "恢复账户" : "归档账户") { toggleArchive() }
+                Button(account.isArchived ? AppLocalization.string("恢复账户") : AppLocalization.string("归档账户")) {
+                    toggleArchive()
+                }
                 if accountTransactions.isEmpty {
                     Button("删除账户", role: .destructive) { deleteAccount() }
                 }
             } label: { Image(systemName: "ellipsis.circle") }
         }
         .sheet(isPresented: $showingAddWallet) {
-            AddWalletView(account: account)
+            if let selectedBook {
+                AddWalletView(account: account, bookID: selectedBook.id)
+            }
         }
         .sheet(isPresented: $showingEdit) {
             AccountEditView(account: account)
         }
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
+        .task(id: "\(currentBookOnly)-\(refreshGeneration)") { reloadTransactions() }
+        .onReceive(NotificationCenter.default.publisher(for: .ledgerTransactionsDidChange)) { _ in
+            refreshGeneration += 1
+        }
     }
 
     @ViewBuilder
@@ -116,7 +147,7 @@ struct AccountDetailView: View {
     private func reconciliation(for wallet: CurrencyWallet) throws -> WalletReconciliationResult {
         try BalanceReconciliationService(context: context).result(
             for: wallet,
-            transactions: transactions
+            transactions: allTransactionsForAccount()
         )
     }
 
@@ -126,18 +157,20 @@ struct AccountDetailView: View {
     }
 
     private func rebuild(_ wallet: CurrencyWallet) {
-        do { try BalanceReconciliationService(context: context).rebuild(wallet, transactions: transactions) }
+        do { try BalanceReconciliationService(context: context).rebuild(wallet, transactions: allTransactionsForAccount()) }
         catch { errorMessage = error.localizedDescription }
     }
 
     private func deleteWallet(_ wallet: CurrencyWallet) {
-        do { try AccountService(context: context).deleteWallet(wallet, transactions: transactions) }
+        do { try AccountService(context: context).deleteWallet(wallet, transactions: allTransactionsForAccount()) }
         catch { errorMessage = error.localizedDescription }
     }
 
     private func deleteAccount() {
         do {
-            try AccountService(context: context).deleteAccount(account, transactions: transactions)
+            let allAccountTransactions = try AssetDashboardService(context: context)
+                .transactions(accountID: account.id)
+            try AccountService(context: context).deleteAccount(account, transactions: allAccountTransactions)
             dismiss()
         } catch { errorMessage = error.localizedDescription }
     }
@@ -147,6 +180,21 @@ struct AccountDetailView: View {
             try AccountService(context: context).setArchived(!account.isArchived, account: account)
             if account.isArchived { dismiss() }
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func reloadTransactions() {
+        do {
+            accountTransactions = try AssetDashboardService(context: context).transactions(
+                accountID: account.id,
+                bookID: currentBookOnly ? selectedBook?.id : nil
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func allTransactionsForAccount() throws -> [LedgerTransaction] {
+        try AssetDashboardService(context: context).transactions(accountID: account.id)
     }
 }
 
@@ -177,7 +225,12 @@ struct AccountEditView: View {
             Form {
                 TextField("账户名称", text: $name)
                 Picker("账户类型", selection: $type) {
-                    ForEach(AccountType.allCases) { Text($0.title).tag($0) }
+                    ForEach(AccountType.allCases.filter { $0 != .other }) { Text($0.title).tag($0) }
+                }
+                if account.type == .other, type == .other {
+                    Text("旧“其他”账户需要选择批准的六类之一后才能保存。")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
                 }
                 if type.supportsCardLastFour {
                     Section {
@@ -203,11 +256,13 @@ struct AccountEditView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("保存", action: save) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存", action: save).disabled(type == .other)
+                }
             }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -242,7 +297,9 @@ struct ArchivedAccountManagementView: View {
                     HStack {
                         VStack(alignment: .leading) {
                             Text(account.name)
-                            Text(account.book?.name ?? "未归属账本").font(.caption).foregroundStyle(.secondary)
+                            Text(account.book?.name ?? AppLocalization.string("未归属账本"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button("恢复") { restore(account) }.buttonStyle(.bordered)
@@ -253,7 +310,7 @@ struct ArchivedAccountManagementView: View {
         .navigationTitle("归档账户")
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 
     private func restore(_ account: Account) {

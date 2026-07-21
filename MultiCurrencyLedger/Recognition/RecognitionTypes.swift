@@ -81,9 +81,9 @@ enum RecognitionError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: "识别服务返回了无效数据"
-        case .emptyResults: "没有识别到交易记录"
-        case .noRecognizableText: "无法读取截图中的交易信息"
+        case .invalidResponse: AppLocalization.string( "识别服务返回了无效数据")
+        case .emptyResults: AppLocalization.string( "没有识别到交易记录")
+        case .noRecognizableText: AppLocalization.string( "无法读取截图中的交易信息")
         }
     }
 }

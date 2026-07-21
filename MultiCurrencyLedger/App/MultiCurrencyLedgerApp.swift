@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct MultiCurrencyLedgerApp: App {
     private let modelContainer: ModelContainer
+    @State private var preferences = AppPreferences()
 
     init() {
         do {
@@ -16,6 +17,7 @@ struct MultiCurrencyLedgerApp: App {
     var body: some Scene {
         WindowGroup {
             RootTabView()
+                .environment(preferences)
                 .task {
                     do {
                         try LegacyTagRemovalService.removeAll(context: modelContainer.mainContext)
@@ -25,6 +27,7 @@ struct MultiCurrencyLedgerApp: App {
                     } catch {
                         assertionFailure("默认分类初始化失败：\(error.localizedDescription)")
                     }
+                    #if !PERFORMANCE_TESTING
                     if UserDefaults.standard.bool(forKey: CloudSyncService.enabledKey) {
                         do {
                             let baseCurrencyCode = UserDefaults.standard.string(forKey: "baseCurrencyCode")
@@ -40,6 +43,7 @@ struct MultiCurrencyLedgerApp: App {
                             )
                         }
                     }
+                    #endif
                 }
         }
         .modelContainer(modelContainer)

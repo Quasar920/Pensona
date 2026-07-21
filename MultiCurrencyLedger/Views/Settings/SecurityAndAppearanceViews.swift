@@ -1,47 +1,107 @@
 import SwiftUI
 
-enum AppAppearance: String, CaseIterable, Identifiable {
-    case system, light, dark
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .system: "跟随系统"
-        case .light: "浅色"
-        case .dark: "深色"
-        }
-    }
-
-    var colorScheme: ColorScheme? {
-        switch self {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
-        }
-    }
-}
-
 struct AppExperienceSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
     @AppStorage("quickLaunchEntry") private var quickLaunchEntry = false
-    @AppStorage("appearanceMode") private var appearanceMode = AppAppearance.system.rawValue
 
     var body: some View {
+        @Bindable var preferences = preferences
         Form {
             Section {
-                Toggle("启动后直接记一笔", isOn: $quickLaunchEntry)
+                Toggle("settings.quickLaunch.title", isOn: $quickLaunchEntry)
             } header: {
-                Text("秒开记账")
+                Text("settings.quickLaunch.section")
             } footer: {
-                Text("App 启动并完成解锁后直接打开记账页。URL Scheme、识别结果等外部草稿仍需单独确认。")
+                Text("settings.quickLaunch.footer")
             }
-            Section("外观") {
-                Picker("显示模式", selection: $appearanceMode) {
-                    ForEach(AppAppearance.allCases) { Text($0.title).tag($0.rawValue) }
+            Section("settings.appearance.section") {
+                Picker("settings.appearance.displayMode", selection: $preferences.appearance) {
+                    ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+                Toggle("settings.haptics", isOn: $preferences.hapticsEnabled)
+                Picker("settings.amountConvention", selection: $preferences.amountColorConvention) {
+                    ForEach(AmountColorConvention.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+                Picker("settings.language", selection: $preferences.language) {
+                    ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.inline)
             }
         }
-        .navigationTitle("启动与外观")
+        .navigationTitle("settings.experience.title")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct AppearanceAndAmountSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        List {
+            Section("settings.appearance.section") {
+                Picker("settings.appearance.displayMode", selection: $preferences.appearance) {
+                    ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+                Toggle("settings.haptics", isOn: $preferences.hapticsEnabled)
+            }
+            Section("settings.amountConvention") {
+                Picker("settings.amountConvention", selection: $preferences.amountColorConvention) {
+                    ForEach(AmountColorConvention.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+                AmountColorPreview(convention: preferences.amountColorConvention)
+            }
+        }
+        .navigationTitle("外观与金额颜色")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct AmountColorPreview: View {
+    let convention: AmountColorConvention
+
+    var body: some View {
+        VStack(spacing: 12) {
+            previewRow("餐饮支出", amount: "−¥88.00", role: .expense)
+            Divider()
+            previewRow("工资收入", amount: "+¥8,000.00", role: .income)
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func previewRow(_ title: LocalizedStringKey, amount: String, role: AmountSemanticRole) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(amount)
+                .font(.subheadline.bold()).monospacedDigit()
+                .foregroundStyle(AmountSemanticStyle.color(for: role, convention: convention))
+        }
+        .frame(minHeight: 44)
+    }
+}
+
+struct LanguageSettingsView: View {
+    @Environment(AppPreferences.self) private var preferences
+
+    var body: some View {
+        @Bindable var preferences = preferences
+        List {
+            Section {
+                Picker("settings.language", selection: $preferences.language) {
+                    ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+            } footer: {
+                Text("更改后会立即应用到根页面、记账、详情、设置与错误提示；选择跟随系统时会继续响应系统语言。")
+            }
+        }
+        .navigationTitle("语言")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -57,8 +117,11 @@ struct SecuritySettingsView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("密码锁", value: isConfigured ? "已开启" : "未开启")
-                Button(isConfigured ? "修改密码" : "设置密码") {
+                LabeledContent(
+                    "密码锁",
+                    value: isConfigured ? AppLocalization.string("已开启") : AppLocalization.string("未开启")
+                )
+                Button(isConfigured ? AppLocalization.string("修改密码") : AppLocalization.string("设置密码")) {
                     mode = isConfigured ? .change : .create
                 }
                 if isConfigured {
@@ -95,7 +158,7 @@ struct SecuritySettingsView: View {
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 }
 
@@ -104,9 +167,9 @@ private enum PasswordEditorMode: String, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .create: "设置密码"
-        case .change: "修改密码"
-        case .remove: "关闭密码锁"
+        case .create: AppLocalization.string( "设置密码")
+        case .change: AppLocalization.string( "修改密码")
+        case .remove: AppLocalization.string( "关闭密码锁")
         }
     }
 }
@@ -143,13 +206,13 @@ private struct PasswordEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(mode == .remove ? "关闭" : "保存", action: save)
+                    Button(mode == .remove ? AppLocalization.string("关闭") : AppLocalization.string("保存"), action: save)
                 }
             }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -160,7 +223,7 @@ private struct PasswordEditorView: View {
                 try store.remove(currentPassword: currentPassword)
             } else {
                 guard newPassword == confirmation else {
-                    errorMessage = "两次输入的新密码不一致"
+                    errorMessage = AppLocalization.string( "两次输入的新密码不一致")
                     return
                 }
                 try store.setPassword(newPassword, currentPassword: mode == .change ? currentPassword : nil)

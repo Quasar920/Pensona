@@ -30,16 +30,19 @@ final class LedgerScopeTests: XCTestCase {
         let travelAccount = Account(name: "旅行账户", type: .cash, book: travelBook)
         let dailyTransaction = LedgerTransaction(
             type: .expense,
+            bookID: dailyBook.id,
             date: date("2026-02-18T12:00:00Z"),
             sourceAccount: dailyAccount
         )
         let wrongBook = LedgerTransaction(
             type: .expense,
+            bookID: travelBook.id,
             date: date("2026-02-18T12:00:00Z"),
             sourceAccount: travelAccount
         )
         let wrongMonth = LedgerTransaction(
             type: .expense,
+            bookID: dailyBook.id,
             date: date("2026-03-01T00:00:00Z"),
             sourceAccount: dailyAccount
         )
@@ -88,12 +91,14 @@ final class LedgerScopeTests: XCTestCase {
         let destination = Account(name: "目标账户", type: .cash, book: destinationBook)
         let incomingTransfer = LedgerTransaction(
             type: .transfer,
+            bookID: destinationBook.id,
             date: date("2026-02-28T23:59:59Z"),
             sourceAccount: source,
             destinationAccount: destination
         )
         let nextMonthTransfer = LedgerTransaction(
             type: .transfer,
+            bookID: destinationBook.id,
             date: date("2026-03-01T00:00:00Z"),
             sourceAccount: source,
             destinationAccount: destination

@@ -7,10 +7,10 @@ enum SavingsGoalStatus: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .active: "进行中"
-        case .paused: "已暂停"
-        case .completed: "已完成"
-        case .archived: "已归档"
+        case .active: AppLocalization.string( "进行中")
+        case .paused: AppLocalization.string( "已暂停")
+        case .completed: AppLocalization.string( "已完成")
+        case .archived: AppLocalization.string( "已归档")
         }
     }
 }
@@ -26,6 +26,8 @@ final class SavingsGoal {
     var symbolName: String
     var colorHex: String
     var statusRawValue: String
+    /// `bookID` remains as provenance for restored data. Visibility is global.
+    var isGloballyVisible: Bool = true
     var createdAt: Date
     var updatedAt: Date
 
@@ -42,6 +44,7 @@ final class SavingsGoal {
         symbolName: String = "target",
         colorHex: String = "3478F6",
         status: SavingsGoalStatus = .active,
+        isGloballyVisible: Bool = true,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -54,6 +57,7 @@ final class SavingsGoal {
         self.symbolName = symbolName
         self.colorHex = colorHex
         statusRawValue = status.rawValue
+        self.isGloballyVisible = isGloballyVisible
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         allocations = []

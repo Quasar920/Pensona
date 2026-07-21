@@ -71,8 +71,8 @@ enum RecognitionIntentError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingBook: "请先创建账本和账户"
-        case let .rejected(reason): "无法安全识别这笔交易：\(reason.rawValue)"
+        case .missingBook: AppLocalization.string( "请先创建账本和账户")
+        case let .rejected(reason): AppLocalization.string( "无法安全识别这笔交易：\(reason.rawValue)")
         }
     }
 }

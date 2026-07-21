@@ -4,10 +4,21 @@
 	classes = {
 	};
 	objectVersion = 77;
-	objects = {
+		objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000012 /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* Media.xcassets */; };
+/* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		B10000000000000000000004 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000000000000000000000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000006;
+			remoteInfo = MultiCurrencyLedger;
+		};
+		C10000000000000000000004 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A1000000000000000000000A /* Project object */;
 			proxyType = 1;
@@ -18,7 +29,9 @@
 
 /* Begin PBXFileReference section */
 		A10000000000000000000001 /* MultiCurrencyLedger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MultiCurrencyLedger.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000011 /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		B10000000000000000000001 /* MultiCurrencyLedgerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MultiCurrencyLedgerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C10000000000000000000001 /* MultiCurrencyLedgerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MultiCurrencyLedgerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -45,6 +58,11 @@
 			path = MultiCurrencyLedgerTests;
 			sourceTree = "<group>";
 		};
+		C10000000000000000000002 /* MultiCurrencyLedgerUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MultiCurrencyLedgerUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,6 +80,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C10000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -69,7 +94,9 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000002 /* MultiCurrencyLedger */,
+				A10000000000000000000011 /* Media.xcassets */,
 				B10000000000000000000002 /* MultiCurrencyLedgerTests */,
+				C10000000000000000000002 /* MultiCurrencyLedgerUITests */,
 				A10000000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -79,6 +106,7 @@
 			children = (
 				A10000000000000000000001 /* MultiCurrencyLedger.app */,
 				B10000000000000000000001 /* MultiCurrencyLedgerTests.xctest */,
+				C10000000000000000000001 /* MultiCurrencyLedgerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -131,6 +159,29 @@
 			productReference = B10000000000000000000001 /* MultiCurrencyLedgerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		C10000000000000000000006 /* MultiCurrencyLedgerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C10000000000000000000007 /* Build configuration list for PBXNativeTarget "MultiCurrencyLedgerUITests" */;
+			buildPhases = (
+				C10000000000000000000008 /* Sources */,
+				C10000000000000000000003 /* Frameworks */,
+				C10000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C10000000000000000000005 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C10000000000000000000002 /* MultiCurrencyLedgerUITests */,
+			);
+			name = MultiCurrencyLedgerUITests;
+			packageProductDependencies = (
+			);
+			productName = MultiCurrencyLedgerUITests;
+			productReference = C10000000000000000000001 /* MultiCurrencyLedgerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -148,6 +199,10 @@
 						CreatedOnToolsVersion = 27.0;
 						TestTargetID = A10000000000000000000006;
 					};
+					C10000000000000000000006 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = A10000000000000000000006;
+					};
 				};
 			};
 			buildConfigurationList = A1000000000000000000000B /* Build configuration list for PBXProject "MultiCurrencyLedger" */;
@@ -157,6 +212,8 @@
 				en,
 				Base,
 				"zh-Hans",
+				"zh-Hant",
+				ja,
 			);
 			mainGroup = A10000000000000000000004;
 			preferredProjectObjectVersion = 77;
@@ -166,6 +223,7 @@
 			targets = (
 				A10000000000000000000006 /* MultiCurrencyLedger */,
 				B10000000000000000000006 /* MultiCurrencyLedgerTests */,
+				C10000000000000000000006 /* MultiCurrencyLedgerUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -175,10 +233,18 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000012 /* Media.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		B10000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C10000000000000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -202,6 +268,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C10000000000000000000008 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -209,6 +282,11 @@
 			isa = PBXTargetDependency;
 			target = A10000000000000000000006 /* MultiCurrencyLedger */;
 			targetProxy = B10000000000000000000004 /* PBXContainerItemProxy */;
+		};
+		C10000000000000000000005 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000006 /* MultiCurrencyLedger */;
+			targetProxy = C10000000000000000000004 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -317,7 +395,7 @@
 				DEVELOPMENT_TEAM = 97AV3SYW6Y;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MultiCurrencyLedger/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "多币种账本";
+				INFOPLIST_KEY_CFBundleDisplayName = Pensona;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -326,6 +404,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ian.MultiCurrencyLedger;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -343,7 +422,7 @@
 				DEVELOPMENT_TEAM = 97AV3SYW6Y;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MultiCurrencyLedger/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "多币种账本";
+				INFOPLIST_KEY_CFBundleDisplayName = Pensona;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -352,6 +431,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ian.MultiCurrencyLedger;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -395,6 +475,38 @@
 			};
 			name = Release;
 		};
+		C1000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 97AV3SYW6Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ian.MultiCurrencyLedgerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = MultiCurrencyLedger;
+			};
+			name = Debug;
+		};
+		C1000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 97AV3SYW6Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ian.MultiCurrencyLedgerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = MultiCurrencyLedger;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -421,6 +533,15 @@
 			buildConfigurations = (
 				B1000000000000000000000A /* Debug */,
 				B1000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C10000000000000000000007 /* Build configuration list for PBXNativeTarget "MultiCurrencyLedgerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C1000000000000000000000A /* Debug */,
+				C1000000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

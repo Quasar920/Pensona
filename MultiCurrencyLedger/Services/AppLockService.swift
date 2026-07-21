@@ -13,12 +13,12 @@ enum AppLockError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: "尚未设置 App 密码"
-        case .wrongPassword: "当前密码不正确"
-        case .passwordTooShort: "密码至少需要 6 位"
-        case .keychain: "无法访问系统钥匙串"
-        case .biometricUnavailable: "此设备暂时无法使用 Face ID 或 Touch ID"
-        case .biometricFailed: "生物识别未通过"
+        case .notConfigured: AppLocalization.string( "尚未设置 App 密码")
+        case .wrongPassword: AppLocalization.string( "当前密码不正确")
+        case .passwordTooShort: AppLocalization.string( "密码至少需要 6 位")
+        case .keychain: AppLocalization.string( "无法访问系统钥匙串")
+        case .biometricUnavailable: AppLocalization.string( "此设备暂时无法使用 Face ID 或 Touch ID")
+        case .biometricFailed: AppLocalization.string( "生物识别未通过")
         }
     }
 }
@@ -165,15 +165,15 @@ struct BiometricAuthenticator {
         case .faceID: name = "Face ID"
         case .touchID: name = "Touch ID"
         case .opticID: name = "Optic ID"
-        case .none: name = "生物识别"
-        @unknown default: name = "生物识别"
+        case .none: name = AppLocalization.string( "生物识别")
+        @unknown default: name = AppLocalization.string( "生物识别")
         }
         return (available, name)
     }
 
     func authenticate() async throws {
         let context = LAContext()
-        context.localizedCancelTitle = "使用密码"
+        context.localizedCancelTitle = AppLocalization.string( "使用密码")
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
             throw AppLockError.biometricUnavailable
@@ -181,7 +181,7 @@ struct BiometricAuthenticator {
         do {
             guard try await context.evaluatePolicy(
                 .deviceOwnerAuthenticationWithBiometrics,
-                localizedReason: "解锁你的账本"
+                localizedReason: AppLocalization.string( "解锁你的账本")
             ) else { throw AppLockError.biometricFailed }
         } catch {
             throw AppLockError.biometricFailed

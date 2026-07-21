@@ -1,6 +1,11 @@
 import Foundation
 import SwiftData
 
+enum ReimbursementStatus: String, Codable, CaseIterable, Sendable, Equatable {
+    case none
+    case pending
+}
+
 @Model
 final class LedgerTransaction {
     @Attribute(.unique) var id: UUID
@@ -11,6 +16,10 @@ final class LedgerTransaction {
     var note: String?
     var createdAt: Date
     var updatedAt: Date
+    /// Optional at the schema boundary so stores from before V3 can open. All
+    /// new transactions are required to receive a value through LedgerService.
+    var bookID: UUID?
+    var reimbursementStatusRawValue: String = ReimbursementStatus.none.rawValue
 
     var sourceAmount: Decimal?
     var sourceCurrencyCode: String?
@@ -39,6 +48,8 @@ final class LedgerTransaction {
     init(
         id: UUID = UUID(),
         type: TransactionKind,
+        bookID: UUID? = nil,
+        reimbursementStatus: ReimbursementStatus = .none,
         amount: Decimal? = nil,
         currencyCode: String? = nil,
         date: Date = .now,
@@ -69,6 +80,8 @@ final class LedgerTransaction {
     ) {
         self.id = id
         typeRawValue = type.rawValue
+        self.bookID = bookID
+        reimbursementStatusRawValue = reimbursementStatus.rawValue
         self.amount = amount
         self.currencyCode = currencyCode
         self.date = date
@@ -99,6 +112,10 @@ final class LedgerTransaction {
     }
 
     var type: TransactionKind { TransactionKind(rawValue: typeRawValue) ?? .expense }
+    var reimbursementStatus: ReimbursementStatus {
+        get { ReimbursementStatus(rawValue: reimbursementStatusRawValue) ?? .none }
+        set { reimbursementStatusRawValue = newValue.rawValue }
+    }
     var adjustmentDirection: AdjustmentDirection? {
         adjustmentDirectionRawValue.flatMap(AdjustmentDirection.init(rawValue:))
     }

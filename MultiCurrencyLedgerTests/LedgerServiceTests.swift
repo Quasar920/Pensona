@@ -7,6 +7,7 @@ final class LedgerServiceTests: XCTestCase {
     private var container: ModelContainer!
     private var context: ModelContext!
     private var service: LedgerService!
+    private var book: LedgerBook!
 
     override func setUpWithError() throws {
         let schema = Schema([
@@ -19,18 +20,20 @@ final class LedgerServiceTests: XCTestCase {
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         context = container.mainContext
+        book = LedgerBook(name: "测试账本")
+        context.insert(book)
         service = LedgerService(context: context)
     }
 
     func testExpenseIncomeAndDeleteRollback() throws {
         let (_, wallet) = makeWallet(currency: .HKD, balance: 12_000)
         let expense = try service.createExpense(
-            amount: 80, wallet: wallet, category: nil, date: .now, note: nil
+            bookID: book.id, amount: 80, wallet: wallet, category: nil, date: .now, note: nil
         )
         XCTAssertEqual(wallet.balance, 11_920)
 
         _ = try service.createIncome(
-            amount: 500, wallet: wallet, category: nil, date: .now, note: nil
+            bookID: book.id, amount: 500, wallet: wallet, category: nil, date: .now, note: nil
         )
         XCTAssertEqual(wallet.balance, 12_420)
 
@@ -43,6 +46,7 @@ final class LedgerServiceTests: XCTestCase {
         let (_, usd) = makeWallet(currency: .USD, balance: 2_000)
 
         let exchange = try service.createExchange(
+            bookID: book.id,
             sourceAmount: 10_000,
             from: hkd,
             destinationAmount: 1_280,
@@ -64,7 +68,7 @@ final class LedgerServiceTests: XCTestCase {
     func testReplaceReversesOldTransactionBeforeApplyingNewOne() throws {
         let (_, wallet) = makeWallet(currency: .CNY, balance: 1_000)
         let old = try service.createExpense(
-            amount: 100, wallet: wallet, category: nil, date: .now, note: nil
+            bookID: book.id, amount: 100, wallet: wallet, category: nil, date: .now, note: nil
         )
         let replacement = LedgerTransaction(
             type: .expense,
@@ -96,7 +100,7 @@ final class LedgerServiceTests: XCTestCase {
         let (_, source) = makeWallet(currency: .CNY, balance: 1_000)
         let (_, destination) = makeWallet(currency: .CNY, balance: 100)
         let old = try service.createTransfer(
-            amount: 200, from: source, to: destination, date: .now, note: nil
+            bookID: book.id, amount: 200, from: source, to: destination, date: .now, note: nil
         )
         XCTAssertEqual(source.balance, 800)
         XCTAssertEqual(destination.balance, 300)
@@ -119,8 +123,10 @@ final class LedgerServiceTests: XCTestCase {
         let account = Account(name: "Bank", type: .bankCard)
         context.insert(account)
         let accountService = AccountService(context: context)
-        _ = try accountService.addWallet(currency: .USD, initialBalance: 10, to: account)
-        XCTAssertThrowsError(try accountService.addWallet(currency: .USD, initialBalance: 0, to: account)) {
+        _ = try accountService.addWallet(currency: .USD, initialBalance: 10, to: account, bookID: book.id)
+        XCTAssertThrowsError(try accountService.addWallet(
+            currency: .USD, initialBalance: 0, to: account, bookID: book.id
+        )) {
             XCTAssertEqual($0 as? LedgerError, .duplicateCurrency)
         }
     }
@@ -132,7 +138,8 @@ final class LedgerServiceTests: XCTestCase {
         let wallet = try AccountService(context: context).addWallet(
             currency: .CNY,
             initialBalance: 2_000,
-            to: account
+            to: account,
+            bookID: book.id
         )
         let adjustments = try context.fetch(FetchDescriptor<LedgerTransaction>())
 
@@ -533,7 +540,7 @@ final class LedgerServiceTests: XCTestCase {
     func testExportsProduceReadableFiles() throws {
         let (account, wallet) = makeWallet(currency: .USD, balance: 10)
         let transaction = try service.createExpense(
-            amount: 2, wallet: wallet, category: nil, date: .now, note: "Lunch"
+            bookID: book.id, amount: 2, wallet: wallet, category: nil, date: .now, note: "Lunch"
         )
         let budget = try MonthlyBudgetService(context: context, calendar: makeUTCCalendar()).upsert(
             amount: 2_500,
@@ -547,7 +554,7 @@ final class LedgerServiceTests: XCTestCase {
         )
         let json = try Data(contentsOf: jsonURL)
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
-        XCTAssertEqual(root["version"] as? Int, 2)
+        XCTAssertEqual(root["version"] as? Int, 3)
         XCTAssertEqual((root["monthlyBudgets"] as? [[String: Any]])?.count, 1)
 
         let csvURL = try ExportService.makeCSV(transactions: [transaction])
@@ -576,14 +583,15 @@ final class LedgerServiceTests: XCTestCase {
         try context.save()
 
         let expense = try service.createExpense(
-            amount: 80, wallet: hkd, category: nil, date: .now, note: "餐饮"
+            bookID: book.id, amount: 80, wallet: hkd, category: nil, date: .now, note: "餐饮"
         )
         XCTAssertEqual(hkd.balance, 11_920)
         let income = try service.createIncome(
-            amount: 500, wallet: usd, category: nil, date: .now, note: "收入"
+            bookID: book.id, amount: 500, wallet: usd, category: nil, date: .now, note: "收入"
         )
         XCTAssertEqual(usd.balance, 2_500)
         _ = try service.createExchange(
+            bookID: book.id,
             sourceAmount: 10_000, from: hkd,
             destinationAmount: 1_280, to: usd,
             feeAmount: 50, feeWallet: hkd,

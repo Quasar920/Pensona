@@ -69,6 +69,7 @@ final class TransactionImportServiceTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<LedgerTransaction>()), 1)
 
         let transactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        XCTAssertEqual(transactions.first?.bookID, book.id)
         let fingerprints = try context.fetch(FetchDescriptor<TransactionImportFingerprint>())
         try service.undo(batch, transactions: transactions, fingerprints: fingerprints)
 

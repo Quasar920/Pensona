@@ -25,8 +25,8 @@ struct CategoryManagementView: View {
                         ForEach(books) { Text($0.name).tag($0.id.uuidString) }
                     }
                 }
-                categorySection(.expense, title: "支出分类", bookID: book.id)
-                categorySection(.income, title: "收入分类", bookID: book.id)
+                categorySection(.expense, title: AppLocalization.string("支出分类"), bookID: book.id)
+                categorySection(.income, title: AppLocalization.string("收入分类"), bookID: book.id)
             } else {
                 ContentUnavailableView("请先创建账本", systemImage: "book.closed")
             }
@@ -59,7 +59,7 @@ struct CategoryManagementView: View {
         )) {
             Button("好") {}
         } message: {
-            Text(errorMessage ?? "未知错误")
+            Text(errorMessage ?? AppLocalization.string("未知错误"))
         }
     }
 
@@ -67,7 +67,11 @@ struct CategoryManagementView: View {
         let nodes = flattenedNodes(type: type, bookID: bookID)
         return Section(title) {
             if nodes.isEmpty {
-                Text(showsArchived ? "没有已归档分类" : "暂无分类")
+                Text(
+                    showsArchived
+                        ? AppLocalization.string("没有已归档分类")
+                        : AppLocalization.string("暂无分类")
+                )
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(nodes, id: \.category.id) { node in
@@ -96,7 +100,7 @@ struct CategoryManagementView: View {
                     .buttonStyle(.plain)
                     .swipeActions {
                         if !node.category.isSystem {
-                            Button(node.category.isArchived ? "恢复" : "归档") {
+                            Button(node.category.isArchived ? AppLocalization.string("恢复") : AppLocalization.string("归档")) {
                                 setArchived(!node.category.isArchived, category: node.category)
                             }
                             .tint(node.category.isArchived ? .green : .orange)
@@ -109,8 +113,7 @@ struct CategoryManagementView: View {
 
     private func scopedCategories(bookID: UUID) -> [LedgerCategory] {
         categories.filter { category in
-            (category.bookID == nil || category.bookID == bookID)
-                && (showsArchived ? category.isArchived : !category.isArchived)
+            showsArchived ? category.isArchived : !category.isArchived
         }
     }
 
@@ -192,7 +195,7 @@ private struct CategoryEditorView: View {
                     ForEach(symbols, id: \.self) { Label($0, systemImage: $0).tag($0) }
                 }
             }
-            .navigationTitle(category == nil ? "新建分类" : "编辑分类")
+            .navigationTitle(category == nil ? AppLocalization.string("新建分类") : AppLocalization.string("编辑分类"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
@@ -205,7 +208,7 @@ private struct CategoryEditorView: View {
             )) {
                 Button("好") {}
             } message: {
-                Text(errorMessage ?? "未知错误")
+                Text(errorMessage ?? AppLocalization.string("未知错误"))
             }
         }
     }

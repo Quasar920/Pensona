@@ -64,6 +64,7 @@ struct ScreenshotRecognitionCoordinator {
     func analyze(
         image: CGImage,
         book: LedgerBook,
+        accounts: [Account],
         categories: [LedgerCategory],
         allowIncomeAutoEntry: Bool,
         now: Date = .now
@@ -71,7 +72,11 @@ struct ScreenshotRecognitionCoordinator {
         try Task.checkCancellation()
         let document = try await ocr.recognizeText(in: image)
         try Task.checkCancellation()
-        let localContext = contextBuilder.makeContext(book: book, categories: categories)
+        let localContext = contextBuilder.makeContext(
+            book: book,
+            accounts: accounts,
+            categories: categories
+        )
         let request = RecognitionAPIRequest(
             ocrText: document.fullText,
             context: RecognitionRemoteContext(localContext: localContext),

@@ -43,4 +43,55 @@ final class LedgerBookService {
         book.updatedAt = .now
         try context.save()
     }
+
+    func delete(_ book: LedgerBook) throws {
+        let bookID = book.id
+        let books = try context.fetch(FetchDescriptor<LedgerBook>())
+        guard books.count > 1 else { throw LedgerError.bookInUse }
+
+        let hasTransactions = try context.fetchCount(FetchDescriptor<LedgerTransaction>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasBudgets = try context.fetchCount(FetchDescriptor<MonthlyBudget>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasTemplates = try context.fetchCount(FetchDescriptor<TransactionTemplate>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasRecurringSchedules = try context.fetchCount(FetchDescriptor<RecurringSchedule>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasInstallmentPlans = try context.fetchCount(FetchDescriptor<InstallmentPlan>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasRecognitionRecords = try context.fetchCount(FetchDescriptor<RecognitionImportRecord>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasImportBatches = try context.fetchCount(FetchDescriptor<TransactionImportBatch>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasSavingsGoals = try context.fetchCount(FetchDescriptor<SavingsGoal>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasAttachments = try context.fetchCount(FetchDescriptor<TransactionAttachment>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasTags = try context.fetchCount(FetchDescriptor<TransactionTag>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+        let hasCompatibilityCategories = try context.fetchCount(FetchDescriptor<LedgerCategory>(
+            predicate: #Predicate { $0.bookID == bookID }
+        )) > 0
+
+        guard ![
+            hasTransactions, hasBudgets, hasTemplates, hasRecurringSchedules,
+            hasInstallmentPlans, hasRecognitionRecords, hasImportBatches,
+            hasSavingsGoals, hasAttachments, hasTags, hasCompatibilityCategories
+        ].contains(true) else {
+            throw LedgerError.bookInUse
+        }
+
+        context.delete(book)
+        try context.save()
+    }
 }

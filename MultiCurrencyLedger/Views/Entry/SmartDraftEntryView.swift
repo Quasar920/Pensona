@@ -14,12 +14,12 @@ struct SmartDraftEntryView: View {
 
     private var bookID: UUID? { UUID(uuidString: selectedBookID) ?? books.first?.id }
     private var wallets: [CurrencyWallet] {
-        guard let bookID else { return [] }
-        return accounts.filter { $0.book?.id == bookID && !$0.isArchived }.flatMap(\.enabledWallets)
+        guard bookID != nil else { return [] }
+        return accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
     }
     private var scopedCategories: [LedgerCategory] {
-        guard let bookID else { return [] }
-        return categories.filter { !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID) }
+        guard bookID != nil else { return [] }
+        return categories.filter { !$0.isArchived }
     }
     var body: some View {
         Form {
@@ -39,7 +39,7 @@ struct SmartDraftEntryView: View {
                             else { await transcriber.start() }
                         }
                     } label: {
-                        Label(transcriber.isRecording ? "停止听写" : "语音听写",
+                        Label(transcriber.isRecording ? AppLocalization.string("停止听写") : AppLocalization.string("语音听写"),
                               systemImage: transcriber.isRecording ? "stop.circle.fill" : "waveform.circle.fill")
                     }
                     Spacer()
@@ -81,13 +81,13 @@ struct SmartDraftEntryView: View {
                 seed: route.result.draft,
                 dismissAfterSave: true,
                 resetSeedDate: false,
-                presentationTitle: "确认智能草稿"
+                presentationTitle: AppLocalization.string("确认智能草稿")
             )
         }
         .alert("无法生成草稿", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 
     private func parse() {

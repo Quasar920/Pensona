@@ -10,11 +10,11 @@ enum TransactionRelationError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .originalMustBeExpense: "只有支出交易可以记录退款或报销"
-        case .invalidAmount: "金额必须大于 0"
-        case .exceedsOriginalAmount: "累计退款和报销不能超过原支出金额"
-        case .currencyMismatch: "退款或报销钱包必须与原交易币种一致"
-        case .aaConflict: "已设置 AA 的支出不能再记录退款或报销"
+        case .originalMustBeExpense: AppLocalization.string( "只有支出交易可以记录退款或报销")
+        case .invalidAmount: AppLocalization.string( "金额必须大于 0")
+        case .exceedsOriginalAmount: AppLocalization.string( "累计退款和报销不能超过原支出金额")
+        case .currencyMismatch: AppLocalization.string( "退款或报销钱包必须与原交易币种一致")
+        case .aaConflict: AppLocalization.string( "已设置 AA 的支出不能再记录退款或报销")
         }
     }
 }
@@ -79,15 +79,20 @@ final class TransactionRelationService {
         }
 
         let cleanNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let bookID = original.bookID else { throw LedgerError.missingBook }
         return try LedgerService(context: context).create(TransactionDraft(
             type: .income,
             amount: amount,
             sourceWallet: wallet,
             date: date,
-            note: cleanNote?.isEmpty == false ? cleanNote : "关联\(kind.title)：\(original.note ?? original.merchantOrCounterparty ?? "原支出")",
+            note: cleanNote?.isEmpty == false
+                ? cleanNote
+                : AppLocalization.string(
+                    "关联\(kind.title)：\(original.note ?? original.merchantOrCounterparty ?? AppLocalization.string("原支出"))"
+                ),
             merchantOrCounterparty: original.merchantOrCounterparty,
             category: nil
-        )) { related in
+        ), bookID: bookID) { related in
             context.insert(TransactionRelation(
                 kind: kind,
                 originalTransactionID: original.id,

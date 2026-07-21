@@ -11,12 +11,12 @@ enum SavingsGoalError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyName: "请输入目标名称"
-        case .invalidTarget: "目标金额必须大于 0"
-        case .invalidAllocation: "分配金额不能为 0"
-        case .insufficientAllocation: "取出金额不能超过当前已分配金额"
-        case .missingBook: "存钱目标必须归属一个账本"
-        case .invalidAccount: "关联账户不属于当前账本"
+        case .emptyName: AppLocalization.string( "请输入目标名称")
+        case .invalidTarget: AppLocalization.string( "目标金额必须大于 0")
+        case .invalidAllocation: AppLocalization.string( "分配金额不能为 0")
+        case .insufficientAllocation: AppLocalization.string( "取出金额不能超过当前已分配金额")
+        case .missingBook: AppLocalization.string( "存钱目标必须归属一个账本")
+        case .invalidAccount: AppLocalization.string( "关联账户不属于当前账本")
         }
     }
 }
@@ -37,6 +37,14 @@ final class SavingsGoalService {
     init(context: ModelContext, calendar: Calendar = .current) {
         self.context = context
         self.calendar = calendar
+    }
+
+    /// Planning is global in V3. `bookID` remains on the model only as a
+    /// compatibility/source value for older backups and stores.
+    func allGoals(includeArchived: Bool = false) throws -> [SavingsGoal] {
+        try context.fetch(FetchDescriptor<SavingsGoal>())
+            .filter { $0.isGloballyVisible && (includeArchived || $0.status != .archived) }
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     @discardableResult
@@ -62,7 +70,8 @@ final class SavingsGoalService {
             currencyCode: currencyCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
             targetDate: targetDate,
             symbolName: symbolName,
-            colorHex: colorHex
+            colorHex: colorHex,
+            isGloballyVisible: true
         )
         context.insert(goal)
         try context.save()
@@ -96,7 +105,7 @@ final class SavingsGoalService {
         guard amount != 0 else { throw SavingsGoalError.invalidAllocation }
         if let sourceAccountID {
             guard try context.fetch(FetchDescriptor<Account>()).contains(where: {
-                $0.id == sourceAccountID && $0.book?.id == goal.bookID
+                $0.id == sourceAccountID && !$0.isArchived
             }) else { throw SavingsGoalError.invalidAccount }
         }
         let current = goal.allocations.reduce(Decimal.zero) { $0 + $1.amount }

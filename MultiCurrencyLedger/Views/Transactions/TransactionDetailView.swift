@@ -37,10 +37,9 @@ struct TransactionDetailView: View {
     }
 
     private var relationWallets: [CurrencyWallet] {
-        let bookID = transaction.sourceAccount?.book?.id
         let currencyCode = transaction.sourceCurrencyCode ?? transaction.currencyCode
         return accounts
-            .filter { !$0.isArchived && $0.book?.id == bookID }
+            .filter { !$0.isArchived }
             .flatMap(\.enabledWallets)
             .filter { $0.currencyCode == currencyCode }
     }
@@ -82,36 +81,36 @@ struct TransactionDetailView: View {
                 VStack(spacing: 14) {
                     TransactionSummaryGlassCard(transaction: transaction, categoryPath: categoryPath)
 
-                    TransactionDetailGlassSection(title: "交易信息", symbol: "list.bullet.rectangle") {
-                        DetailValueRow(title: "日期", value: transaction.date.formatted(date: .long, time: .shortened))
-                        if let categoryPath { DetailValueRow(title: "分类", value: categoryPath) }
-                        if let merchant = transaction.merchantOrCounterparty { DetailValueRow(title: "商户 / 对方", value: merchant) }
-                        if let account = transaction.sourceAccount { DetailValueRow(title: "来源账户", value: account.name) }
-                        if let code = transaction.sourceCurrencyCode { DetailValueRow(title: "来源币种", value: code) }
-                        if let account = transaction.destinationAccount { DetailValueRow(title: "目标账户", value: account.name) }
-                        if let code = transaction.destinationCurrencyCode { DetailValueRow(title: "目标币种", value: code) }
-                        if let rate = transaction.exchangeRate { DetailValueRow(title: "实际汇率", value: "\(rate)") }
-                        if transaction.recognitionImportID != nil { DetailValueRow(title: "来源", value: "截图识别") }
-                        if let reason = transaction.adjustmentReason { DetailValueRow(title: "调整原因", value: reason) }
+                    TransactionDetailGlassSection(title: AppLocalization.string("交易信息"), symbol: "list.bullet.rectangle") {
+                        DetailValueRow(title: AppLocalization.string("日期"), value: transaction.date.formatted(date: .long, time: .shortened))
+                        if let categoryPath { DetailValueRow(title: AppLocalization.string("分类"), value: categoryPath) }
+                        if let merchant = transaction.merchantOrCounterparty { DetailValueRow(title: AppLocalization.string("商户 / 对方"), value: merchant) }
+                        if let account = transaction.sourceAccount { DetailValueRow(title: AppLocalization.string("来源账户"), value: account.name) }
+                        if let code = transaction.sourceCurrencyCode { DetailValueRow(title: AppLocalization.string("来源币种"), value: code) }
+                        if let account = transaction.destinationAccount { DetailValueRow(title: AppLocalization.string("目标账户"), value: account.name) }
+                        if let code = transaction.destinationCurrencyCode { DetailValueRow(title: AppLocalization.string("目标币种"), value: code) }
+                        if let rate = transaction.exchangeRate { DetailValueRow(title: AppLocalization.string("实际汇率"), value: "\(rate)") }
+                        if transaction.recognitionImportID != nil { DetailValueRow(title: AppLocalization.string("来源"), value: AppLocalization.string("截图识别")) }
+                        if let reason = transaction.adjustmentReason { DetailValueRow(title: AppLocalization.string("调整原因"), value: reason) }
                     }
 
                     if transaction.paymentParts.count >= 2 || transaction.feeAmount != nil
                         || transaction.originalAmount != nil || transaction.discountAmount != nil {
-                        TransactionDetailGlassSection(title: "金额构成", symbol: "sum") {
+                        TransactionDetailGlassSection(title: AppLocalization.string("金额构成"), symbol: "sum") {
                             ForEach(transaction.paymentParts.sorted(by: { $0.sortOrder < $1.sortOrder })) { part in
                                 DetailValueRow(
-                                    title: part.wallet?.account?.name ?? "付款钱包",
+                                    title: part.wallet?.account?.name ?? AppLocalization.string("付款钱包"),
                                     value: MoneyFormatter.string(part.amount, currencyCode: part.wallet?.currencyCode ?? transaction.sourceCurrencyCode ?? "CNY")
                                 )
                             }
                             if let fee = transaction.feeAmount, fee > 0 {
-                                DetailValueRow(title: "手续费", value: MoneyFormatter.string(fee, currencyCode: transaction.feeCurrencyCode ?? "CNY"))
+                                DetailValueRow(title: AppLocalization.string("手续费"), value: MoneyFormatter.string(fee, currencyCode: transaction.feeCurrencyCode ?? "CNY"))
                             }
                             if let original = transaction.originalAmount {
-                                DetailValueRow(title: "原价", value: MoneyFormatter.string(original, currencyCode: transaction.currencyCode ?? transaction.sourceCurrencyCode ?? "CNY"))
+                                DetailValueRow(title: AppLocalization.string("原价"), value: MoneyFormatter.string(original, currencyCode: transaction.currencyCode ?? transaction.sourceCurrencyCode ?? "CNY"))
                             }
                             if let discount = transaction.discountAmount, discount > 0 {
-                                DetailValueRow(title: "优惠", value: MoneyFormatter.string(discount, currencyCode: transaction.currencyCode ?? transaction.sourceCurrencyCode ?? "CNY"))
+                                DetailValueRow(title: AppLocalization.string("优惠"), value: MoneyFormatter.string(discount, currencyCode: transaction.currencyCode ?? transaction.sourceCurrencyCode ?? "CNY"))
                             }
                         }
                     }
@@ -130,13 +129,13 @@ struct TransactionDetailView: View {
                     }
 
                     if let note = transaction.note, !note.isEmpty {
-                        TransactionDetailGlassSection(title: "备注", symbol: "text.alignleft") {
+                        TransactionDetailGlassSection(title: AppLocalization.string("备注"), symbol: "text.alignleft") {
                             Text(note).font(.body).frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
 
                     if recoverySettlement == nil {
-                        TransactionDetailGlassSection(title: "图片", symbol: "photo.on.rectangle") {
+                        TransactionDetailGlassSection(title: AppLocalization.string("图片"), symbol: "photo.on.rectangle") {
                             if attachments.isEmpty {
                                 Text("尚未添加图片").font(.subheadline).foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -159,7 +158,7 @@ struct TransactionDetailView: View {
                     }
 
                     if !relations.isEmpty {
-                        TransactionDetailGlassSection(title: "退款与报销", symbol: "arrow.uturn.backward.circle") {
+                        TransactionDetailGlassSection(title: AppLocalization.string("退款与报销"), symbol: "arrow.uturn.backward.circle") {
                             ForEach(relations) { relation in
                                 HStack(spacing: 10) {
                                     Circle().fill(transaction.type.color).frame(width: 8, height: 8)
@@ -236,7 +235,7 @@ struct TransactionDetailView: View {
             .padding(.vertical, 10)
         }
         .sheet(isPresented: $showingEdit) {
-            TransactionEditView(transaction: transaction) { dismiss() }
+            TransactionEditView(transaction: transaction) {}
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -307,7 +306,7 @@ struct TransactionDetailView: View {
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
             Task { await importPhoto(item) }
@@ -372,8 +371,10 @@ struct TransactionDetailView: View {
 
     private func saveAsTemplate() {
         do {
+            guard let bookID = transaction.bookID else { throw LedgerError.missingBook }
             try TransactionTemplateService(context: context).create(
                 name: templateName,
+                bookID: bookID,
                 from: TransactionDraft(transaction: transaction)
             )
         } catch {
@@ -466,7 +467,7 @@ private struct TransactionRelationEntryView: View {
                 Section("入账") {
                     Picker("钱包", selection: $walletID) {
                         ForEach(wallets) { wallet in
-                            Text("\(wallet.account?.name ?? "账户") / \(wallet.currencyCode)")
+                            Text("\(wallet.account?.name ?? AppLocalization.string("账户")) / \(wallet.currencyCode)")
                                 .tag(wallet.id as UUID?)
                         }
                     }
@@ -487,7 +488,7 @@ private struct TransactionRelationEntryView: View {
             }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 

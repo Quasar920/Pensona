@@ -3,101 +3,68 @@ import SwiftUI
 import UIKit
 
 struct AccountListView: View {
+    @Environment(\.modelContext) private var context
     @AppStorage("baseCurrencyCode") private var baseCurrencyCode = SupportedCurrency.CNY.rawValue
     @AppStorage("selectedBookID") private var selectedBookID = ""
     @AppStorage("homeBalanceHidden") private var isBalanceHidden = false
 
     @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
     private var books: [LedgerBook]
-    @Query(sort: [SortDescriptor(\Account.sortOrder), SortDescriptor(\Account.createdAt)])
-    private var accounts: [Account]
-    @Query private var rates: [ExchangeRate]
-    @Query(sort: \LedgerTransaction.date, order: .reverse) private var transactions: [LedgerTransaction]
-
-    @State private var addAccountGroup: AssetGroup?
+    @State private var addAccountType: AccountType?
     @State private var editingAccount: Account?
     @State private var detailPath = NavigationPath()
     @State private var alertMessage: String?
-    @State private var showingBookSwitcher = false
-    @Namespace private var cardTransitionNamespace
+    @State private var snapshot: AssetDashboardSnapshot?
+    @State private var selectedModule: AssetModuleKind?
+    @State private var refreshGeneration = 0
+    @State private var appliedPreviewState = false
+    @Binding private var isDetailPresented: Bool
+
+    init(isDetailPresented: Binding<Bool> = .constant(false)) {
+        _isDetailPresented = isDetailPresented
+    }
 
     private var selectedBook: LedgerBook? {
         books.first { $0.id.uuidString == selectedBookID } ?? books.first
     }
 
-    private var bookAccounts: [Account] {
-        guard let bookID = selectedBook?.id else { return [] }
-        return accounts.filter { $0.book?.id == bookID }
-    }
-
-    private var visibleAccounts: [Account] {
-        bookAccounts.filter { !$0.isHidden && !$0.isArchived }
-    }
-
-    private var visibleTransactions: [LedgerTransaction] {
-        guard let bookID = selectedBook?.id else { return [] }
-        return Array(
-            transactions.lazy
-                .filter {
-                    $0.sourceAccount?.book?.id == bookID || $0.destinationAccount?.book?.id == bookID
-                }
-                .prefix(5)
-        )
-    }
-
-    private var summary: AssetSummaryResult {
-        AssetSummaryService(baseCurrencyCode: baseCurrencyCode, rates: rates)
-            .summary(for: bookAccounts)
-    }
-
     var body: some View {
-        if #available(iOS 26.4, *) {
-            AccessibilityCrossFadeEnvironmentReader { prefersCrossFadeTransitions in
-                accountListContent(prefersCrossFadeTransitions: prefersCrossFadeTransitions)
-            }
-        } else {
-            accountListContent(
-                prefersCrossFadeTransitions: UIAccessibility.prefersCrossFadeTransitions
-            )
-        }
-    }
-
-    private func accountListContent(prefersCrossFadeTransitions: Bool) -> some View {
         NavigationStack(path: $detailPath) {
             ZStack {
                 AssetPagePalette.background.ignoresSafeArea()
-
-                AssetOverviewScreen(
-                    currencyCode: baseCurrencyCode,
-                    totalAssets: summary.totalAssets,
-                    hasAccounts: !bookAccounts.isEmpty,
-                    isBalanceHidden: $isBalanceHidden,
-                    accounts: Array(visibleAccounts.prefix(8)),
-                    rates: rates,
-                    transactions: visibleTransactions,
-                    cardTransitionNamespace: cardTransitionNamespace,
-                    addAccount: { addAccountGroup = $0 },
-                    selectAccount: { account in
-                        guard detailPath.isEmpty else { return }
-                        detailPath.append(account)
-                    },
-                    editAccount: { editingAccount = $0 }
-                )
+                if let snapshot {
+                    AssetDashboardScreen(
+                        snapshot: snapshot,
+                        currencyCode: baseCurrencyCode,
+                        isBalanceHidden: $isBalanceHidden,
+                        openModule: { selectedModule = $0 },
+                        selectAccount: openAccount,
+                        editAccount: { editingAccount = $0 }
+                    )
+                } else {
+                    ProgressView("正在加载资产")
+                }
             }
             .navigationTitle("资产")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showingBookSwitcher = true } label: {
-                        Label(selectedBook?.name ?? "选择账本", systemImage: "book.closed")
+                    Button {
+                        isBalanceHidden.toggle()
+                    } label: {
+                        Image(systemName: isBalanceHidden ? "eye.slash" : "eye")
                     }
-                    .accessibilityHint("切换账本")
+                    .accessibilityLabel(
+                        isBalanceHidden
+                            ? AppLocalization.string("显示资产金额")
+                            : AppLocalization.string("隐藏资产金额")
+                    )
                 }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu {
-                        ForEach(AssetGroup.allCases) { group in
-                            Button { addAccountGroup = group } label: {
+                        ForEach(AssetDashboardGroup.allCases.filter { $0 != .legacyOther }) { group in
+                            Button { addAccountType = group.initialAccountType } label: {
                                 Label(group.title, systemImage: group.symbolName)
                             }
                         }
@@ -107,30 +74,31 @@ struct AccountListView: View {
                     .accessibilityLabel("添加账户")
 
                     Button { alertMessage = statusMessage } label: {
-                        Image(systemName: summary.missingCodes.isEmpty ? "checkmark.circle" : "exclamationmark.triangle")
+                        Image(systemName: snapshot?.missingCodes.isEmpty == false ? "exclamationmark.triangle" : "checkmark.circle")
                     }
                     .accessibilityLabel("查看资产状态")
                 }
             }
             .navigationDestination(for: Account.self) { account in
-                accountDetailDestination(
-                    for: account,
-                    prefersCrossFadeTransitions: prefersCrossFadeTransitions
-                )
+                AccountDetailView(account: account)
             }
             .navigationDestination(for: LedgerTransaction.self) { transaction in
                 TransactionDetailView(transaction: transaction)
                     .toolbar(.visible, for: .navigationBar)
-                    .rootEntryVisibility(.hidden, for: .assets)
             }
-            .sheet(item: $addAccountGroup) { group in
-                AddAccountView(book: selectedBook, initialGroup: group)
+            .sheet(item: $addAccountType, onDismiss: reload) { type in
+                AddAccountView(initialType: type)
             }
-            .sheet(item: $editingAccount) { account in
+            .sheet(item: $editingAccount, onDismiss: reload) { account in
                 AccountEditView(account: account)
             }
-            .sheet(isPresented: $showingBookSwitcher) {
-                LedgerBookSwitcherView(selectedBookID: $selectedBookID)
+            .sheet(item: $selectedModule) { module in
+                AssetModuleDetailSheet(
+                    kind: module,
+                    currentBook: selectedBook,
+                    baseCurrencyCode: baseCurrencyCode,
+                    isBalanceHidden: isBalanceHidden
+                )
             }
             .alert("提示", isPresented: Binding(
                 get: { alertMessage != nil },
@@ -142,53 +110,33 @@ struct AccountListView: View {
             }
             .onAppear {
                 ensureSelectedBook()
+                applyPreviewStateIfNeeded()
             }
             .onChange(of: books.count) { _, _ in
                 ensureSelectedBook()
             }
-        }
-    }
-
-    @ViewBuilder
-    private func accountDetailDestination(
-        for account: Account,
-        prefersCrossFadeTransitions: Bool
-    ) -> some View {
-        let detail = AssetCardDetailScreen(
-            account: account,
-            currencyCode: baseCurrencyCode,
-            rates: rates,
-            allTransactions: transactions,
-            isBalanceHidden: isBalanceHidden
-        )
-
-        if prefersCrossFadeTransitions {
-            if #available(iOS 27.0, *) {
-                detail
-                    .rootEntryVisibility(.hidden, for: .assets)
-                    .navigationTransition(.crossFade)
-            } else {
-                detail
-                    .rootEntryVisibility(.hidden, for: .assets)
-                    .navigationTransition(.automatic)
+            .task(id: refreshGeneration) { reload() }
+            .onReceive(NotificationCenter.default.publisher(for: .ledgerTransactionsDidChange)) { _ in
+                refreshGeneration += 1
             }
-        } else {
-            detail
-                .rootEntryVisibility(.hidden, for: .assets)
-                .navigationTransition(
-                    .zoom(sourceID: account.id, in: cardTransitionNamespace)
-                )
+        }
+        .rootEntryVisibility(detailPath.isEmpty ? .visible : .hidden, for: .assets)
+        .onAppear { isDetailPresented = !detailPath.isEmpty }
+        .onChange(of: detailPath.count) { _, count in
+            isDetailPresented = count > 0
         }
     }
 
     private var statusMessage: String {
-        if bookAccounts.isEmpty {
-            return "当前账本还没有账户，点击左上角按钮即可添加第一张资产卡。"
+        guard let snapshot else { return AppLocalization.string( "资产数据正在加载。") }
+        if snapshot.groups.isEmpty {
+            return AppLocalization.string( "还没有账户，点击右上角加号即可添加第一项资产。")
         }
-        if !summary.missingCodes.isEmpty {
-            return "\(summary.missingCodes.sorted().joined(separator: "、")) 缺少汇率，相关余额暂未计入汇总。"
+        if !snapshot.missingCodes.isEmpty {
+            return AppLocalization.string( "\(snapshot.missingCodes.sorted().joined(separator: "、")) 缺少汇率，相关余额暂未计入汇总。")
         }
-        return "已按 \(baseCurrencyCode) 汇总 \(visibleAccounts.count) 个可见账户。"
+        let count = snapshot.groups.reduce(0) { $0 + $1.rows.count }
+        return AppLocalization.string( "已按 \(baseCurrencyCode) 汇总全部 \(count) 个可见账户。")
     }
 
     private func ensureSelectedBook() {
@@ -197,20 +145,48 @@ struct AccountListView: View {
             selectedBookID = first.id.uuidString
         }
     }
-}
 
-@available(iOS 26.4, *)
-private struct AccessibilityCrossFadeEnvironmentReader<Content: View>: View {
-    @Environment(\.accessibilityPrefersCrossFadeTransitions)
-    private var prefersCrossFadeTransitions
-    private let content: (Bool) -> Content
-
-    init(@ViewBuilder content: @escaping (Bool) -> Content) {
-        self.content = content
+    private func openAccount(_ account: Account) {
+        guard detailPath.isEmpty else { return }
+        detailPath.append(account)
     }
 
-    var body: some View {
-        content(prefersCrossFadeTransitions)
+    private func reload() {
+        do {
+            snapshot = try AssetDashboardService(context: context).snapshot(
+                baseCurrencyCode: baseCurrencyCode
+            )
+            runPreviewCyclesIfNeeded()
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    private func applyPreviewStateIfNeeded() {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["ASSET_PREVIEW_HIDDEN"] == "1" {
+            isBalanceHidden = true
+        }
+        #endif
+    }
+
+    private func runPreviewCyclesIfNeeded() {
+        #if DEBUG
+        guard !appliedPreviewState,
+              let countText = ProcessInfo.processInfo.environment["ASSET_PREVIEW_CYCLES"],
+              let count = Int(countText), count > 0,
+              let account = snapshot?.groups.first?.rows.first?.account else { return }
+        appliedPreviewState = true
+        Task { @MainActor in
+            for _ in 0..<count {
+                detailPath.append(account)
+                try? await Task.sleep(for: .milliseconds(120))
+                if !detailPath.isEmpty { detailPath.removeLast() }
+                try? await Task.sleep(for: .milliseconds(120))
+            }
+            print("ASSET_PREVIEW_CYCLES_COMPLETED=\(count)")
+        }
+        #endif
     }
 }
 
@@ -222,7 +198,6 @@ private struct AssetOverviewScreen: View {
     let accounts: [Account]
     let rates: [ExchangeRate]
     let transactions: [LedgerTransaction]
-    let cardTransitionNamespace: Namespace.ID
     let addAccount: (AssetGroup) -> Void
     let selectAccount: (Account) -> Void
     let editAccount: (Account) -> Void
@@ -242,7 +217,6 @@ private struct AssetOverviewScreen: View {
                     currencyCode: currencyCode,
                     rates: rates,
                     isBalanceHidden: isBalanceHidden,
-                    cardTransitionNamespace: cardTransitionNamespace,
                     addAccount: { addAccount(.cash) },
                     selectAccount: selectAccount,
                     editAccount: editAccount
@@ -299,7 +273,11 @@ private struct AssetBalanceHero: View {
                 .frame(minHeight: 44)
             }
             .buttonStyle(AssetPressButtonStyle())
-            .accessibilityLabel(isBalanceHidden ? "显示总资产" : "隐藏总资产")
+            .accessibilityLabel(
+                isBalanceHidden
+                    ? AppLocalization.string("显示总资产")
+                    : AppLocalization.string("隐藏总资产")
+            )
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 3)
@@ -311,7 +289,6 @@ private struct AssetCardStrip: View {
     let currencyCode: String
     let rates: [ExchangeRate]
     let isBalanceHidden: Bool
-    let cardTransitionNamespace: Namespace.ID
     let addAccount: () -> Void
     let selectAccount: (Account) -> Void
     let editAccount: (Account) -> Void
@@ -341,11 +318,6 @@ private struct AssetCardStrip: View {
                             .frame(width: 150, height: 190)
                         }
                         .buttonStyle(AssetPressButtonStyle())
-                        .matchedTransitionSource(id: account.id, in: cardTransitionNamespace) { source in
-                            source.clipShape(
-                                RoundedRectangle(cornerRadius: 23, style: .continuous)
-                            )
-                        }
                         .contextMenu {
                             Button {
                                 editAccount(account)

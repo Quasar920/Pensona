@@ -9,6 +9,7 @@ enum LedgerError: LocalizedError, Equatable {
     case duplicateCurrency
     case accountInUse
     case walletInUse
+    case bookInUse
     case categoryMismatch
     case destinationAmountRequired
     case sameCurrencyExchange
@@ -19,26 +20,29 @@ enum LedgerError: LocalizedError, Equatable {
     case relatedTransactionExists
     case aaSettlementExists
     case aaRecoveryManaged
+    case missingBook
 
     var errorDescription: String? {
         switch self {
-        case .invalidAmount: "金额必须大于 0"
-        case .currencyMismatch: "转账仅支持相同币种"
-        case .sameWallet: "来源和目标钱包不能相同"
-        case .missingWallet: "交易关联的钱包不存在"
-        case .duplicateCurrency: "该账户已添加这个币种"
-        case .accountInUse: "该账户仍被交易引用，不能删除"
-        case .walletInUse: "该钱包仍有余额或历史交易，只能停用"
-        case .categoryMismatch: "分类与交易类型不匹配"
-        case .destinationAmountRequired: "请输入大于 0 的换入金额"
-        case .sameCurrencyExchange: "换汇必须选择两个不同币种的钱包"
-        case .missingAdjustment: "请选择调整方向并填写调整原因"
-        case .paymentPartsMismatch: "组合付款分项之和必须等于交易总额"
-        case .paymentCurrencyMismatch: "组合付款只能使用相同币种的钱包"
-        case .duplicatePaymentWallet: "组合付款不能重复选择同一个钱包"
-        case .relatedTransactionExists: "请先删除这笔支出关联的退款或报销交易"
-        case .aaSettlementExists: "请先删除这笔支出关联的 AA 收款记录"
-        case .aaRecoveryManaged: "AA 收款只能从原支出的 AA 收款历史中处理"
+        case .invalidAmount: AppLocalization.string( "金额必须大于 0")
+        case .currencyMismatch: AppLocalization.string( "转账仅支持相同币种")
+        case .sameWallet: AppLocalization.string( "来源和目标钱包不能相同")
+        case .missingWallet: AppLocalization.string( "交易关联的钱包不存在")
+        case .duplicateCurrency: AppLocalization.string( "该账户已添加这个币种")
+        case .accountInUse: AppLocalization.string( "该账户仍被交易引用，不能删除")
+        case .walletInUse: AppLocalization.string( "该钱包仍有余额或历史交易，只能停用")
+        case .bookInUse: AppLocalization.string( "账本仍有数据或是唯一账本，不能删除")
+        case .categoryMismatch: AppLocalization.string( "分类与交易类型不匹配")
+        case .destinationAmountRequired: AppLocalization.string( "请输入大于 0 的换入金额")
+        case .sameCurrencyExchange: AppLocalization.string( "换汇必须选择两个不同币种的钱包")
+        case .missingAdjustment: AppLocalization.string( "请选择调整方向并填写调整原因")
+        case .paymentPartsMismatch: AppLocalization.string( "组合付款分项之和必须等于交易总额")
+        case .paymentCurrencyMismatch: AppLocalization.string( "组合付款只能使用相同币种的钱包")
+        case .duplicatePaymentWallet: AppLocalization.string( "组合付款不能重复选择同一个钱包")
+        case .relatedTransactionExists: AppLocalization.string( "请先删除这笔支出关联的退款或报销交易")
+        case .aaSettlementExists: AppLocalization.string( "请先删除这笔支出关联的 AA 收款记录")
+        case .aaRecoveryManaged: AppLocalization.string( "AA 收款只能从原支出的 AA 收款历史中处理")
+        case .missingBook: AppLocalization.string( "交易必须归属一个存在的账本")
         }
     }
 }
@@ -53,8 +57,8 @@ final class LedgerService {
     }
 
     @discardableResult
-    func create(_ draft: TransactionDraft) throws -> LedgerTransaction {
-        try create(draft) { _ in }
+    func create(_ draft: TransactionDraft, bookID: UUID) throws -> LedgerTransaction {
+        try create(draft, bookID: bookID) { _ in }
     }
 
     /// Allows automation services to insert their unique occurrence marker in
@@ -62,21 +66,25 @@ final class LedgerService {
     @discardableResult
     func create(
         _ draft: TransactionDraft,
+        bookID: UUID,
         configureBeforeSave: (LedgerTransaction) throws -> Void
     ) throws -> LedgerTransaction {
+        try requireBook(bookID)
         _ = try impactCalculator.deltas(for: draft)
-        return try persistNew(draft.makeTransaction(), configureBeforeSave: configureBeforeSave)
+        return try persistNew(draft.makeTransaction(bookID: bookID), configureBeforeSave: configureBeforeSave)
     }
 
     /// Validates and writes a whole import batch in one transaction. No wallet
     /// balance or row is retained if any row fails.
     func createBatch(
         _ drafts: [TransactionDraft],
+        bookID: UUID,
         configureBeforeSave: ([LedgerTransaction]) throws -> Void
     ) throws -> [LedgerTransaction] {
         guard !drafts.isEmpty else { return [] }
+        try requireBook(bookID)
         for draft in drafts { _ = try impactCalculator.deltas(for: draft) }
-        let transactions = drafts.map { $0.makeTransaction() }
+        let transactions = drafts.map { $0.makeTransaction(bookID: bookID) }
         let snapshots = snapshots(for: transactions)
         do {
             for transaction in transactions {
@@ -85,6 +93,7 @@ final class LedgerService {
             }
             try configureBeforeSave(transactions)
             try context.save()
+            NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
             return transactions
         } catch {
             context.rollback()
@@ -95,6 +104,7 @@ final class LedgerService {
 
     @discardableResult
     func createExpense(
+        bookID: UUID,
         amount: Decimal,
         wallet: CurrencyWallet,
         category: LedgerCategory?,
@@ -110,11 +120,12 @@ final class LedgerService {
             note: note,
             merchantOrCounterparty: merchantOrCounterparty,
             category: category
-        ))
+        ), bookID: bookID)
     }
 
     @discardableResult
     func createIncome(
+        bookID: UUID,
         amount: Decimal,
         wallet: CurrencyWallet,
         category: LedgerCategory?,
@@ -130,11 +141,12 @@ final class LedgerService {
             note: note,
             merchantOrCounterparty: merchantOrCounterparty,
             category: category
-        ))
+        ), bookID: bookID)
     }
 
     @discardableResult
     func createTransfer(
+        bookID: UUID,
         amount: Decimal,
         from sourceWallet: CurrencyWallet,
         to destinationWallet: CurrencyWallet,
@@ -152,11 +164,12 @@ final class LedgerService {
             feeWallet: feeWallet,
             date: date,
             note: note
-        ))
+        ), bookID: bookID)
     }
 
     @discardableResult
     func createExchange(
+        bookID: UUID,
         sourceAmount: Decimal,
         from sourceWallet: CurrencyWallet,
         destinationAmount: Decimal,
@@ -176,11 +189,12 @@ final class LedgerService {
             feeWallet: feeWallet,
             date: date,
             note: note
-        ))
+        ), bookID: bookID)
     }
 
     @discardableResult
     func createAdjustment(
+        bookID: UUID,
         amount: Decimal,
         wallet: CurrencyWallet,
         direction: AdjustmentDirection,
@@ -196,7 +210,7 @@ final class LedgerService {
             note: note,
             adjustmentDirection: direction,
             adjustmentReason: reason
-        ))
+        ), bookID: bookID)
     }
 
     /// Persists a recognition-confirmed transaction and its non-sensitive audit
@@ -205,8 +219,11 @@ final class LedgerService {
     @discardableResult
     func persistRecognized(
         _ transaction: LedgerTransaction,
-        importRecord: RecognitionImportRecord
+        importRecord: RecognitionImportRecord,
+        bookID: UUID
     ) throws -> LedgerTransaction {
+        try requireBook(bookID)
+        transaction.bookID = bookID
         let snapshots = snapshots(for: [transaction])
         do {
             try applyTransaction(transaction)
@@ -215,6 +232,7 @@ final class LedgerService {
             context.insert(transaction)
             context.insert(importRecord)
             try context.save()
+            NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
             return transaction
         } catch {
             context.rollback()
@@ -313,6 +331,7 @@ final class LedgerService {
             }
             try configureBeforeSave()
             try context.save()
+            NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
             let store = AttachmentStore()
             for path in attachmentPaths { try? store.remove(relativePath: path) }
         } catch {
@@ -339,7 +358,8 @@ final class LedgerService {
         guard !aaSettlements.contains(where: { $0.recoveryTransactionID == existing.id }) else {
             throw LedgerError.aaRecoveryManaged
         }
-        let replacement = draft.makeTransaction()
+        guard let bookID = existing.bookID else { throw LedgerError.missingBook }
+        let replacement = draft.makeTransaction(bookID: bookID)
         let snapshots = snapshots(for: [existing, replacement])
         let transactionSnapshot = LedgerTransactionSnapshot(transaction: existing)
         do {
@@ -355,6 +375,7 @@ final class LedgerService {
                 throw AASplitError.expenseRequired
             }
             try context.save()
+            NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
         } catch {
             context.rollback()
             transactionSnapshot.restore()
@@ -371,16 +392,26 @@ final class LedgerService {
         try changeBalances(for: transaction, multiplier: -1)
     }
 
+    func moveTransaction(_ transaction: LedgerTransaction, toBookID bookID: UUID) throws {
+        try requireBook(bookID)
+        transaction.bookID = bookID
+        transaction.updatedAt = .now
+        try context.save()
+        NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
+    }
+
     private func persistNew(
         _ transaction: LedgerTransaction,
         configureBeforeSave: (LedgerTransaction) throws -> Void = { _ in }
     ) throws -> LedgerTransaction {
+        guard transaction.bookID != nil else { throw LedgerError.missingBook }
         let snapshots = snapshots(for: [transaction])
         do {
             try applyTransaction(transaction)
             context.insert(transaction)
             try configureBeforeSave(transaction)
             try context.save()
+            NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
             return transaction
         } catch {
             context.rollback()
@@ -399,6 +430,11 @@ final class LedgerService {
         guard let wallet else { throw LedgerError.missingWallet }
         wallet.balance += amount
         wallet.updatedAt = .now
+    }
+
+    private func requireBook(_ bookID: UUID) throws {
+        let books = try context.fetch(FetchDescriptor<LedgerBook>())
+        guard books.contains(where: { $0.id == bookID }) else { throw LedgerError.missingBook }
     }
 
     private func snapshots(for transactions: [LedgerTransaction]) -> [WalletSnapshot] {
@@ -421,6 +457,10 @@ final class LedgerService {
             snapshot.wallet.updatedAt = snapshot.updatedAt
         }
     }
+}
+
+extension Notification.Name {
+    static let ledgerTransactionsDidChange = Notification.Name("ledgerTransactionsDidChange")
 }
 
 private struct WalletSnapshot {
@@ -450,6 +490,8 @@ private struct LedgerTransactionSnapshot {
     let originalAmount: Decimal?
     let discountAmount: Decimal?
     let recognitionImportID: UUID?
+    let bookID: UUID?
+    let reimbursementStatusRawValue: String
     let sourceAccount: Account?
     let sourceWallet: CurrencyWallet?
     let destinationAccount: Account?
@@ -480,6 +522,8 @@ private struct LedgerTransactionSnapshot {
         originalAmount = transaction.originalAmount
         discountAmount = transaction.discountAmount
         recognitionImportID = transaction.recognitionImportID
+        bookID = transaction.bookID
+        reimbursementStatusRawValue = transaction.reimbursementStatusRawValue
         sourceAccount = transaction.sourceAccount
         sourceWallet = transaction.sourceWallet
         destinationAccount = transaction.destinationAccount
@@ -510,6 +554,8 @@ private struct LedgerTransactionSnapshot {
         transaction.originalAmount = originalAmount
         transaction.discountAmount = discountAmount
         transaction.recognitionImportID = recognitionImportID
+        transaction.bookID = bookID
+        transaction.reimbursementStatusRawValue = reimbursementStatusRawValue
         transaction.sourceAccount = sourceAccount
         transaction.sourceWallet = sourceWallet
         transaction.destinationAccount = destinationAccount

@@ -13,13 +13,13 @@ enum SmartDraftError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyText: "请输入或说出一条记账描述"
-        case .missingAmount: "没有识别到金额，请补充数字金额"
-        case .missingWallet: "没有可用钱包，请先创建账户，或在描述中写明账户名称"
-        case .missingDestination: "转账或换汇需要在描述中依次写出来源账户和目标账户"
-        case .missingDestinationAmount: "换汇需要写出换出金额和换入金额"
-        case .speechPermissionDenied: "请在系统设置中允许语音识别和麦克风权限"
-        case .speechUnavailable: "当前语音识别服务不可用"
+        case .emptyText: AppLocalization.string( "请输入或说出一条记账描述")
+        case .missingAmount: AppLocalization.string( "没有识别到金额，请补充数字金额")
+        case .missingWallet: AppLocalization.string( "没有可用钱包，请先创建账户，或在描述中写明账户名称")
+        case .missingDestination: AppLocalization.string( "转账或换汇需要在描述中依次写出来源账户和目标账户")
+        case .missingDestinationAmount: AppLocalization.string( "换汇需要写出换出金额和换入金额")
+        case .speechPermissionDenied: AppLocalization.string( "请在系统设置中允许语音识别和麦克风权限")
+        case .speechUnavailable: AppLocalization.string( "当前语音识别服务不可用")
         }
     }
 }
@@ -83,7 +83,11 @@ struct SmartDraftService {
             category: category
         )
         _ = try TransactionImpactCalculator().deltas(for: draft)
-        var fields = [kind.title, "金额", source.account?.name ?? "账户"]
+        var fields = [
+            kind.title,
+            AppLocalization.string("金额"),
+            source.account?.name ?? AppLocalization.string("账户")
+        ]
         if category != nil { fields.append("分类") }
         if destination != nil { fields.append("目标账户") }
         if date != calendar.startOfDay(for: now) { fields.append("日期") }

@@ -12,7 +12,12 @@ final class ShortcutRecognitionContextService {
 
     func exportJSON(for book: LedgerBook) throws -> String {
         let categories = try context.fetch(FetchDescriptor<LedgerCategory>())
-        let recognitionContext = builder.makeContext(book: book, categories: categories)
+        let accounts = try context.fetch(FetchDescriptor<Account>())
+        let recognitionContext = builder.makeContext(
+            book: book,
+            accounts: accounts,
+            categories: categories
+        )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         guard let json = String(data: try encoder.encode(recognitionContext), encoding: .utf8) else {
@@ -25,5 +30,5 @@ final class ShortcutRecognitionContextService {
 enum RecognitionContextExportError: LocalizedError {
     case encodingFailed
 
-    var errorDescription: String? { "无法生成识别候选" }
+    var errorDescription: String? { AppLocalization.string( "无法生成识别候选") }
 }

@@ -7,6 +7,7 @@ final class TransactionDraftTests: XCTestCase {
     private var container: ModelContainer!
     private var context: ModelContext!
     private var service: LedgerService!
+    private var book: LedgerBook!
 
     override func setUpWithError() throws {
         let schema = Schema([
@@ -19,6 +20,8 @@ final class TransactionDraftTests: XCTestCase {
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         context = container.mainContext
+        book = LedgerBook(name: "测试账本")
+        context.insert(book)
         service = LedgerService(context: context)
     }
 
@@ -33,7 +36,7 @@ final class TransactionDraftTests: XCTestCase {
         draft.merchantOrCounterparty = "面馆"
         draft.note = "午餐"
 
-        let transaction = try service.create(draft)
+        let transaction = try service.create(draft, bookID: book.id)
 
         XCTAssertEqual(wallet.balance, 432)
         XCTAssertEqual(transaction.type, .expense)
@@ -57,7 +60,7 @@ final class TransactionDraftTests: XCTestCase {
 
         var originalDraft = TransactionDraft(type: .expense, amount: 100, sourceWallet: source)
         originalDraft.category = expenseCategory
-        let original = try service.create(originalDraft)
+        let original = try service.create(originalDraft, bookID: book.id)
         let originalID = original.id
 
         var replacement = TransactionDraft(type: .income, amount: 250, sourceWallet: destination)

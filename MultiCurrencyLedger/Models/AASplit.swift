@@ -9,8 +9,8 @@ enum AASplitCalculationMode: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .equal: "AA 均分"
-        case .custom: "自定义金额"
+        case .equal: AppLocalization.string( "AA 均分")
+        case .custom: AppLocalization.string( "自定义金额")
         }
     }
 }
@@ -22,9 +22,9 @@ enum AASplitStatus: String, Equatable {
 
     var title: String {
         switch self {
-        case .pending: "待收款"
-        case .partial: "部分收款"
-        case .settled: "已结清"
+        case .pending: AppLocalization.string( "待收款")
+        case .partial: AppLocalization.string( "部分收款")
+        case .settled: AppLocalization.string( "已结清")
         }
     }
 }

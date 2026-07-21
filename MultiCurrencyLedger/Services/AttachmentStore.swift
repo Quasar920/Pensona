@@ -10,11 +10,11 @@ enum AttachmentError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyData: "图片内容为空"
-        case .fileTooLarge: "单张图片不能超过 20 MB"
-        case .unsupportedImage: "仅支持 JPEG、PNG、HEIC 和 GIF 图片"
-        case .missingBook: "交易未归属账本"
-        case .invalidPath: "附件路径无效"
+        case .emptyData: AppLocalization.string( "图片内容为空")
+        case .fileTooLarge: AppLocalization.string( "单张图片不能超过 20 MB")
+        case .unsupportedImage: AppLocalization.string( "仅支持 JPEG、PNG、HEIC 和 GIF 图片")
+        case .missingBook: AppLocalization.string( "交易未归属账本")
+        case .invalidPath: AppLocalization.string( "附件路径无效")
         }
     }
 }
@@ -124,7 +124,7 @@ final class AttachmentService {
         originalFilename: String = "照片",
         to transaction: LedgerTransaction
     ) throws -> TransactionAttachment {
-        guard let bookID = transaction.sourceAccount?.book?.id else {
+        guard let bookID = transaction.bookID else {
             throw AttachmentError.missingBook
         }
         let id = UUID()

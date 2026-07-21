@@ -35,6 +35,7 @@ final class PlanningAndReportingTests: XCTestCase {
     func testReconciliationFindsAndRepairsWalletDriftFromLedger() throws {
         let fixture = makeFixture(balance: 1_000)
         _ = try LedgerService(context: context).createExpense(
+            bookID: fixture.book.id,
             amount: 100,
             wallet: fixture.wallet,
             category: fixture.category,
@@ -62,6 +63,7 @@ final class PlanningAndReportingTests: XCTestCase {
         )
         context.insert(other)
         _ = try LedgerService(context: context).createExpense(
+            bookID: fixture.book.id,
             amount: 80,
             wallet: fixture.wallet,
             category: fixture.category,
@@ -69,10 +71,21 @@ final class PlanningAndReportingTests: XCTestCase {
             note: nil
         )
         _ = try LedgerService(context: context).createExpense(
+            bookID: fixture.book.id,
             amount: 20,
             wallet: fixture.wallet,
             category: other,
             date: date(2026, 7, 11),
+            note: nil
+        )
+        let otherBook = LedgerBook(name: "旅行")
+        context.insert(otherBook)
+        _ = try LedgerService(context: context).createExpense(
+            bookID: otherBook.id,
+            amount: 60,
+            wallet: fixture.wallet,
+            category: fixture.category,
+            date: date(2026, 7, 12),
             note: nil
         )
         let budget = try BudgetService(context: context).upsert(
@@ -92,6 +105,35 @@ final class PlanningAndReportingTests: XCTestCase {
 
         XCTAssertEqual(status.spent, 80)
         XCTAssertEqual(status.remaining, 20)
+    }
+
+    func testReportBookDimensionUsesTransactionBookName() throws {
+        let fixture = makeFixture(balance: 1_000)
+        let travel = LedgerBook(name: "旅行")
+        context.insert(travel)
+        let transaction = try LedgerService(context: context).createExpense(
+            bookID: travel.id,
+            amount: 30,
+            wallet: fixture.wallet,
+            category: fixture.category,
+            date: date(2026, 7, 10),
+            note: nil
+        )
+        let interval = DateInterval(
+            start: date(2026, 7, 1),
+            end: date(2026, 8, 1)
+        )
+
+        let result = ReportQueryService(baseCurrencyCode: "CNY", rates: []).breakdown(
+            transactions: [transaction],
+            relations: [],
+            interval: interval,
+            metric: .expense,
+            dimension: .book,
+            books: [fixture.book, travel]
+        )
+
+        XCTAssertEqual(result.buckets, [ReportBucket(key: travel.id.uuidString, title: "旅行", value: 30)])
     }
 
     func testSavingsAllocationsNeverMutateWalletOrCreateTransactions() throws {
@@ -117,9 +159,33 @@ final class PlanningAndReportingTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<LedgerTransaction>()), 0)
     }
 
+    func testSavingsGoalsAreGlobalAcrossCompatibilitySourceBooks() throws {
+        let first = makeFixture(balance: 1_000)
+        let secondBook = LedgerBook(name: "旅行")
+        context.insert(secondBook)
+        let service = SavingsGoalService(context: context)
+        let firstGoal = try service.create(
+            bookID: first.book.id,
+            name: "应急金",
+            targetAmount: 10_000,
+            currencyCode: "CNY"
+        )
+        let secondGoal = try service.create(
+            bookID: secondBook.id,
+            name: "旅行",
+            targetAmount: 3_000,
+            currencyCode: "CNY"
+        )
+
+        XCTAssertTrue(firstGoal.isGloballyVisible)
+        XCTAssertTrue(secondGoal.isGloballyVisible)
+        XCTAssertEqual(Set(try service.allGoals().map(\.id)), Set([firstGoal.id, secondGoal.id]))
+    }
+
     func testRefundOffsetsExpenseInsteadOfBecomingOrdinaryIncome() throws {
         let fixture = makeFixture(balance: 1_000)
         let original = try LedgerService(context: context).createExpense(
+            bookID: fixture.book.id,
             amount: 100,
             wallet: fixture.wallet,
             category: fixture.category,
@@ -127,6 +193,7 @@ final class PlanningAndReportingTests: XCTestCase {
             note: nil
         )
         let related = try LedgerService(context: context).createIncome(
+            bookID: fixture.book.id,
             amount: 30,
             wallet: fixture.wallet,
             category: nil,

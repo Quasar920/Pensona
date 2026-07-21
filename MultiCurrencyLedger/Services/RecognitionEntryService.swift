@@ -11,12 +11,12 @@ enum RecognitionEntryError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedType: "当前识别类型需要使用专门的转账或换汇确认流程"
-        case .feeRequiresManualEntry: "含手续费的交易需要手动确认手续费归属"
-        case .invalidAmount: "确认金额必须大于 0"
-        case .walletCurrencyMismatch: "所选钱包与交易币种不一致"
-        case .categoryTypeMismatch: "所选分类与交易类型不一致"
-        case .missingBook: "识别交易必须归属一个账本"
+        case .unsupportedType: AppLocalization.string( "当前识别类型需要使用专门的转账或换汇确认流程")
+        case .feeRequiresManualEntry: AppLocalization.string( "含手续费的交易需要手动确认手续费归属")
+        case .invalidAmount: AppLocalization.string( "确认金额必须大于 0")
+        case .walletCurrencyMismatch: AppLocalization.string( "所选钱包与交易币种不一致")
+        case .categoryTypeMismatch: AppLocalization.string( "所选分类与交易类型不一致")
+        case .missingBook: AppLocalization.string( "识别交易必须归属一个账本")
         }
     }
 }
@@ -32,6 +32,7 @@ final class RecognitionEntryService {
     @discardableResult
     func confirm(
         _ draft: RecognitionConfirmationDraft,
+        bookID: UUID,
         wallet: CurrencyWallet,
         category: LedgerCategory?,
         importRecord: RecognitionImportRecord? = nil,
@@ -49,8 +50,6 @@ final class RecognitionEntryService {
             let expected: CategoryKind = draft.type == .expense ? .expense : .income
             guard category.type == expected else { throw RecognitionEntryError.categoryTypeMismatch }
         }
-        guard let bookID = wallet.account?.book?.id else { throw RecognitionEntryError.missingBook }
-
         let transaction = LedgerTransaction(
             type: draft.type == .expense ? .expense : .income,
             amount: draft.paidAmount,
@@ -76,6 +75,10 @@ final class RecognitionEntryService {
         record.statusRawValue = importStatus.rawValue
         record.selectedWalletID = wallet.id
         record.selectedCategoryID = category?.id
-        return try LedgerService(context: context).persistRecognized(transaction, importRecord: record)
+        return try LedgerService(context: context).persistRecognized(
+            transaction,
+            importRecord: record,
+            bookID: bookID
+        )
     }
 }

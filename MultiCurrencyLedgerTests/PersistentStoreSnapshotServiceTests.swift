@@ -43,13 +43,16 @@ final class PersistentStoreSnapshotServiceTests: XCTestCase {
         XCTAssertEqual(LedgerSchemaLegacy.versionIdentifier, .init(1, 0, 0))
         XCTAssertEqual(LedgerSchemaV1.versionIdentifier, .init(2, 0, 0))
         XCTAssertEqual(LedgerSchemaV2.versionIdentifier, .init(3, 0, 0))
+        XCTAssertEqual(LedgerSchemaV3.versionIdentifier, .init(4, 0, 0))
         XCTAssertEqual(LedgerSchemaLegacy.models.count, 8)
         XCTAssertEqual(LedgerSchemaV1.models.count, 23)
         XCTAssertEqual(LedgerSchemaV2.models.count, 25)
-        XCTAssertTrue(LedgerSchemaV2.models.contains { $0 == LedgerTransaction.self })
-        XCTAssertTrue(LedgerSchemaV2.models.contains { $0 == CloudSyncConflictCopy.self })
-        XCTAssertTrue(LedgerSchemaV2.models.contains { $0 == AASplit.self })
-        XCTAssertTrue(LedgerSchemaV2.models.contains { $0 == AASettlement.self })
+        XCTAssertEqual(LedgerSchemaV3.models.count, 26)
+        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == LedgerTransaction.self })
+        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == CloudSyncConflictCopy.self })
+        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == AASplit.self })
+        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == AASettlement.self })
+        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == RepaymentReminder.self })
     }
 
     @MainActor
@@ -58,7 +61,7 @@ final class PersistentStoreSnapshotServiceTests: XCTestCase {
             .appendingPathComponent("legacy-migration-\(UUID()).store")
         try createLegacyStore(at: storeURL)
 
-        let currentSchema = Schema(versionedSchema: LedgerSchemaV2.self)
+        let currentSchema = Schema(versionedSchema: LedgerSchemaV3.self)
         let configuration = ModelConfiguration(
             "MigrationTest",
             schema: currentSchema,
@@ -72,6 +75,8 @@ final class PersistentStoreSnapshotServiceTests: XCTestCase {
             configurations: configuration
         )
         let context = migrated.mainContext
+        let defaults = UserDefaults(suiteName: "LegacyMigrationDataScope-\(UUID())")!
+        _ = try DataScopeMigrationService(context: context, defaults: defaults).migrateIfNeeded()
         let account = try XCTUnwrap(context.fetch(FetchDescriptor<Account>()).first)
         let transaction = try XCTUnwrap(context.fetch(FetchDescriptor<LedgerTransaction>()).first)
         let budget = try XCTUnwrap(context.fetch(FetchDescriptor<MonthlyBudget>()).first)
@@ -80,6 +85,7 @@ final class PersistentStoreSnapshotServiceTests: XCTestCase {
         XCTAssertFalse(account.isArchived)
         XCTAssertEqual(transaction.amount, 20)
         XCTAssertTrue(transaction.tags.isEmpty)
+        XCTAssertNotNil(transaction.bookID)
         XCTAssertEqual(budget.period, .monthly)
     }
 

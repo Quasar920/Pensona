@@ -3,6 +3,9 @@ import Foundation
 /// The single editable representation used by every transaction entry point.
 /// It contains user intent only and never mutates wallet balances by itself.
 struct TransactionDraft {
+    /// Carries caller scope between non-persistent entry screens. LedgerService
+    /// still requires the same scope explicitly and never infers it from here.
+    var bookID: UUID?
     var type: TransactionKind
     var amount: Decimal
     var sourceWallet: CurrencyWallet?
@@ -20,9 +23,11 @@ struct TransactionDraft {
     var originalAmount: Decimal?
     var discountAmount: Decimal?
     var recognitionImportID: UUID?
+    var reimbursementStatus: ReimbursementStatus
 
     init(
         type: TransactionKind,
+        bookID: UUID? = nil,
         amount: Decimal,
         sourceWallet: CurrencyWallet?,
         destinationWallet: CurrencyWallet? = nil,
@@ -38,8 +43,10 @@ struct TransactionDraft {
         adjustmentReason: String? = nil,
         originalAmount: Decimal? = nil,
         discountAmount: Decimal? = nil,
-        recognitionImportID: UUID? = nil
+        recognitionImportID: UUID? = nil,
+        reimbursementStatus: ReimbursementStatus = .none
     ) {
+        self.bookID = bookID
         self.type = type
         self.amount = amount
         self.sourceWallet = sourceWallet
@@ -57,9 +64,11 @@ struct TransactionDraft {
         self.originalAmount = originalAmount
         self.discountAmount = discountAmount
         self.recognitionImportID = recognitionImportID
+        self.reimbursementStatus = reimbursementStatus
     }
 
     init(transaction: LedgerTransaction) {
+        bookID = transaction.bookID
         type = transaction.type
         amount = transaction.sourceAmount ?? transaction.amount ?? 0
         sourceWallet = transaction.sourceWallet
@@ -81,15 +90,18 @@ struct TransactionDraft {
         originalAmount = transaction.originalAmount
         discountAmount = transaction.discountAmount
         recognitionImportID = transaction.recognitionImportID
+        reimbursementStatus = transaction.reimbursementStatus
     }
 
     func makeTransaction(
+        bookID: UUID,
         id: UUID = UUID(),
         createdAt: Date = .now
     ) -> LedgerTransaction {
         let transaction = LedgerTransaction(
             id: id,
             type: type,
+            bookID: bookID,
             createdAt: createdAt
         )
         apply(to: transaction)
@@ -147,6 +159,7 @@ struct TransactionDraft {
         transaction.originalAmount = originalAmount
         transaction.discountAmount = discountAmount
         transaction.recognitionImportID = recognitionImportID
+        transaction.reimbursementStatus = reimbursementStatus
         transaction.updatedAt = .now
     }
 }

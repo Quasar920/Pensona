@@ -221,15 +221,34 @@ enum LedgerSchemaV2: VersionedSchema {
     }
 }
 
+enum LedgerSchemaV3: VersionedSchema {
+    static let versionIdentifier = Schema.Version(4, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
+            LedgerTransaction.self, TransactionTag.self, TransactionAttachment.self,
+            TransactionTemplate.self, TransactionPaymentPart.self, TransactionRelation.self,
+            AASplit.self, AASettlement.self,
+            RecurringSchedule.self, RecurringOccurrence.self, InstallmentPlan.self,
+            InstallmentOccurrence.self, RecognitionImportRecord.self, ExchangeRate.self,
+            MonthlyBudget.self, SavingsGoal.self, SavingsAllocation.self, RepaymentReminder.self,
+            TransactionImportBatch.self, TransactionImportFingerprint.self,
+            CloudSyncTombstone.self, CloudSyncConflictCopy.self
+        ]
+    }
+}
+
 enum LedgerMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [LedgerSchemaLegacy.self, LedgerSchemaV1.self, LedgerSchemaV2.self]
+        [LedgerSchemaLegacy.self, LedgerSchemaV1.self, LedgerSchemaV2.self, LedgerSchemaV3.self]
     }
 
     static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: LedgerSchemaLegacy.self, toVersion: LedgerSchemaV1.self),
-            .lightweight(fromVersion: LedgerSchemaV1.self, toVersion: LedgerSchemaV2.self)
+            .lightweight(fromVersion: LedgerSchemaV1.self, toVersion: LedgerSchemaV2.self),
+            .lightweight(fromVersion: LedgerSchemaV2.self, toVersion: LedgerSchemaV3.self)
         ]
     }
 }

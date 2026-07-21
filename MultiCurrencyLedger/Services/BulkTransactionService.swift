@@ -7,8 +7,8 @@ enum BulkTransactionError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptySelection: "请至少选择一笔交易"
-        case .mixedCategoryTypes: "所选分类与部分交易类型不匹配"
+        case .emptySelection: AppLocalization.string( "请至少选择一笔交易")
+        case .mixedCategoryTypes: AppLocalization.string( "所选分类与部分交易类型不匹配")
         }
     }
 }

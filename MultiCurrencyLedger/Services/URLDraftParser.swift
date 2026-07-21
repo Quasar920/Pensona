@@ -14,16 +14,16 @@ enum URLDraftError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedRoute: "这不是多币种账本支持的记账链接"
-        case let .unknownParameter(name): "链接包含不支持的参数：\(name)"
-        case let .duplicateParameter(name): "链接参数重复：\(name)"
-        case let .missingParameter(name): "链接缺少必填参数：\(name)"
-        case .invalidType: "链接中的交易类型无效"
-        case .invalidAmount: "链接中的金额无效"
-        case .invalidDate: "链接中的日期无效"
-        case let .invalidReference(name): "找不到链接指定的\(name)"
-        case let .ambiguousReference(name): "链接指定的\(name)不唯一，请改用 UUID"
-        case .crossBookReference: "链接不能引用其他账本的数据"
+        case .unsupportedRoute: AppLocalization.string( "这不是多币种账本支持的记账链接")
+        case let .unknownParameter(name): AppLocalization.string( "链接包含不支持的参数：\(name)")
+        case let .duplicateParameter(name): AppLocalization.string( "链接参数重复：\(name)")
+        case let .missingParameter(name): AppLocalization.string( "链接缺少必填参数：\(name)")
+        case .invalidType: AppLocalization.string( "链接中的交易类型无效")
+        case .invalidAmount: AppLocalization.string( "链接中的金额无效")
+        case .invalidDate: AppLocalization.string( "链接中的日期无效")
+        case let .invalidReference(name): AppLocalization.string( "找不到链接指定的\(name)")
+        case let .ambiguousReference(name): AppLocalization.string( "链接指定的\(name)不唯一，请改用 UUID")
+        case .crossBookReference: AppLocalization.string( "链接不能引用其他账本的数据")
         }
     }
 }
@@ -166,7 +166,7 @@ struct URLDraftResolver {
             preferredBookID: preferredBookID
         )
         let scopedWallets = wallets.filter {
-            $0.isEnabled && $0.account?.isArchived == false && $0.account?.book?.id == book.id
+            $0.isEnabled && $0.account?.isArchived == false
         }
         let source = try resolveWallet(
             selector: request.sourceWalletSelector,
@@ -207,6 +207,7 @@ struct URLDraftResolver {
         }
         let draft = TransactionDraft(
             type: request.type,
+            bookID: book.id,
             amount: request.amount,
             sourceWallet: source,
             destinationWallet: destination,
@@ -263,7 +264,6 @@ struct URLDraftResolver {
         try unique(categories.filter {
             !$0.isArchived
                 && $0.type == type
-                && ($0.bookID == nil || $0.bookID == bookID)
                 && matches(selector, id: $0.id, name: $0.name)
         }, label: "分类")
     }

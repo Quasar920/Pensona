@@ -29,7 +29,11 @@ final class RecognitionContextBuilderTests: XCTestCase {
             LedgerCategory(name: "交通", type: .expense, symbolName: "bus", sortOrder: 0)
         ]
 
-        let context = RecognitionContextBuilder().makeContext(book: book, categories: categories)
+        let context = RecognitionContextBuilder().makeContext(
+            book: book,
+            accounts: [higherIDAccount, lowerIDAccount],
+            categories: categories
+        )
 
         XCTAssertEqual(
             context,

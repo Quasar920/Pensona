@@ -20,13 +20,12 @@ final class AccountService {
         name: String,
         type: AccountType,
         note: String?,
-        cardLastFour: String? = nil,
-        book: LedgerBook? = nil
+        cardLastFour: String? = nil
     ) throws -> Account {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ValidationError("请输入账户名称") }
         let cleanLastFour = try AccountCardIdentityStore.validated(cardLastFour)
-        let account = Account(name: trimmed, type: type, note: note, book: book)
+        let account = Account(name: trimmed, type: type, note: note)
         context.insert(account)
         try context.save()
         try cardIdentityStore.setLastFour(cleanLastFour, for: account.id)
@@ -36,7 +35,8 @@ final class AccountService {
     func addWallet(
         currency: SupportedCurrency,
         initialBalance: Decimal,
-        to account: Account
+        to account: Account,
+        bookID: UUID
     ) throws -> CurrencyWallet {
         guard !account.wallets.contains(where: { $0.currencyCode == currency.rawValue }) else {
             throw LedgerError.duplicateCurrency
@@ -48,6 +48,7 @@ final class AccountService {
         if initialBalance > 0 {
             let isLiability = account.type.isLiability
             _ = try ledger.createAdjustment(
+                bookID: bookID,
                 amount: initialBalance,
                 wallet: wallet,
                 direction: isLiability ? .decrease : .increase,
@@ -131,6 +132,6 @@ final class AccountService {
 
 struct ValidationError: LocalizedError {
     let message: String
-    init(_ message: String) { self.message = message }
+    init(_ message: String.LocalizationValue) { self.message = AppLocalization.string(message) }
     var errorDescription: String? { message }
 }

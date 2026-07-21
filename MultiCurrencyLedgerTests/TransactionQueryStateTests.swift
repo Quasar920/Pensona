@@ -22,6 +22,7 @@ final class TransactionQueryStateTests: XCTestCase {
 
         let matching = LedgerTransaction(
             type: .expense,
+            bookID: book.id,
             amount: 88,
             currencyCode: "CNY",
             date: date("2026-07-12T08:00:00Z"),
@@ -35,6 +36,7 @@ final class TransactionQueryStateTests: XCTestCase {
         )
         let wrongBook = LedgerTransaction(
             type: .expense,
+            bookID: otherBook.id,
             amount: 88,
             date: matching.date,
             note: "海底捞午餐",
@@ -46,6 +48,7 @@ final class TransactionQueryStateTests: XCTestCase {
         )
         let wrongAmount = LedgerTransaction(
             type: .expense,
+            bookID: book.id,
             amount: 188,
             date: matching.date,
             note: "海底捞午餐",
@@ -57,6 +60,7 @@ final class TransactionQueryStateTests: XCTestCase {
         )
         let wrongCategory = LedgerTransaction(
             type: .expense,
+            bookID: book.id,
             amount: 88,
             date: matching.date,
             note: "海底捞午餐",
@@ -94,11 +98,13 @@ final class TransactionQueryStateTests: XCTestCase {
         let account = Account(name: "现金", type: .cash, book: book)
         let beforeEnd = LedgerTransaction(
             type: .expense,
+            bookID: book.id,
             date: date("2026-07-12T23:59:59Z"),
             sourceAccount: account
         )
         let followingMidnight = LedgerTransaction(
             type: .expense,
+            bookID: book.id,
             date: date("2026-07-13T00:00:00Z"),
             sourceAccount: account
         )
@@ -125,6 +131,7 @@ final class TransactionQueryStateTests: XCTestCase {
         let first = LedgerTransaction(
             id: lowerID,
             type: .expense,
+            bookID: book.id,
             amount: 10,
             date: date("2026-07-12T08:00:00Z"),
             sourceAccount: account,
@@ -133,6 +140,7 @@ final class TransactionQueryStateTests: XCTestCase {
         let second = LedgerTransaction(
             id: higherID,
             type: .expense,
+            bookID: book.id,
             amount: 10,
             date: first.date,
             sourceAccount: account,

@@ -16,7 +16,7 @@ struct MigrationRecoveryView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Button("取消预约", role: .destructive) {
                             PersistentStoreSnapshotService.cancelPendingRestore()
-                            message = "已取消预约恢复"
+                            message = AppLocalization.string( "已取消预约恢复")
                         }
                     }
                 }
@@ -33,7 +33,7 @@ struct MigrationRecoveryView: View {
                         HStack {
                             Button("下次启动恢复") {
                                 PersistentStoreSnapshotService.requestRestore(snapshot)
-                                message = "已预约恢复。请完全关闭并重新打开 App。"
+                                message = AppLocalization.string( "已预约恢复。请完全关闭并重新打开 App。")
                             }
                             ShareLink(item: snapshot.directoryURL) {
                                 Label("导出", systemImage: "square.and.arrow.up")

@@ -15,16 +15,16 @@ enum InstallmentPlanError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyName: "请输入分期名称"
-        case .invalidPrincipal: "分期本金必须大于 0"
-        case .invalidFee: "分期手续费不能小于 0"
-        case .invalidCount: "分期期数必须在 2 到 120 期之间"
-        case .unrepresentableAmount: "金额的小数位超过当前币种支持范围"
-        case .missingWallet: "分期引用的钱包已失效或被停用"
-        case .invalidDestination: "账单分期必须选择同账本、同币种的信用账户"
-        case .crossBookReference: "分期不能跨账本"
-        case .invalidCategory: "消费分期只能使用当前账本的支出分类"
-        case .generationLimitReached: "一次最多补生成 120 期"
+        case .emptyName: AppLocalization.string( "请输入分期名称")
+        case .invalidPrincipal: AppLocalization.string( "分期本金必须大于 0")
+        case .invalidFee: AppLocalization.string( "分期手续费不能小于 0")
+        case .invalidCount: AppLocalization.string( "分期期数必须在 2 到 120 期之间")
+        case .unrepresentableAmount: AppLocalization.string( "金额的小数位超过当前币种支持范围")
+        case .missingWallet: AppLocalization.string( "分期引用的钱包已失效或被停用")
+        case .invalidDestination: AppLocalization.string( "账单分期必须选择同账本、同币种的信用账户")
+        case .crossBookReference: AppLocalization.string( "分期不能跨账本")
+        case .invalidCategory: AppLocalization.string( "消费分期只能使用当前账本的支出分类")
+        case .generationLimitReached: AppLocalization.string( "一次最多补生成 120 期")
         }
     }
 }
@@ -62,6 +62,7 @@ final class InstallmentPlanService {
     @discardableResult
     func create(
         name: String,
+        bookID: UUID,
         kind: InstallmentKind,
         totalPrincipal: Decimal,
         totalFee: Decimal = 0,
@@ -80,8 +81,7 @@ final class InstallmentPlanService {
         guard totalFee >= 0 else { throw InstallmentPlanError.invalidFee }
         guard (2...120).contains(installmentCount) else { throw InstallmentPlanError.invalidCount }
         guard sourceWallet.isEnabled,
-              sourceWallet.account?.isArchived == false,
-              let bookID = sourceWallet.account?.book?.id else {
+              sourceWallet.account?.isArchived == false else {
             throw InstallmentPlanError.missingWallet
         }
         let fractionDigits = sourceWallet.currency?.fractionDigits ?? 2
@@ -96,7 +96,7 @@ final class InstallmentPlanService {
         case .consumption:
             guard destinationWallet == nil else { throw InstallmentPlanError.invalidDestination }
             guard category.map({
-                $0.type == .expense && !$0.isArchived && ($0.bookID == nil || $0.bookID == bookID)
+                $0.type == .expense && !$0.isArchived
             }) ?? true else {
                 throw InstallmentPlanError.invalidCategory
             }
@@ -104,8 +104,7 @@ final class InstallmentPlanService {
             guard let destinationWallet,
                   destinationWallet.isEnabled,
                   destinationWallet.account?.isArchived == false,
-                  destinationWallet.id != sourceWallet.id,
-                  destinationWallet.account?.book?.id == bookID else {
+                  destinationWallet.id != sourceWallet.id else {
                 throw InstallmentPlanError.crossBookReference
             }
             guard destinationWallet.currencyCode == sourceWallet.currencyCode,
@@ -146,12 +145,12 @@ final class InstallmentPlanService {
         let categories = try context.fetch(FetchDescriptor<LedgerCategory>())
         guard let source = wallets.first(where: {
             $0.id == plan.sourceWalletID && $0.isEnabled
-                && $0.account?.isArchived == false && $0.account?.book?.id == plan.bookID
+                && $0.account?.isArchived == false
         }) else { throw InstallmentPlanError.missingWallet }
         let destination = plan.destinationWalletID.flatMap { id in
             wallets.first {
                 $0.id == id && $0.isEnabled
-                    && $0.account?.isArchived == false && $0.account?.book?.id == plan.bookID
+                    && $0.account?.isArchived == false
             }
         }
         let category = plan.categoryID.flatMap { id in categories.first { $0.id == id && !$0.isArchived } }
@@ -204,7 +203,7 @@ final class InstallmentPlanService {
                 continue
             }
 
-            let detail = "第 \(index + 1)/\(plan.installmentCount) 期"
+            let detail = AppLocalization.string("第 \(index + 1)/\(plan.installmentCount) 期")
             let draft: TransactionDraft
             switch plan.kind {
             case .consumption:
@@ -231,7 +230,7 @@ final class InstallmentPlanService {
                 )
             }
             updateProgress(plan, nextIndex: nextIndex, nextDate: nextDate)
-            let transaction = try LedgerService(context: context).create(draft) { transaction in
+            let transaction = try LedgerService(context: context).create(draft, bookID: plan.bookID) { transaction in
                 context.insert(InstallmentOccurrence(
                     generationKey: key,
                     planID: plan.id,

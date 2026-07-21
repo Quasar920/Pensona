@@ -6,7 +6,7 @@ struct CloudSyncSettingsView: View {
     @AppStorage(CloudSyncService.enabledKey) private var isEnabled = false
     @AppStorage("baseCurrencyCode") private var baseCurrencyCode = SupportedCurrency.CNY.rawValue
     @Query(sort: \CloudSyncConflictCopy.createdAt, order: .reverse) private var conflicts: [CloudSyncConflictCopy]
-    @State private var availability = "尚未检查"
+    @State private var availability = AppLocalization.string("尚未检查")
     @State private var isWorking = false
     @State private var statusMessage = ""
     @State private var errorMessage: String?
@@ -25,7 +25,10 @@ struct CloudSyncSettingsView: View {
                         Text(lastSyncAt, format: .dateTime.year().month().day().hour().minute())
                     }
                 }
-                Button(isWorking ? "同步中…" : "立即同步", action: startSync)
+                Button(
+                    isWorking ? AppLocalization.string("同步中…") : AppLocalization.string("立即同步"),
+                    action: startSync
+                )
                     .disabled(!isEnabled || isWorking)
                 if !statusMessage.isEmpty {
                     Text(statusMessage).font(.footnote).foregroundStyle(.secondary)
@@ -82,12 +85,12 @@ struct CloudSyncSettingsView: View {
         .alert("同步失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 
     private func checkAvailability() async {
         switch await CloudSyncService().availability() {
-        case .available: availability = "可用"
+        case .available: availability = AppLocalization.string("可用")
         case .unavailable(let reason): availability = reason
         }
     }
@@ -120,7 +123,7 @@ struct CloudSyncSettingsView: View {
                     context: context,
                     baseCurrencyCode: baseCurrencyCode
                 )
-                statusMessage = "已保留本机版本并更新云端"
+                statusMessage = AppLocalization.string( "已保留本机版本并更新云端")
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -138,7 +141,7 @@ struct CloudSyncSettingsView: View {
                 currentBaseCurrencyCode: baseCurrencyCode
             )
             baseCurrencyCode = settings.baseCurrencyCode
-            statusMessage = "已使用冲突副本中的云端版本"
+            statusMessage = AppLocalization.string( "已使用冲突副本中的云端版本")
         } catch {
             context.rollback()
             errorMessage = error.localizedDescription
@@ -152,7 +155,7 @@ struct CloudSyncSettingsView: View {
         Task {
             do {
                 try await CloudSyncService().deleteCloudData()
-                statusMessage = "云端同步快照已删除，本机数据未改变"
+                statusMessage = AppLocalization.string( "云端同步快照已删除，本机数据未改变")
             } catch {
                 errorMessage = error.localizedDescription
             }

@@ -19,8 +19,8 @@ struct InstallmentPlanManagementView: View {
     }
 
     private var wallets: [CurrencyWallet] {
-        guard let bookID = selectedBook?.id else { return [] }
-        return accounts.filter { !$0.isArchived && $0.book?.id == bookID }.flatMap(\.enabledWallets)
+        guard selectedBook != nil else { return [] }
+        return accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
     }
 
     private var scopedPlans: [InstallmentPlan] {
@@ -58,14 +58,14 @@ struct InstallmentPlanManagementView: View {
                     book: book,
                     wallets: wallets,
                     categories: categories.filter {
-                        !$0.isArchived && $0.type == .expense && ($0.bookID == nil || $0.bookID == book.id)
+                        !$0.isArchived && $0.type == .expense
                     }
                 )
             }
         }
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
     }
 
     @ViewBuilder
@@ -89,7 +89,9 @@ struct InstallmentPlanManagementView: View {
                 if !plan.isCompleted {
                     Button("补生成到今天") { generate(plan) }
                         .buttonStyle(.bordered).disabled(plan.isPaused)
-                    Button(plan.isPaused ? "恢复" : "暂停") { togglePause(plan) }
+                    Button(plan.isPaused ? AppLocalization.string("恢复") : AppLocalization.string("暂停")) {
+                        togglePause(plan)
+                    }
                         .buttonStyle(.bordered)
                     Menu {
                         Button("提前结束", role: .destructive) { finishEarly(plan) }
@@ -109,7 +111,9 @@ struct InstallmentPlanManagementView: View {
     private func generate(_ plan: InstallmentPlan) {
         do {
             let count = try InstallmentPlanService(context: context).generateDue(for: plan).count
-            resultMessage = count == 0 ? "当前没有到期分期" : "已生成 \(count) 期交易"
+            resultMessage = count == 0
+                ? AppLocalization.string("当前没有到期分期")
+                : AppLocalization.string("已生成 \(count) 期交易")
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -173,7 +177,10 @@ private struct InstallmentPlanEditorView: View {
                     DatePicker("首期日期", selection: $startDate)
                 }
                 Section("账户") {
-                    Picker(kind == .bill ? "还款钱包" : "付款钱包", selection: $sourceWalletID) {
+                    Picker(
+                        kind == .bill ? AppLocalization.string("还款钱包") : AppLocalization.string("付款钱包"),
+                        selection: $sourceWalletID
+                    ) {
                         Text("请选择").tag(nil as UUID?)
                         ForEach(wallets) { Text(walletLabel($0)).tag($0.id as UUID?) }
                     }
@@ -211,7 +218,7 @@ private struct InstallmentPlanEditorView: View {
             .onChange(of: sourceWalletID) { _, _ in ensureDestination() }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -231,6 +238,7 @@ private struct InstallmentPlanEditorView: View {
             }
             try InstallmentPlanService(context: context).create(
                 name: name,
+                bookID: book.id,
                 kind: kind,
                 totalPrincipal: principal,
                 totalFee: fee,
@@ -247,6 +255,6 @@ private struct InstallmentPlanEditorView: View {
     }
 
     private func walletLabel(_ wallet: CurrencyWallet) -> String {
-        "\(wallet.account?.name ?? "未命名") · \(wallet.currencyCode)"
+        "\(wallet.account?.name ?? AppLocalization.string("未命名")) · \(wallet.currencyCode)"
     }
 }

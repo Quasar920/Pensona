@@ -6,7 +6,7 @@ struct BackupSettings: Codable, Equatable {
 }
 
 struct LedgerBackupDocument: Codable {
-    static let currentVersion = 6
+    static let currentVersion = 7
 
     var version: Int
     var exportedAt: Date
@@ -33,6 +33,8 @@ struct LedgerBackupDocument: Codable {
     var importFingerprints: [ImportFingerprintBackup]
     var aaSplits: [AASplitBackup]
     var aaSettlements: [AASettlementBackup]
+    var repaymentReminders: [RepaymentReminderBackup]
+    var categoryIconFiles: [CategoryIconFileBackup]
 
     init(
         version: Int = currentVersion,
@@ -47,7 +49,9 @@ struct LedgerBackupDocument: Codable {
         budgets: [BudgetBackup], savingsGoals: [SavingsGoalBackup],
         savingsAllocations: [SavingsAllocationBackup], importBatches: [ImportBatchBackup],
         importFingerprints: [ImportFingerprintBackup], aaSplits: [AASplitBackup] = [],
-        aaSettlements: [AASettlementBackup] = []
+        aaSettlements: [AASettlementBackup] = [],
+        repaymentReminders: [RepaymentReminderBackup] = [],
+        categoryIconFiles: [CategoryIconFileBackup] = []
     ) {
         self.version = version; self.exportedAt = exportedAt; self.settings = settings
         self.books = books; self.accounts = accounts; self.wallets = wallets
@@ -59,6 +63,7 @@ struct LedgerBackupDocument: Codable {
         self.budgets = budgets; self.savingsGoals = savingsGoals; self.savingsAllocations = savingsAllocations
         self.importBatches = importBatches; self.importFingerprints = importFingerprints
         self.aaSplits = aaSplits; self.aaSettlements = aaSettlements
+        self.repaymentReminders = repaymentReminders; self.categoryIconFiles = categoryIconFiles
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -66,7 +71,7 @@ struct LedgerBackupDocument: Codable {
         case relations, attachments, templates, recurringSchedules, recurringOccurrences
         case installmentPlans, installmentOccurrences, recognitionRecords, exchangeRates
         case monthlyBudgets, budgets, savingsGoals, savingsAllocations, importBatches, importFingerprints
-        case aaSplits, aaSettlements
+        case aaSplits, aaSettlements, repaymentReminders, categoryIconFiles
     }
 
     init(from decoder: Decoder) throws {
@@ -98,7 +103,9 @@ struct LedgerBackupDocument: Codable {
         importFingerprints = try c.decodeIfPresent([ImportFingerprintBackup].self, forKey: .importFingerprints) ?? []
         aaSplits = try c.decodeIfPresent([AASplitBackup].self, forKey: .aaSplits) ?? []
         aaSettlements = try c.decodeIfPresent([AASettlementBackup].self, forKey: .aaSettlements) ?? []
-        if books.isEmpty, !accounts.isEmpty {
+        repaymentReminders = try c.decodeIfPresent([RepaymentReminderBackup].self, forKey: .repaymentReminders) ?? []
+        categoryIconFiles = try c.decodeIfPresent([CategoryIconFileBackup].self, forKey: .categoryIconFiles) ?? []
+        if books.isEmpty, !accounts.isEmpty || !transactions.isEmpty {
             let legacyBook = BookBackup(id: UUID(), name: "恢复的账本", sortOrder: 0, createdAt: exportedAt, updatedAt: exportedAt)
             books = [legacyBook]
             accounts = accounts.map {
@@ -135,6 +142,8 @@ struct LedgerBackupDocument: Codable {
         try c.encode(importFingerprints, forKey: .importFingerprints)
         try c.encode(aaSplits, forKey: .aaSplits)
         try c.encode(aaSettlements, forKey: .aaSettlements)
+        try c.encode(repaymentReminders, forKey: .repaymentReminders)
+        try c.encode(categoryIconFiles, forKey: .categoryIconFiles)
     }
 }
 
@@ -152,6 +161,8 @@ struct CategoryBackup: Codable {
     var id: UUID; var name: String; var type: String; var symbolName: String; var sortOrder: Int
     var isSystem: Bool; var bookID: UUID?; var parentID: UUID?; var isArchived: Bool?
     var createdAt: Date?; var updatedAt: Date?
+    var systemLocalizationKey: String?; var iconSource: String?; var placeholderResourceName: String?
+    var userIconRelativePath: String?
 }
 struct TagBackup: Codable {
     var id: UUID; var name: String; var bookID: UUID; var colorHex: String; var isArchived: Bool
@@ -167,6 +178,7 @@ struct TransactionBackup: Codable {
     var adjustmentDirection: String?; var adjustmentReason: String?; var categoryID: UUID?
     var tagIDs: [UUID]?; var paymentParts: [PaymentPartBackup]?; var merchantOrCounterparty: String?
     var originalAmount: Decimal?; var discountAmount: Decimal?; var recognitionImportID: UUID?
+    var bookID: UUID?; var reimbursementStatus: String?
 }
 struct RelationBackup: Codable {
     var id: UUID; var kind: String; var originalTransactionID: UUID; var relatedTransactionID: UUID
@@ -248,6 +260,13 @@ struct ImportBatchBackup: Codable {
 struct ImportFingerprintBackup: Codable {
     var id: UUID; var value: String; var batchID: UUID; var transactionID: UUID; var createdAt: Date
 }
+struct RepaymentReminderBackup: Codable {
+    var id: UUID; var accountID: UUID; var currencyCode: String; var outstandingAmount: Decimal
+    var dueDate: Date; var isCompleted: Bool; var completedAt: Date?; var createdAt: Date; var updatedAt: Date
+}
+struct CategoryIconFileBackup: Codable {
+    var categoryID: UUID; var relativePath: String; var data: Data?
+}
 
 struct BackupPreview {
     let version: Int
@@ -275,11 +294,11 @@ enum BackupServiceError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedVersion(let version): "备份版本 \(version) 高于当前 App 支持的版本"
-        case .invalidCurrency(let code): "备份包含不受支持的币种：\(code)"
-        case .duplicateID(let type): "备份中的 \(type) 存在重复标识"
-        case .brokenReference(let detail): "备份引用不完整：\(detail)"
-        case .unsafeAttachmentPath: "备份包含不安全的附件路径"
+        case .unsupportedVersion(let version): AppLocalization.string( "备份版本 \(version) 高于当前 App 支持的版本")
+        case .invalidCurrency(let code): AppLocalization.string( "备份包含不受支持的币种：\(code)")
+        case .duplicateID(let type): AppLocalization.string( "备份中的 \(type) 存在重复标识")
+        case .brokenReference(let detail): AppLocalization.string( "备份引用不完整：\(detail)")
+        case .unsafeAttachmentPath: AppLocalization.string( "备份包含不安全的附件路径")
         }
     }
 }
@@ -291,6 +310,7 @@ enum BackupService {
         baseCurrencyCode: String,
         attachmentStore: AttachmentStore = AttachmentStore()
     ) throws -> LedgerBackupDocument {
+        let categories = try context.fetch(FetchDescriptor<LedgerCategory>())
         let attachments = try context.fetch(FetchDescriptor<TransactionAttachment>()).map { value in
             let data = try? Data(contentsOf: attachmentStore.url(for: value.relativePath), options: .mappedIfSafe)
             return AttachmentBackup(
@@ -298,6 +318,12 @@ enum BackupService {
                 relativePath: value.relativePath, originalFilename: value.originalFilename,
                 mimeType: value.mimeType, byteCount: value.byteCount, createdAt: value.createdAt, data: data
             )
+        }
+        let categoryIconFiles = categories.compactMap { category -> CategoryIconFileBackup? in
+            guard let relativePath = category.userIconRelativePath else { return nil }
+            let data = (try? attachmentStore.url(for: relativePath))
+                .flatMap { try? Data(contentsOf: $0, options: .mappedIfSafe) }
+            return CategoryIconFileBackup(categoryID: category.id, relativePath: relativePath, data: data)
         }
         return LedgerBackupDocument(
             settings: BackupSettings(baseCurrencyCode: baseCurrencyCode),
@@ -313,10 +339,13 @@ enum BackupService {
                 WalletBackup(id: $0.id, accountID: $0.account?.id, currencyCode: $0.currencyCode, balance: $0.balance,
                              isEnabled: $0.isEnabled, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
             },
-            categories: try context.fetch(FetchDescriptor<LedgerCategory>()).map {
+            categories: categories.map {
                 CategoryBackup(id: $0.id, name: $0.name, type: $0.typeRawValue, symbolName: $0.symbolName,
                                sortOrder: $0.sortOrder, isSystem: $0.isSystem, bookID: $0.bookID, parentID: $0.parentID,
-                               isArchived: $0.isArchived, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+                               isArchived: $0.isArchived, createdAt: $0.createdAt, updatedAt: $0.updatedAt,
+                               systemLocalizationKey: $0.systemLocalizationKey, iconSource: $0.iconSourceRawValue,
+                               placeholderResourceName: $0.placeholderResourceName,
+                               userIconRelativePath: $0.userIconRelativePath)
             },
             tags: [],
             transactions: try context.fetch(FetchDescriptor<LedgerTransaction>()).map(transactionBackup),
@@ -423,7 +452,16 @@ enum BackupService {
                     amount: $0.amount,
                     createdAt: $0.createdAt
                 )
-            }
+            },
+            repaymentReminders: try context.fetch(FetchDescriptor<RepaymentReminder>()).map {
+                RepaymentReminderBackup(
+                    id: $0.id, accountID: $0.accountID, currencyCode: $0.currencyCode,
+                    outstandingAmount: $0.outstandingAmount, dueDate: $0.dueDate,
+                    isCompleted: $0.isCompleted, completedAt: $0.completedAt,
+                    createdAt: $0.createdAt, updatedAt: $0.updatedAt
+                )
+            },
+            categoryIconFiles: categoryIconFiles
         )
     }
 
@@ -451,12 +489,13 @@ enum BackupService {
     }
 
     static func preview(data: Data) throws -> BackupPreview {
-        let document = try decode(data)
+        let document = migratedDocument(try decode(data))
         let warnings = try validate(document)
         return BackupPreview(
             version: document.version, exportedAt: document.exportedAt,
             bookCount: document.books.count, accountCount: document.accounts.count,
-            transactionCount: document.transactions.count, attachmentCount: document.attachments.count,
+            transactionCount: document.transactions.count,
+            attachmentCount: document.attachments.count + document.categoryIconFiles.count,
             baseCurrencyCode: document.settings.baseCurrencyCode, warnings: warnings
         )
     }
@@ -467,7 +506,7 @@ enum BackupService {
         currentBaseCurrencyCode: String,
         attachmentStore: AttachmentStore = AttachmentStore()
     ) throws -> BackupRestoreResult {
-        let document = try decode(data)
+        let document = migratedDocument(try decode(data))
         let warnings = try validate(document)
         let current = try makeDocument(context: context, baseCurrencyCode: currentBaseCurrencyCode, attachmentStore: attachmentStore)
         let recoveryURL = try writeRecovery(try encode(current))
@@ -477,6 +516,7 @@ enum BackupService {
         try fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
         do {
             try stageAttachments(document.attachments, at: stagingRoot)
+            try stageCategoryIconFiles(document.categoryIconFiles, at: stagingRoot)
             try fileManager.createDirectory(at: attachmentStore.rootURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             if fileManager.fileExists(atPath: attachmentStore.rootURL.path) {
                 try fileManager.moveItem(at: attachmentStore.rootURL, to: previousRoot)
@@ -517,7 +557,34 @@ enum BackupService {
                                   sortOrder: $0.sortOrder, createdAt: $0.createdAt)
             }, merchantOrCounterparty: value.merchantOrCounterparty, originalAmount: value.originalAmount,
             discountAmount: value.discountAmount, recognitionImportID: value.recognitionImportID
+            , bookID: value.bookID, reimbursementStatus: value.reimbursementStatusRawValue
         )
+    }
+
+    private static func migratedDocument(_ input: LedgerBackupDocument) -> LedgerBackupDocument {
+        var document = input
+        guard let defaultBookID = document.books.first?.id else { return document }
+        let accountBookIDs = Dictionary(uniqueKeysWithValues: document.accounts.compactMap { account in
+            account.bookID.map { (account.id, $0) }
+        })
+        let recognitionBookIDs = Dictionary(uniqueKeysWithValues: document.recognitionRecords.map { ($0.id, $0.bookID) })
+        let batchBookIDs = Dictionary(uniqueKeysWithValues: document.importBatches.map { ($0.id, $0.bookID) })
+        let fingerprintBatchIDs = Dictionary(uniqueKeysWithValues: document.importFingerprints.map { ($0.transactionID, $0.batchID) })
+        document.transactions = document.transactions.map { transaction in
+            var value = transaction
+            if value.bookID == nil {
+                value.bookID = value.sourceAccountID.flatMap { accountBookIDs[$0] }
+                    ?? value.destinationAccountID.flatMap { accountBookIDs[$0] }
+                    ?? value.recognitionImportID.flatMap { recognitionBookIDs[$0] }
+                    ?? fingerprintBatchIDs[value.id].flatMap { batchBookIDs[$0] }
+                    ?? defaultBookID
+            }
+            if value.reimbursementStatus == nil {
+                value.reimbursementStatus = ReimbursementStatus.none.rawValue
+            }
+            return value
+        }
+        return document
     }
 
     private static func validate(_ document: LedgerBackupDocument) throws -> [String] {
@@ -528,6 +595,7 @@ enum BackupService {
             + document.wallets.map(\.currencyCode)
             + document.exchangeRates.flatMap { [$0.currencyCode, $0.baseCurrencyCode] }
             + document.budgets.map(\.currencyCode) + document.savingsGoals.map(\.currencyCode)
+            + document.repaymentReminders.map(\.currencyCode)
         if let invalid = codes.first(where: { SupportedCurrency(rawValue: $0) == nil }) {
             throw BackupServiceError.invalidCurrency(invalid)
         }
@@ -561,6 +629,12 @@ enum BackupService {
             throw BackupServiceError.brokenReference("分类的账本不存在")
         }
         for transaction in document.transactions {
+            guard transaction.bookID.map(bookIDs.contains) == true else {
+                throw BackupServiceError.brokenReference("流水 \(transaction.id) 的账本不存在")
+            }
+            guard transaction.reimbursementStatus.flatMap(ReimbursementStatus.init(rawValue:)) != nil else {
+                throw BackupServiceError.brokenReference("流水 \(transaction.id) 的报销状态无效")
+            }
             let referencedWallets = [transaction.sourceWalletID, transaction.destinationWalletID, transaction.feeWalletID]
                 + (transaction.paymentParts ?? []).map(\.walletID)
             if referencedWallets.compactMap({ $0 }).contains(where: { !walletIDs.contains($0) }) {
@@ -610,10 +684,17 @@ enum BackupService {
             guard transactionIDs.contains(attachment.transactionID), bookIDs.contains(attachment.bookID) else {
                 throw BackupServiceError.brokenReference("附件指向不存在的账本或流水")
             }
-            let components = attachment.relativePath.split(separator: "/")
-            guard !attachment.relativePath.hasPrefix("/"), !components.isEmpty, !components.contains("..") else {
-                throw BackupServiceError.unsafeAttachmentPath
+            try validateSafeRelativePath(attachment.relativePath)
+        }
+        for icon in document.categoryIconFiles {
+            guard categoryIDs.contains(icon.categoryID),
+                  document.categories.first(where: { $0.id == icon.categoryID })?.userIconRelativePath == icon.relativePath else {
+                throw BackupServiceError.brokenReference("分类图标引用不存在")
             }
+            try validateSafeRelativePath(icon.relativePath)
+        }
+        for reminder in document.repaymentReminders where !accountIDs.contains(reminder.accountID) {
+            throw BackupServiceError.brokenReference("还款提醒的账户不存在")
         }
         for template in document.templates {
             let referencedWallets = [template.sourceWalletID] + [template.destinationWalletID, template.feeWalletID].compactMap { $0 }
@@ -663,6 +744,8 @@ enum BackupService {
         var warnings: [String] = []
         let missingAttachments = document.attachments.filter { $0.data == nil }.count
         if missingAttachments > 0 { warnings.append("\(missingAttachments) 个附件只有索引、没有文件内容") }
+        let missingIcons = document.categoryIconFiles.filter { $0.data == nil }.count
+        if missingIcons > 0 { warnings.append("\(missingIcons) 个分类图标只有索引、没有文件内容") }
         if document.version < LedgerBackupDocument.currentVersion {
             warnings.append("旧版备份将迁移到版本 \(LedgerBackupDocument.currentVersion)")
         }
@@ -701,6 +784,27 @@ enum BackupService {
             }
             try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: destination, options: .atomic)
+        }
+    }
+
+    private static func stageCategoryIconFiles(_ icons: [CategoryIconFileBackup], at root: URL) throws {
+        let manager = FileManager.default
+        for icon in icons {
+            guard let data = icon.data else { continue }
+            try validateSafeRelativePath(icon.relativePath)
+            let destination = root.appendingPathComponent(icon.relativePath).standardizedFileURL
+            guard destination.path.hasPrefix(root.standardizedFileURL.path + "/") else {
+                throw BackupServiceError.unsafeAttachmentPath
+            }
+            try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: destination, options: .atomic)
+        }
+    }
+
+    private static func validateSafeRelativePath(_ relativePath: String) throws {
+        let components = relativePath.split(separator: "/")
+        guard !relativePath.hasPrefix("/"), !components.isEmpty, !components.contains("..") else {
+            throw BackupServiceError.unsafeAttachmentPath
         }
     }
 }
@@ -746,6 +850,10 @@ private extension BackupService {
             let value = LedgerCategory(id: item.id, name: item.name, type: type, symbolName: item.symbolName,
                                        sortOrder: item.sortOrder, isSystem: item.isSystem, bookID: item.bookID,
                                        parentID: item.parentID, isArchived: item.isArchived ?? false,
+                                       systemLocalizationKey: item.systemLocalizationKey,
+                                       iconSource: item.iconSource.flatMap(CategoryIconSource.init(rawValue:)) ?? .builtIn,
+                                       placeholderResourceName: item.placeholderResourceName,
+                                       userIconRelativePath: item.userIconRelativePath,
                                        createdAt: item.createdAt ?? document.exportedAt,
                                        updatedAt: item.updatedAt ?? document.exportedAt)
             context.insert(value); categories[item.id] = value
@@ -761,7 +869,9 @@ private extension BackupService {
                                        wallet: $0.walletID.flatMap { wallets[$0] }, createdAt: $0.createdAt)
             }
             let value = LedgerTransaction(
-                id: item.id, type: type, amount: item.amount, currencyCode: item.currencyCode,
+                id: item.id, type: type, bookID: item.bookID,
+                reimbursementStatus: item.reimbursementStatus.flatMap(ReimbursementStatus.init(rawValue:)) ?? .none,
+                amount: item.amount, currencyCode: item.currencyCode,
                 date: item.date, note: item.note,
                 sourceAccount: item.sourceAccountID.flatMap { accounts[$0] }
                     ?? item.sourceWalletID.flatMap { wallets[$0]?.account },
@@ -948,10 +1058,19 @@ private extension BackupService {
                                                         batchID: item.batchID, transactionID: item.transactionID,
                                                         createdAt: item.createdAt))
         }
+        for item in document.repaymentReminders {
+            context.insert(RepaymentReminder(
+                id: item.id, accountID: item.accountID, currencyCode: item.currencyCode,
+                outstandingAmount: item.outstandingAmount, dueDate: item.dueDate,
+                isCompleted: item.isCompleted, completedAt: item.completedAt,
+                createdAt: item.createdAt, updatedAt: item.updatedAt
+            ))
+        }
         try context.save()
     }
 
     static func deleteAll(_ context: ModelContext) throws {
+        for item in try context.fetch(FetchDescriptor<RepaymentReminder>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<TransactionImportFingerprint>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<TransactionImportBatch>()) { context.delete(item) }
         for item in try context.fetch(FetchDescriptor<SavingsAllocation>()) { context.delete(item) }

@@ -5,6 +5,7 @@ struct AddWalletView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     let account: Account
+    let bookID: UUID
     @State private var currency: SupportedCurrency = .CNY
     @State private var initialBalance = ""
     @State private var errorMessage: String?
@@ -29,13 +30,17 @@ struct AddWalletView: View {
                         }
                     }
                     TextField(
-                        isLiabilityAccount ? "初始欠款（默认 0）" : "初始余额（默认 0）",
+                        isLiabilityAccount
+                            ? AppLocalization.string("初始欠款（默认 0）")
+                            : AppLocalization.string("初始余额（默认 0）"),
                         text: $initialBalance
                     )
                     .keyboardType(.decimalPad)
-                    Text(isLiabilityAccount
-                         ? "输入正数即可，初始欠款会记为负余额，并写入一条“调整”流水。"
-                         : "初始余额会写入一条“调整”流水，便于以后追溯。")
+                    Text(
+                        isLiabilityAccount
+                            ? AppLocalization.string("输入正数即可，初始欠款会记为负余额，并写入一条“调整”流水。")
+                            : AppLocalization.string("初始余额会写入一条“调整”流水，便于以后追溯。")
+                    )
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -53,7 +58,7 @@ struct AddWalletView: View {
             .alert("无法添加币种", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
-            )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+            )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         }
     }
 
@@ -65,8 +70,8 @@ struct AddWalletView: View {
             amount = parsed
         } else {
             errorMessage = isLiabilityAccount
-                ? "请输入有效且不小于 0 的初始欠款"
-                : "请输入有效且不小于 0 的初始余额"
+                ? AppLocalization.string("请输入有效且不小于 0 的初始欠款")
+                : AppLocalization.string("请输入有效且不小于 0 的初始余额")
             return
         }
 
@@ -74,7 +79,8 @@ struct AddWalletView: View {
             _ = try AccountService(context: context).addWallet(
                 currency: currency,
                 initialBalance: amount,
-                to: account
+                to: account,
+                bookID: bookID
             )
             dismiss()
         } catch {

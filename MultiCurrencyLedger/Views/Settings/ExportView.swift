@@ -107,7 +107,7 @@ struct ExportView: View {
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
-        )) { Button("好") {} } message: { Text(errorMessage ?? "未知错误") }
+        )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         .alert("操作完成", isPresented: Binding(
             get: { successMessage != nil },
             set: { if !$0 { successMessage = nil } }
@@ -158,7 +158,7 @@ struct ExportView: View {
             recoveryURL = result.recoveryURL
             self.pendingRestoreData = nil
             pendingPreview = nil
-            successMessage = "备份恢复完成。恢复前快照已保留，可随时分享或再次恢复。"
+            successMessage = AppLocalization.string("备份恢复完成。恢复前快照已保留，可随时分享或再次恢复。")
         } catch {
             context.rollback()
             errorMessage = error.localizedDescription

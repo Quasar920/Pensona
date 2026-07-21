@@ -1,6 +1,7 @@
 import XCTest
 @testable import MultiCurrencyLedger
 
+@MainActor
 final class URLDraftParserTests: XCTestCase {
     func testParsesOnlyThisAppsEntrySchemeIntoConfirmationRequest() throws {
         let url = try XCTUnwrap(URL(string:
@@ -38,5 +39,26 @@ final class URLDraftParserTests: XCTestCase {
         XCTAssertThrowsError(try URLDraftParser().parse(
             XCTUnwrap(URL(string: "multiledger://entry?type=expense&amount=-1&wallet=x"))
         )) { XCTAssertEqual($0 as? URLDraftError, .invalidAmount) }
+    }
+
+    func testResolverUsesPreferredBookWithWalletFromAnotherLegacyBook() throws {
+        let legacyBook = LedgerBook(name: "账户旧账本")
+        let selectedBook = LedgerBook(name: "当前账本")
+        let account = Account(name: "现金", type: .cash, book: legacyBook)
+        let wallet = CurrencyWallet(currency: .CNY, account: account)
+        let request = try URLDraftParser().parse(XCTUnwrap(URL(string:
+            "multiledger://entry?type=expense&amount=28.5&wallet=%E7%8E%B0%E9%87%91"
+        )))
+
+        let draft = try URLDraftResolver().resolve(
+            request,
+            books: [legacyBook, selectedBook],
+            wallets: [wallet],
+            categories: [],
+            preferredBookID: selectedBook.id
+        )
+
+        XCTAssertEqual(draft.bookID, selectedBook.id)
+        XCTAssertEqual(draft.sourceWallet?.id, wallet.id)
     }
 }

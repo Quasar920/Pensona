@@ -8,10 +8,10 @@ enum RecognitionHTTPClientError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .insecureEndpoint: "识别服务必须使用 HTTPS"
-        case .missingResponse: "识别服务未返回有效响应"
-        case let .httpStatus(code): "识别服务返回 HTTP \(code)"
-        case .responseTooLarge: "识别服务返回内容过大"
+        case .insecureEndpoint: AppLocalization.string( "识别服务必须使用 HTTPS")
+        case .missingResponse: AppLocalization.string( "识别服务未返回有效响应")
+        case let .httpStatus(code): AppLocalization.string( "识别服务返回 HTTP \(code)")
+        case .responseTooLarge: AppLocalization.string( "识别服务返回内容过大")
         }
     }
 }

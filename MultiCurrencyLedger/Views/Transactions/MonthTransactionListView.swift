@@ -4,9 +4,8 @@ import SwiftUI
 struct MonthTransactionListView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @Query(sort: \LedgerTransaction.date, order: .reverse)
-    private var transactions: [LedgerTransaction]
-    @Query private var aaSettlements: [AASettlement]
+    @Environment(\.locale) private var locale
+    @AppStorage("baseCurrencyCode") private var baseCurrencyCode = SupportedCurrency.CNY.rawValue
 
     let bookID: UUID?
     let bookName: String
@@ -14,21 +13,19 @@ struct MonthTransactionListView: View {
     @State private var editingTransaction: LedgerTransaction?
     @State private var deletingTransaction: LedgerTransaction?
     @State private var errorMessage: String?
+    @State private var snapshot: BillPageSnapshot?
+    @State private var refreshGeneration = 0
 
     private var filtered: [LedgerTransaction] {
-        guard let bookID else { return [] }
-        return transactions.filter {
-            Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month)
-                && ($0.sourceAccount?.book?.id == bookID || $0.destinationAccount?.book?.id == bookID)
-        }
+        snapshot?.transactions ?? []
     }
 
-    private var groups: [TransactionDayGroup] {
-        TransactionDayGroup.make(from: filtered)
+    private var groups: [BillDayGroup] {
+        snapshot?.dayGroups ?? []
     }
 
     private var aaRecoveryTransactionIDs: Set<UUID> {
-        Set(aaSettlements.map(\.recoveryTransactionID))
+        []
     }
 
     var body: some View {
@@ -37,7 +34,7 @@ struct MonthTransactionListView: View {
                 ContentUnavailableView {
                     Label("当月没有记录", systemImage: "calendar")
                 } description: {
-                    Text("\(bookName) 在 \(month.chineseYearMonth) 还没有收支记录。")
+                    Text("\(bookName) 在 \(month.yearMonthText(locale: locale)) 还没有收支记录。")
                 }
             } else {
                 List {
@@ -47,7 +44,7 @@ struct MonthTransactionListView: View {
                     }
 
                     ForEach(groups) { group in
-                        Section(group.date.homeDayHeading) {
+                        Section(group.date.dayHeading(locale: locale)) {
                             ForEach(group.transactions) { transaction in
                                 if aaRecoveryTransactionIDs.contains(transaction.id) {
                                     NavigationLink(value: transaction) {
@@ -82,7 +79,7 @@ struct MonthTransactionListView: View {
                 .listStyle(.insetGrouped)
             }
         }
-        .navigationTitle("\(month.chineseYearMonth) · 全部记录")
+        .navigationTitle("\(month.yearMonthText(locale: locale)) · 全部记录")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar(.visible, for: .navigationBar)
@@ -116,7 +113,11 @@ struct MonthTransactionListView: View {
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) { Button("好") {} } message: {
-            Text(errorMessage ?? "未知错误")
+            Text(errorMessage ?? AppLocalization.string("未知错误"))
+        }
+        .task(id: refreshGeneration) { load() }
+        .onReceive(NotificationCenter.default.publisher(for: .ledgerTransactionsDidChange)) { _ in
+            refreshGeneration += 1
         }
     }
 
@@ -125,6 +126,23 @@ struct MonthTransactionListView: View {
         do {
             try LedgerService(context: context).deleteTransaction(transaction)
             deletingTransaction = nil
+            refreshGeneration += 1
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func load() {
+        guard let bookID else {
+            snapshot = nil
+            return
+        }
+        do {
+            snapshot = try BillQueryService(context: context).load(
+                bookID: bookID,
+                month: month,
+                baseCurrencyCode: baseCurrencyCode
+            )
         } catch {
             errorMessage = error.localizedDescription
         }

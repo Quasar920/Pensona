@@ -37,15 +37,15 @@ enum AccountType: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .bankCard: "银行卡"
-        case .cash: "现金"
-        case .eWallet: "电子钱包"
-        case .creditCard: "信用卡"
-        case .savings: "储蓄账户"
-        case .investment: "投资账户"
-        case .other: "其他"
-        case .receivable: "应收账款"
-        case .payable: "应付账款"
+        case .bankCard: AppLocalization.string( "银行卡")
+        case .cash: AppLocalization.string( "现金")
+        case .eWallet: AppLocalization.string( "电子钱包")
+        case .creditCard: AppLocalization.string( "信用卡")
+        case .savings: AppLocalization.string( "储蓄账户")
+        case .investment: AppLocalization.string( "投资账户")
+        case .other: AppLocalization.string( "其他")
+        case .receivable: AppLocalization.string( "应收账款")
+        case .payable: AppLocalization.string( "应付账款")
         }
     }
 
@@ -92,12 +92,12 @@ enum AssetGroup: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .cash: "现金账户"
-        case .credit: "信用账户"
-        case .recharge: "充值账户"
-        case .investment: "理财账户"
-        case .receivable: "应收账款"
-        case .payable: "应付账款"
+        case .cash: AppLocalization.string( "现金账户")
+        case .credit: AppLocalization.string( "信用账户")
+        case .recharge: AppLocalization.string( "充值账户")
+        case .investment: AppLocalization.string( "理财账户")
+        case .receivable: AppLocalization.string( "应收账款")
+        case .payable: AppLocalization.string( "应付账款")
         }
     }
 
@@ -134,11 +134,11 @@ enum TransactionKind: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .expense: "支出"
-        case .income: "收入"
-        case .transfer: "转账"
-        case .exchange: "换汇"
-        case .adjustment: "调整"
+        case .expense: AppLocalization.string( "支出")
+        case .income: AppLocalization.string( "收入")
+        case .transfer: AppLocalization.string( "转账")
+        case .exchange: AppLocalization.string( "换汇")
+        case .adjustment: AppLocalization.string( "调整")
         }
     }
 }
@@ -147,6 +147,8 @@ enum CategoryKind: String, Codable { case expense, income }
 enum AdjustmentDirection: String, CaseIterable, Codable, Identifiable {
     case increase, decrease
     var id: String { rawValue }
-    var title: String { self == .increase ? "增加" : "减少" }
+    var title: String {
+        self == .increase ? AppLocalization.string( "增加") : AppLocalization.string( "减少")
+    }
 }
 enum ExchangeRateSource: String, Codable { case manual, remote }

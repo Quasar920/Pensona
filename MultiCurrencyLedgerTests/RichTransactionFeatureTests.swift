@@ -41,7 +41,7 @@ final class RichTransactionFeatureTests: XCTestCase {
                 TransactionPaymentPartDraft(wallet: first, amount: 20),
                 TransactionPaymentPartDraft(wallet: second, amount: 50)
             ]
-        ))
+        ), bookID: book.id)
 
         XCTAssertEqual(first.balance, 80)
         XCTAssertEqual(second.balance, 50)
@@ -77,12 +77,37 @@ final class RichTransactionFeatureTests: XCTestCase {
         let service = TransactionTemplateService(context: context)
         let template = try service.create(
             name: "早餐",
+            bookID: book.id,
             from: TransactionDraft(type: .expense, amount: 10, sourceWallet: wallet)
         )
 
         XCTAssertThrowsError(try service.resolve(template, wallets: [], categories: [])) {
             XCTAssertEqual($0 as? TransactionTemplateError, .invalidReference)
         }
+    }
+
+    func testTemplateKeepsSavedBookWhileUsingAGlobalWallet() throws {
+        let sourceBook = LedgerBook(name: "账户旧账本")
+        let targetBook = LedgerBook(name: "旅行")
+        let account = Account(name: "现金", type: .cash, book: sourceBook)
+        let wallet = CurrencyWallet(currency: .CNY, balance: 100, account: account)
+        context.insert(sourceBook)
+        context.insert(targetBook)
+        context.insert(account)
+        context.insert(wallet)
+
+        let service = TransactionTemplateService(context: context)
+        let template = try service.create(
+            name: "旅行早餐",
+            bookID: targetBook.id,
+            from: TransactionDraft(type: .expense, amount: 10, sourceWallet: wallet)
+        )
+        let draft = try service.resolve(template, wallets: [wallet], categories: [])
+        let transaction = try LedgerService(context: context).create(draft, bookID: template.bookID)
+
+        XCTAssertEqual(draft.bookID, targetBook.id)
+        XCTAssertEqual(transaction.bookID, targetBook.id)
+        XCTAssertEqual(transaction.sourceWallet?.id, wallet.id)
     }
 
     func testRefundAndReimbursementShareOneRecoveryLimit() throws {
@@ -93,15 +118,51 @@ final class RichTransactionFeatureTests: XCTestCase {
         context.insert(account)
         context.insert(wallet)
         let original = try LedgerService(context: context).createExpense(
-            amount: 100, wallet: wallet, category: nil, date: .now, note: nil
+            bookID: book.id, amount: 100, wallet: wallet, category: nil, date: .now, note: nil
         )
         let service = TransactionRelationService(context: context)
-        _ = try service.record(kind: .refund, original: original, amount: 60, wallet: wallet)
-        _ = try service.record(kind: .reimbursement, original: original, amount: 40, wallet: wallet)
+        let refund = try service.record(kind: .refund, original: original, amount: 60, wallet: wallet)
+        let reimbursement = try service.record(
+            kind: .reimbursement, original: original, amount: 40, wallet: wallet
+        )
 
+        XCTAssertEqual(refund.bookID, original.bookID)
+        XCTAssertEqual(reimbursement.bookID, original.bookID)
         XCTAssertEqual(try service.summary(for: original).remaining, 0)
         XCTAssertThrowsError(try service.record(
             kind: .refund, original: original, amount: 1, wallet: wallet
         )) { XCTAssertEqual($0 as? TransactionRelationError, .exceedsOriginalAmount) }
+    }
+
+    func testAttachmentUsesTransactionBookInsteadOfAccountsLegacyBook() throws {
+        let legacyBook = LedgerBook(name: "账户旧账本")
+        let transactionBook = LedgerBook(name: "交易账本")
+        let account = Account(name: "卡", type: .bankCard, book: legacyBook)
+        let wallet = CurrencyWallet(currency: .CNY, balance: 100, account: account)
+        context.insert(legacyBook)
+        context.insert(transactionBook)
+        context.insert(account)
+        context.insert(wallet)
+        let transaction = try LedgerService(context: context).createExpense(
+            bookID: transactionBook.id,
+            amount: 10,
+            wallet: wallet,
+            category: nil,
+            date: .now,
+            note: nil
+        )
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let attachment = try AttachmentService(
+            context: context,
+            store: AttachmentStore(rootURL: root)
+        ).addImage(
+            data: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+            to: transaction
+        )
+
+        XCTAssertEqual(attachment.bookID, transactionBook.id)
+        XCTAssertTrue(attachment.relativePath.hasPrefix(transactionBook.id.uuidString.lowercased()))
+        XCTAssertFalse(attachment.relativePath.hasPrefix(legacyBook.id.uuidString.lowercased()))
     }
 }

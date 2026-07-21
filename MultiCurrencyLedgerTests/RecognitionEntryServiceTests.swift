@@ -6,6 +6,7 @@ import XCTest
 final class RecognitionEntryServiceTests: XCTestCase {
     private var container: ModelContainer!
     private var context: ModelContext!
+    private var bookID: UUID { try! context.fetch(FetchDescriptor<LedgerBook>()).first!.id }
 
     override func setUpWithError() throws {
         container = try ModelContainer(
@@ -21,12 +22,13 @@ final class RecognitionEntryServiceTests: XCTestCase {
         let draft = makeDraft()
 
         let transaction = try RecognitionEntryService(context: context).confirm(
-            draft, wallet: wallet, category: category
+            draft, bookID: bookID, wallet: wallet, category: category
         )
         let records = try context.fetch(FetchDescriptor<RecognitionImportRecord>())
 
         XCTAssertEqual(wallet.balance, 915)
         XCTAssertEqual(transaction.type, .expense)
+        XCTAssertEqual(transaction.bookID, bookID)
         XCTAssertEqual(transaction.merchantOrCounterparty, "Coffee Shop")
         XCTAssertEqual(transaction.originalAmount, 100)
         XCTAssertEqual(transaction.discountAmount, 15)
@@ -43,7 +45,7 @@ final class RecognitionEntryServiceTests: XCTestCase {
         draft.currency = .USD
 
         XCTAssertThrowsError(try RecognitionEntryService(context: context).confirm(
-            draft, wallet: wallet, category: category
+            draft, bookID: bookID, wallet: wallet, category: category
         )) { error in
             XCTAssertEqual(error as? RecognitionEntryError, .walletCurrencyMismatch)
         }
@@ -57,13 +59,13 @@ final class RecognitionEntryServiceTests: XCTestCase {
         var feeDraft = makeDraft()
         feeDraft.feeAmount = 1
         XCTAssertThrowsError(try RecognitionEntryService(context: context).confirm(
-            feeDraft, wallet: wallet, category: category
+            feeDraft, bookID: bookID, wallet: wallet, category: category
         )) { XCTAssertEqual($0 as? RecognitionEntryError, .feeRequiresManualEntry) }
 
         var transferDraft = makeDraft()
         transferDraft.type = .transfer
         XCTAssertThrowsError(try RecognitionEntryService(context: context).confirm(
-            transferDraft, wallet: wallet, category: category
+            transferDraft, bookID: bookID, wallet: wallet, category: category
         )) { XCTAssertEqual($0 as? RecognitionEntryError, .unsupportedType) }
 
         XCTAssertEqual(wallet.balance, 1_000)

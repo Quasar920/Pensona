@@ -7,12 +7,12 @@ struct MonthlyOverviewCard: View {
 
     private var remainingAmountText: String {
         guard summary.missingCodes.isEmpty else { return "--" }
-        guard let remaining = summary.remainingBudget else { return "设置预算" }
+        guard let remaining = summary.remainingBudget else { return AppLocalization.string( "设置预算") }
         return wholeNumber(remaining)
     }
 
     private var totalBudgetText: String {
-        summary.budget.map(wholeNumber) ?? "预算"
+        summary.budget.map(wholeNumber) ?? AppLocalization.string( "预算")
     }
 
     private var gaugeProgress: Double {
@@ -21,9 +21,11 @@ struct MonthlyOverviewCard: View {
     }
 
     private var stateText: String {
-        if !summary.missingCodes.isEmpty { return "汇率数据不完整" }
-        if summary.budget == nil { return "点击设置本月预算" }
-        return summary.isOverBudget ? "本月已超出预算" : "本月剩余预算"
+        if !summary.missingCodes.isEmpty { return AppLocalization.string( "汇率数据不完整") }
+        if summary.budget == nil { return AppLocalization.string( "点击设置本月预算") }
+        return summary.isOverBudget
+            ? AppLocalization.string( "本月已超出预算")
+            : AppLocalization.string( "本月剩余预算")
     }
 
     var body: some View {
@@ -42,9 +44,13 @@ struct MonthlyOverviewCard: View {
         }
         .buttonStyle(BudgetCardButtonStyle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(summary.budget == nil ? "本月预算，未设置" : "本月预算")
+        .accessibilityLabel(
+            summary.budget == nil ? AppLocalization.string("本月预算，未设置") : AppLocalization.string("本月预算")
+        )
         .accessibilityValue(accessibilityValue)
-        .accessibilityHint(summary.budget == nil ? "点击设置预算" : "点击修改预算")
+        .accessibilityHint(
+            summary.budget == nil ? AppLocalization.string("点击设置预算") : AppLocalization.string("点击修改预算")
+        )
     }
 
     private func wholeNumber(_ amount: Decimal) -> String {
@@ -57,14 +63,14 @@ struct MonthlyOverviewCard: View {
 
     private var accessibilityValue: String {
         guard let budget = summary.budget else {
-            return "未设置，本月收入 \(MoneyFormatter.compactString(summary.income, currencyCode: currencyCode))，支出 \(MoneyFormatter.compactString(summary.expense, currencyCode: currencyCode))"
+            return AppLocalization.string( "未设置，本月收入 \(MoneyFormatter.compactString(summary.income, currencyCode: currencyCode))，支出 \(MoneyFormatter.compactString(summary.expense, currencyCode: currencyCode))")
         }
         if !summary.missingCodes.isEmpty {
             return "\(summary.missingCodes.sorted().joined(separator: "、")) 缺少汇率，本月数据暂不完整"
         }
         let total = MoneyFormatter.compactString(budget, currencyCode: currencyCode)
         let used = MoneyFormatter.compactString(summary.expense, currencyCode: currencyCode)
-        return "已用 \(used)，总预算 \(total)，\(stateText) \(remainingAmountText)"
+        return AppLocalization.string( "已用 \(used)，总预算 \(total)，\(stateText) \(remainingAmountText)")
     }
 }
 
@@ -142,6 +148,7 @@ private struct BudgetGaugeArc: Shape {
 
 struct BudgetEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
 
     let month: Date
     let currencyCode: String
@@ -197,7 +204,7 @@ struct BudgetEditorSheet: View {
             }
             .scrollContentBackground(.hidden)
             .background(HomePalette.background)
-            .navigationTitle("设置\(month.chineseYearMonth)预算")
+            .navigationTitle("设置\(month.yearMonthText(locale: locale))预算")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -217,7 +224,7 @@ struct BudgetEditorSheet: View {
 
     private func validateAndSave() {
         guard let amount = DecimalParser.parse(amountText), amount > 0 else {
-            errorMessage = "请输入大于 0 的预算金额"
+            errorMessage = AppLocalization.string( "请输入大于 0 的预算金额")
             return
         }
 
