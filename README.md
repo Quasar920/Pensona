@@ -47,6 +47,22 @@ Built with SwiftUI and SwiftData, the app uses a Liquid Glass visual style and i
 
 On first launch, the app creates its default categories and required local data structures.
 
+## Demo data
+
+Pensona includes Debug-only sample data for UI review and functional testing.
+
+In Xcode, open `Product → Scheme → Edit Scheme… → Run → Arguments`, then add the environment variable:
+
+```text
+HOME_SAMPLE_DATA=1
+```
+
+Run the app with an empty local database. This creates sample books, accounts, transactions, a budget, and a savings goal. Do not enable it against personal data; sample data is seeded only when no accounts exist.
+
+## Test accounts
+
+No test account is required. Pensona is local-first and does not include an application sign-in flow. Use a local account you create in the app, or enable the demo data described above.
+
 ## Testing
 
 Select the `MultiCurrencyLedger` scheme in Xcode and press `⌘U` to run tests.
