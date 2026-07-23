@@ -94,6 +94,54 @@ struct EntryDateTimeSheet: View {
     }
 }
 
+struct EntryDiscountSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var state: TransactionFormState
+    @FocusState private var isDiscountFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("原价")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    TextField("可选", text: $state.originalAmountText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .font(.title3.monospacedDigit())
+                }
+                .padding(16)
+                .ledgerSurface(.functional, cornerRadius: 20)
+
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("优惠")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    TextField("0", text: $state.discountAmountText)
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .font(.title3.monospacedDigit())
+                        .focused($isDiscountFocused)
+                }
+                .padding(16)
+                .ledgerSurface(.functional, cornerRadius: 20)
+                Spacer()
+            }
+            .padding(18)
+            .ledgerPageBackground()
+            .navigationTitle("优惠信息")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+            .onAppear { isDiscountFocused = true }
+        }
+    }
+}
+
 struct EntrySupplementarySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var state: TransactionFormState

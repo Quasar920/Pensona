@@ -207,14 +207,17 @@ private struct EntryLoadedView: View {
                     )
                 }
             }
-            .navigationTitle(
-                presentationTitle
-                    ?? (seed == nil ? AppLocalization.string("记账") : AppLocalization.string("复制交易"))
-            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") { requestDismiss?() ?? dismiss() }
+                    Button { requestDismiss?() ?? dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.bold))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(LedgerGlassPressStyle())
+                    .accessibilityLabel(AppLocalization.string("关闭"))
                         .accessibilityIdentifier("entry-close-button")
                 }
                 if seed == nil, editingTransaction == nil, !scopedTemplates.isEmpty {

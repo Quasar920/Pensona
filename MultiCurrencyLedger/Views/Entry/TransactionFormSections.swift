@@ -102,6 +102,7 @@ struct EntryComposerView: View {
     @State private var showingDestinationWallets = false
     @State private var showingDatePicker = false
     @State private var showingMore = false
+    @State private var showingDiscount = false
     @State private var showingAA = false
     @State private var activeAmount: EntryAmountTarget = .source
     @State private var keypadResetID = UUID()
@@ -137,8 +138,8 @@ struct EntryComposerView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
+        VStack(spacing: 0) {
+            VStack(spacing: 8) {
                 EntryKindGlassControl(selection: $state.kind, validationReset: {})
                 EntryInlineValidation(message: validation.generalMessage)
                 if state.kind == .expense || state.kind == .income {
@@ -177,11 +178,18 @@ struct EntryComposerView: View {
                         sourceWallet: sourceWallet,
                         validation: validation,
                         selectAccount: { showingSourceWallets = true },
-                        selectDate: { showingDatePicker = true },
+                        editSplitPayment: { showingMore = true },
                         editAA: {
                             if DecimalParser.parse(state.amountText).map({ $0 > 0 }) == true { showingAA = true }
                         },
-                        showSupplementary: { showingMore = true }
+                        editDiscount: { showingDiscount = true },
+                        selectNeutralAdjustment: { direction in
+                            state.kind = .adjustment
+                            Task { @MainActor in
+                                state.adjustmentInputMode = .delta
+                                state.adjustmentDirection = direction
+                            }
+                        }
                     )
                     if let successMessage {
                         Label(successMessage, systemImage: "checkmark.circle.fill")
@@ -190,12 +198,9 @@ struct EntryComposerView: View {
                     }
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
-        }
-        .scrollIndicators(.hidden)
-        .safeAreaInset(edge: .bottom, spacing: 8) {
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 0)
             if !categoryReordering && !categoryManagementOverlay {
                 EntryGlassKeypad(
                     amountText: amountBinding,
@@ -209,8 +214,8 @@ struct EntryComposerView: View {
                     complete: complete
                 )
                 .padding(.horizontal, 18)
-                .padding(.top, 10)
-                .padding(.bottom, 8)
+                .padding(.top, 0)
+                .padding(.bottom, 0)
                 .background(Color(uiColor: .systemBackground).opacity(0.94))
                 .overlay(alignment: .top) { Divider().opacity(0.35) }
             }
@@ -242,6 +247,11 @@ struct EntryComposerView: View {
             EntrySupplementarySheet(state: $state, wallets: wallets)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showingDiscount) {
+            EntryDiscountSheet(state: $state)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showingAA) {
             AASplitEditorView(
                 totalAmount: DecimalParser.parse(state.amountText) ?? 0,
@@ -265,6 +275,21 @@ struct EntryComposerView: View {
             }
         }
         .onChange(of: activeAmount) { _, _ in keypadResetID = UUID() }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Button { showingDatePicker = true } label: {
+                    Text(state.date.formatted(.dateTime.year().month().day().hour().minute()))
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 11)
+                    .frame(minHeight: 32)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(LedgerGlassPressStyle())
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .accessibilityLabel("选择日期与时间")
+            }
+        }
     }
 
     private func categoryPath(_ category: LedgerCategory) -> String {

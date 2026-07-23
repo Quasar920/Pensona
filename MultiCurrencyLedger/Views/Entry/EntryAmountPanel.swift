@@ -22,11 +22,12 @@ struct EntryAmountPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 2) {
             if let categoryPath {
                 Text(categoryPath)
-                    .font(.caption.weight(.medium))
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Button { activeTarget = .source } label: {
@@ -35,7 +36,7 @@ struct EntryAmountPanel: View {
                         .font(.headline.monospaced())
                         .foregroundStyle(.secondary)
                     Text(state.amountText.isEmpty ? "0" : state.amountText)
-                        .font(.system(size: 44, weight: .semibold, design: .rounded))
+                        .font(.system(size: 36, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
@@ -77,18 +78,20 @@ struct EntryAmountPanel: View {
             }
 
             Divider().opacity(0.32)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 Text("备注")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
-                TextField("可选，直接输入", text: $state.note, axis: .vertical)
-                    .lineLimit(1...3)
+                TextField("可选，直接输入", text: $state.note)
+                    .font(.caption2)
                     .textFieldStyle(.plain)
+                    .frame(height: 16)
             }
         }
-        .padding(.vertical, 13)
-        .padding(.horizontal, 16)
-        .ledgerSurface(.summary, cornerRadius: 26)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 14)
+        .ledgerSurface(.summary, cornerRadius: 20)
+        .frame(maxWidth: .infinity)
         .onChange(of: state.amountText) { _, _ in updateExchange(driver: .sourceAmount) }
         .onChange(of: state.destinationAmountText) { _, _ in updateExchange(driver: .destinationAmount) }
         .onChange(of: state.exchangeRateText) { _, _ in updateExchange(driver: .rate) }

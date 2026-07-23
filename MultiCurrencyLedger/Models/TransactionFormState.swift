@@ -253,6 +253,16 @@ struct TransactionFormState {
         NSDecimalNumber(decimal: decimal).stringValue
     }
 
+    var originalAmountText: String {
+        get { originalAmount.map(Self.string) ?? "" }
+        set { originalAmount = DecimalParser.parse(newValue) }
+    }
+
+    var discountAmountText: String {
+        get { discountAmount.map(Self.string) ?? "" }
+        set { discountAmount = DecimalParser.parse(newValue) }
+    }
+
     mutating func setSplitPaymentEnabled(_ enabled: Bool, wallets: [CurrencyWallet]) {
         usesSplitPayment = enabled
         guard enabled else {

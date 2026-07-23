@@ -56,7 +56,7 @@ struct EntryCategoryPager: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             HStack {
                 Text(type == .expense ? "支出分类" : "收入分类")
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -97,7 +97,7 @@ struct EntryCategoryPager: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
             }
-            .frame(height: dynamicTypeSize.isAccessibilitySize ? 360 : 270)
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? 360 : 210)
             .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive, value: expandedRootID)
         }
         .background {
@@ -221,8 +221,8 @@ struct EntryCategoryPager: View {
 
     private func categoryGrid(_ values: [GridItemValue]) -> some View {
         LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: columns),
-            spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 5
+            columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: columns),
+            spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 4
         ) {
             ForEach(values) { value in
                 switch value {
@@ -249,7 +249,7 @@ struct EntryCategoryPager: View {
                     .frame(maxWidth: .infinity)
             }
             .foregroundStyle(selectedRootID == category.id ? Color.accentColor : .primary)
-            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 76 : 54)
+            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 76 : 44)
             .background(
                 selectedRootID == category.id ? Color.accentColor.opacity(0.11) : Color.primary.opacity(0.04),
                 in: RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -279,7 +279,7 @@ struct EntryCategoryPager: View {
                 Image(systemName: "plus").font(.headline)
                 Text("新分类").font(.caption2.weight(.semibold))
             }
-            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 76 : 54)
+            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 76 : 44)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 15))
         }
         .buttonStyle(LedgerGlassPressStyle())
