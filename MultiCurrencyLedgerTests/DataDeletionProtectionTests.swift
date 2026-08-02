@@ -38,30 +38,46 @@ final class DataDeletionProtectionTests: XCTestCase {
         XCTAssertEqual(wallet.balance, 80)
     }
 
-    func testOnlyOrReferencedBookCannotBeDeleted() throws {
+    func testEmptyBookCanBeDeletedEvenWhenItIsTheOnlyBook() throws {
         let book = LedgerBook(name: "日常")
         context.insert(book)
+        try context.save()
+        let service = LedgerBookService(context: context)
+
+        XCTAssertNoThrow(try service.delete(book))
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<LedgerBook>()), 0)
+    }
+
+    func testBookWithContentCanArchiveButCannotDeleteOrRecordNewTransactions() throws {
+        let book = LedgerBook(name: "日常")
+        let account = Account(name: "现金", type: .cash, book: book)
+        let wallet = CurrencyWallet(currency: .CNY, account: account)
+        context.insert(book)
+        context.insert(account)
+        context.insert(wallet)
         try context.save()
         let service = LedgerBookService(context: context)
 
         XCTAssertThrowsError(try service.delete(book)) { error in
             XCTAssertEqual(error as? LedgerError, .bookInUse)
         }
-
-        let second = LedgerBook(name: "旅行")
-        context.insert(second)
-        context.insert(MonthlyBudget(
-            scopeKey: "deletion-protection-\(book.id.uuidString.lowercased())",
-            bookID: book.id,
-            monthStart: .now,
-            currencyCode: "CNY",
-            amount: 1_000
-        ))
-        try context.save()
-
-        XCTAssertThrowsError(try service.delete(book)) { error in
-            XCTAssertEqual(error as? LedgerError, .bookInUse)
+        XCTAssertNoThrow(try service.archive(book))
+        XCTAssertTrue(book.isArchived)
+        XCTAssertNotNil(book.archivedAt)
+        XCTAssertThrowsError(
+            try LedgerService(context: context).createExpense(
+                bookID: book.id,
+                amount: 20,
+                wallet: wallet,
+                category: nil,
+                date: .now,
+                note: nil
+            )
+        ) { error in
+            XCTAssertEqual(error as? LedgerError, .bookArchived)
         }
-        XCTAssertEqual(try context.fetchCount(FetchDescriptor<LedgerBook>()), 2)
+        XCTAssertNoThrow(try service.restore(book))
+        XCTAssertFalse(book.isArchived)
+        XCTAssertNil(book.archivedAt)
     }
 }

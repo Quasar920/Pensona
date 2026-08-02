@@ -174,7 +174,9 @@ final class TransactionImportService {
         existingFingerprints: [TransactionImportFingerprint]
     ) throws -> TransactionImportPreview {
         guard mapping[.amount] != nil else { throw TransactionImportError.missingAmountMapping }
-        guard try context.fetch(FetchDescriptor<LedgerBook>()).contains(where: { $0.id == bookID }) else {
+        do {
+            _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
+        } catch LedgerError.missingBook {
             throw TransactionImportError.missingBook
         }
         let scopedWallets = wallets.filter {

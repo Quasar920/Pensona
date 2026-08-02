@@ -198,6 +198,7 @@ final class AASplitService {
         for transaction: LedgerTransaction,
         save: Bool = true
     ) throws -> AASplit {
+        try LedgerBookAccess.requireActiveBook(in: context, for: transaction)
         guard transaction.type == .expense else { throw AASplitError.expenseRequired }
         let transactionID = transaction.id
         let relations = try context.fetch(FetchDescriptor<TransactionRelation>())
@@ -259,6 +260,7 @@ final class AASplitService {
     }
 
     func remove(from transaction: LedgerTransaction, save: Bool = true) throws {
+        try LedgerBookAccess.requireActiveBook(in: context, for: transaction)
         guard let split = try split(for: transaction) else { return }
         guard try settlements(for: split).isEmpty else {
             throw AASplitError.settlementsMustBeRemovedFirst
@@ -295,6 +297,7 @@ final class AASettlementService {
         date: Date,
         note: String?
     ) throws -> LedgerTransaction {
+        try LedgerBookAccess.requireActiveBook(in: context, for: original)
         guard amount > 0 else { throw AASplitError.settlementAmountInvalid }
         guard wallet.isEnabled, wallet.account?.isArchived == false else {
             throw AASplitError.walletUnavailable

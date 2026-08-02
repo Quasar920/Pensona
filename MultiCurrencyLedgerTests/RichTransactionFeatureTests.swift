@@ -67,6 +67,30 @@ final class RichTransactionFeatureTests: XCTestCase {
         }
     }
 
+    func testUpdatingNoteRefreshesLedgerPresentation() throws {
+        let book = LedgerBook(name: "日常")
+        let transaction = LedgerTransaction(type: .expense, bookID: book.id)
+        context.insert(book)
+        context.insert(transaction)
+        try context.save()
+
+        var didPostRefresh = false
+        let observer = NotificationCenter.default.addObserver(
+            forName: .ledgerTransactionsDidChange,
+            object: nil,
+            queue: nil
+        ) { _ in
+            didPostRefresh = true
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        try TransactionNoteUpdater.update("  晚餐聚会  ", transaction: transaction, context: context)
+
+        XCTAssertEqual(transaction.note, "晚餐聚会")
+        XCTAssertEqual(transaction.displayNote, "晚餐聚会")
+        XCTAssertTrue(didPostRefresh)
+    }
+
     func testTemplateResolutionFailsAfterReferencedWalletDisappears() throws {
         let book = LedgerBook(name: "日常")
         let account = Account(name: "现金", type: .cash, book: book)

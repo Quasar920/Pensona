@@ -4,10 +4,13 @@ import SwiftUI
 struct AddAccountView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @AppStorage("baseCurrencyCode") private var baseCurrencyCode = SupportedCurrency.CNY.rawValue
     @State private var name = ""
     @State private var type: AccountType
     @State private var note = ""
     @State private var cardLastFour = ""
+    @State private var settlementMode: ForeignCurrencySettlementMode = .instant
+    @State private var settlementCurrency: SupportedCurrency = .CNY
     @State private var errorMessage: String?
 
     let book: LedgerBook?
@@ -51,6 +54,21 @@ struct AddAccountView: View {
                     }
                 }
 
+                if type == .creditCard {
+                    Section("外币结算") {
+                        Picker("结算方式", selection: $settlementMode) {
+                            ForEach(ForeignCurrencySettlementMode.allCases) {
+                                Text($0.title).tag($0)
+                            }
+                        }
+                        Picker("默认结算币种", selection: $settlementCurrency) {
+                            ForEach(SupportedCurrency.allCases) {
+                                Text("\($0.rawValue) · \($0.localizedName)").tag($0)
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     Text("保存后可进入账户详情添加币种和初始余额。")
                         .font(.footnote)
@@ -67,6 +85,9 @@ struct AddAccountView: View {
                     Button("保存", action: save)
                 }
             }
+            .onAppear {
+                settlementCurrency = SupportedCurrency(rawValue: baseCurrencyCode) ?? .CNY
+            }
             .alert("无法保存", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -80,7 +101,10 @@ struct AddAccountView: View {
                 name: name,
                 type: type,
                 note: note.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-                cardLastFour: type.supportsCardLastFour ? cardLastFour : nil
+                bookID: book?.id,
+                cardLastFour: type.supportsCardLastFour ? cardLastFour : nil,
+                defaultForeignCurrencySettlementMode: settlementMode,
+                defaultSettlementCurrencyCode: settlementCurrency.rawValue
             )
             dismiss()
         } catch {

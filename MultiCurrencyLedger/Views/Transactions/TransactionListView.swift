@@ -28,7 +28,8 @@ struct TransactionListView: View {
     }
 
     private var selectedBook: LedgerBook? {
-        books.first { $0.id.uuidString == selectedBookID } ?? books.first
+        let activeBooks = books.filter { !$0.isArchived }
+        return activeBooks.first { $0.id.uuidString == selectedBookID } ?? activeBooks.first
     }
 
     private var filtered: [LedgerTransaction] {
@@ -255,8 +256,11 @@ struct TransactionListView: View {
     }
 
     private func configureQueryIfNeeded() {
-        guard let first = books.first else { return }
-        if !books.contains(where: { $0.id.uuidString == selectedBookID }) {
+        guard let first = books.first(where: { !$0.isArchived }) else {
+            selectedBookID = ""
+            return
+        }
+        if !books.contains(where: { !$0.isArchived && $0.id.uuidString == selectedBookID }) {
             selectedBookID = first.id.uuidString
         }
         guard !queryConfigured else { return }

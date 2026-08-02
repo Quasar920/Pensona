@@ -58,6 +58,7 @@ final class MonthlyBudgetService {
         month date: Date,
         currencyCode: String
     ) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
         guard let value = try budget(
             bookID: bookID,
             month: date,

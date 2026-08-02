@@ -57,13 +57,19 @@ enum DefaultCategoryCatalog {
     @MainActor
     static func upgrade(context: ModelContext) throws {
         var categories = try context.fetch(FetchDescriptor<LedgerCategory>())
-        // One successfully committed catalog key is the durable in-store version
-        // marker. The seed transaction is atomic, so this also distinguishes an
-        // intentional later deletion from an incomplete legacy upgrade.
-        if categories.contains(where: {
+        deleteRetiredDailyExpenseRoot(in: categories, context: context)
+        deleteRetiredOtherIncomeRoot(in: categories, context: context)
+        // A current key with no retired catalog keys is the durable in-store
+        // version marker. This preserves intentional deletions while still
+        // reconciling installations seeded with the previous category tree.
+        let hasCurrentCatalogKey = categories.contains(where: {
             guard let key = $0.systemLocalizationKey else { return false }
             return descriptor(localizationKey: key) != nil
-        }) {
+        })
+        let hasRetiredCatalogKey = categories.contains {
+            isRetiredCatalogKey($0.systemLocalizationKey)
+        }
+        if hasCurrentCatalogKey && !hasRetiredCatalogKey {
             normalizeCustomOrdering(categories)
             try context.save()
             return
@@ -71,7 +77,7 @@ enum DefaultCategoryCatalog {
         var claimedCategoryIDs = Set<UUID>()
 
         // Resolve the whole catalog in priority order so a broad legacy alias
-        // (for example “日用” → shopping) can never steal the canonical “购物” row.
+        // (for example a broad legacy alias) can never steal the canonical row.
         for descriptor in all {
             guard let category = bestLegacyMatch(
                 for: descriptor,
@@ -82,8 +88,12 @@ enum DefaultCategoryCatalog {
             claimedCategoryIDs.insert(category.id)
         }
         for category in categories where category.isSystem && !claimedCategoryIDs.contains(category.id) {
-            if category.systemLocalizationKey == nil
-                || descriptor(localizationKey: category.systemLocalizationKey ?? "") == nil {
+            if isRetiredCatalogKey(category.systemLocalizationKey) {
+                category.systemLocalizationKey = "category.compatibility.\(category.id.uuidString.lowercased())"
+                category.bookID = nil
+                category.isArchived = true
+                category.updatedAt = .now
+            } else if category.systemLocalizationKey == nil {
                 category.systemLocalizationKey = "category.compatibility.\(category.id.uuidString.lowercased())"
                 category.bookID = nil
                 category.updatedAt = .now
@@ -116,6 +126,55 @@ enum DefaultCategoryCatalog {
         in categories: [LedgerCategory]
     ) -> LedgerCategory? {
         categories.first { $0.systemLocalizationKey == descriptor.localizationKey }
+    }
+
+    /// “日用” is not part of the current catalog. Remove only the old system
+    /// seed; a category manually created by the user with this name is untouched.
+    private static func deleteRetiredDailyExpenseRoot(
+        in categories: [LedgerCategory],
+        context: ModelContext
+    ) {
+        for category in categories where category.isSystem
+            && category.type == .expense
+            && category.parentID == nil
+            && category.name.trimmingCharacters(in: .whitespacesAndNewlines) == "日用" {
+            context.delete(category)
+        }
+    }
+
+    /// “其他” was an obsolete income root from an earlier build. The approved
+    /// root is “其他收入”; remove the obsolete system row and all of its
+    /// system-generated descendants. A user-created category with the same
+    /// name is deliberately preserved.
+    private static func deleteRetiredOtherIncomeRoot(
+        in categories: [LedgerCategory],
+        context: ModelContext
+    ) {
+        var retiredIDs = Set(categories.compactMap { category -> UUID? in
+            guard category.isSystem,
+                  category.type == .income,
+                  category.parentID == nil,
+                  category.name.trimmingCharacters(in: .whitespacesAndNewlines) == "其他" else {
+                return nil
+            }
+            return category.id
+        })
+        guard !retiredIDs.isEmpty else { return }
+
+        var foundDescendant = true
+        while foundDescendant {
+            foundDescendant = false
+            for category in categories where category.isSystem {
+                guard let parentID = category.parentID,
+                      retiredIDs.contains(parentID),
+                      !retiredIDs.contains(category.id) else { continue }
+                retiredIDs.insert(category.id)
+                foundDescendant = true
+            }
+        }
+        for category in categories where retiredIDs.contains(category.id) {
+            context.delete(category)
+        }
     }
 
     @MainActor
@@ -168,6 +227,11 @@ enum DefaultCategoryCatalog {
         if let exactKey = available.first(where: { $0.systemLocalizationKey == descriptor.localizationKey }) {
             return exactKey
         }
+        for legacyKey in migrationSourceKeys[descriptor.id, default: []] {
+            if let migrated = available.first(where: { $0.systemLocalizationKey == legacyKey }) {
+                return migrated
+            }
+        }
         guard descriptor.parentIdentifier == nil else { return nil }
         let canonicalNames = [
             descriptor.names.zhHans, descriptor.names.zhHant,
@@ -179,7 +243,7 @@ enum DefaultCategoryCatalog {
             return exactName
         }
         let aliases: [String: String] = [
-            "日用": "expense.shopping", "医疗": "expense.healthcare",
+            "医疗": "expense.healthcare",
             "学习": "expense.education", "人情": "expense.social",
             "工资": "income.salary", "兼职": "income.sidejob"
         ]
@@ -213,6 +277,57 @@ enum DefaultCategoryCatalog {
     private static func stableSort(_ lhs: LedgerCategory, _ rhs: LedgerCategory) -> Bool {
         lhs.sortOrder == rhs.sortOrder ? lhs.createdAt < rhs.createdAt : lhs.sortOrder < rhs.sortOrder
     }
+
+    private static func isRetiredCatalogKey(_ key: String?) -> Bool {
+        guard let key else { return false }
+        return (legacyExpenseLocalizationKeys.contains(key)
+            || legacyIncomeLocalizationKeys.contains(key))
+            && descriptor(localizationKey: key) == nil
+    }
+
+    private static let legacyExpenseLocalizationKeys = Set(
+        descriptors(for: .expense, roots: legacyExpenseRaw).map(\.localizationKey)
+    )
+
+    private static let legacyIncomeLocalizationKeys = Set(
+        descriptors(for: .income, roots: legacyIncomeRaw).map(\.localizationKey)
+    )
+
+    /// Previous catalog rows reused by the July 2026 category redesign.
+    /// Reusing model objects keeps transactions, budgets, templates, and plans
+    /// attached to the closest approved replacement.
+    private static let migrationSourceKeys: [String: [String]] = [
+        "expense.coffee": ["category.expense.drinks"],
+        "expense.food.milk-tea": ["category.expense.drinks.milktea"],
+        "expense.food.tea": ["category.expense.drinks.tea"],
+        "expense.shopping.supermarket": ["category.expense.shopping.daily"],
+        "expense.shopping.snacks": ["category.expense.food.snack"],
+        "expense.transport.high-speed-rail": ["category.expense.transport.train"],
+        "expense.entertainment.game-topup": ["category.expense.entertainment.game"],
+        "expense.entertainment.concert": ["category.expense.entertainment.show"],
+        "expense.fixed.subscription": ["category.expense.fixed.membership"],
+        "expense.fixed.mobile": ["category.expense.utilities.mobile"],
+        "expense.fixed.vpn": ["category.expense.fixed.software"],
+        "expense.fixed.management": ["category.expense.fixed.payment"],
+        "expense.investment.insurance": ["category.expense.fixed.insurance"],
+        "expense.sport": ["category.expense.fitness"],
+        "expense.services.hair-salon": ["category.expense.services.hair"],
+        "expense.growth": ["category.expense.education"],
+        "expense.growth.materials": ["category.expense.education.books"],
+        "expense.growth.exam": ["category.expense.education.exam"],
+        "expense.health": ["category.expense.healthcare"],
+        "expense.health.pharmacy": ["category.expense.healthcare.medicine"],
+        "expense.health.hospital": ["category.expense.healthcare.clinic"],
+        "expense.housing.utilities": ["category.expense.utilities"],
+        "expense.fallback": ["category.expense.other"],
+        "income.salary.salary": ["category.income.salary.base"],
+        "income.salary.side-income": ["category.income.sidejob"],
+        "income.investment.investment": ["category.income.investment.dividend"],
+        "income.investment.monetization": ["category.income.resale"],
+        "income.investment.fallback": ["category.income.investment.other"],
+        "income.other.red-packet": ["category.income.gift.redpacket"],
+        "income.other.fallback": ["category.income.other.uncategorized"]
+    ]
 
     private static func descriptors(
         for type: CategoryKind,
@@ -248,6 +363,74 @@ enum DefaultCategoryCatalog {
     }
 
     private static let expenseRaw: [RawRoot] = [
+        .init(id: "expense.food", names: n("餐饮", "餐飲", "Dining", "食事"), symbol: "fork.knife", children: [
+            ("meal", n("正餐", "正餐", "Meals", "食事")),
+            ("milk-tea", n("奶茶", "奶茶", "Milk tea", "ミルクティー")),
+            ("fruit", n("水果", "水果", "Fruit", "果物")),
+            ("tea", n("茶", "茶", "Tea", "お茶")),
+            ("fallback", n("餐饮兜底", "餐飲兜底", "Dining catch-all", "食事その他"))]),
+        .init(id: "expense.coffee", names: n("咖啡", "咖啡", "Coffee", "コーヒー"), symbol: "cup.and.saucer", children: []),
+        .init(id: "expense.delivery", names: n("外卖", "外賣", "Delivery", "デリバリー"), symbol: "takeoutbag.and.cup.and.straw", children: []),
+        .init(id: "expense.shopping", names: n("购物", "購物", "Shopping", "買い物"), symbol: "bag", children: [
+            ("online", n("网购", "網購", "Online shopping", "オンライン購入")),
+            ("supermarket", n("购物（超市）", "購物（超市）", "Supermarket shopping", "スーパーで買い物")),
+            ("snacks", n("零食", "零食", "Snacks", "おやつ")),
+            ("fallback", n("购物兜底", "購物兜底", "Shopping catch-all", "買い物その他"))]),
+        .init(id: "expense.transport", names: n("交通", "交通", "Transport", "交通"), symbol: "tram", children: [
+            ("bus", n("公交", "公車", "Bus", "バス")),
+            ("metro", n("地铁", "地鐵", "Metro", "地下鉄")),
+            ("high-speed-rail", n("高铁", "高鐵", "High-speed rail", "高速鉄道")),
+            ("flight", n("飞机", "飛機", "Flights", "飛行機")),
+            ("bike-sharing", n("共享车", "共享車", "Bike sharing", "シェアサイクル"))]),
+        .init(id: "expense.ridehail", names: n("网约车", "網約車", "Ride Hailing", "配車"), symbol: "car.side", children: []),
+        .init(id: "expense.entertainment", names: n("消遣", "消遣", "Leisure", "娯楽"), symbol: "gamecontroller", children: [
+            ("blind-box", n("盲盒", "盲盒", "Blind boxes", "ブラインドボックス")),
+            ("game-topup", n("氪金", "氪金", "Game top-ups", "ゲーム課金")),
+            ("lottery", n("彩票", "彩票", "Lottery", "宝くじ")),
+            ("movie", n("电影", "電影", "Movies", "映画")),
+            ("concert", n("演唱会", "演唱會", "Concerts", "コンサート")),
+            ("fallback", n("消遣兜底", "消遣兜底", "Leisure catch-all", "娯楽その他"))]),
+        .init(id: "expense.fixed", names: n("固定支出", "固定支出", "Fixed Expenses", "固定費"), symbol: "calendar.badge.clock", children: [
+            ("subscription", n("订阅", "訂閱", "Subscriptions", "サブスクリプション")),
+            ("consumables", n("生活耗品", "生活耗品", "Household consumables", "生活消耗品")),
+            ("mobile", n("话费", "話費", "Mobile bill", "携帯電話料金")),
+            ("vpn", n("VPN", "VPN", "VPN", "VPN")),
+            ("management", n("管理费用", "管理費用", "Management fees", "管理費")),
+            ("courier", n("快递", "快遞", "Courier", "宅配")),
+            ("fallback", n("固定支出兜底", "固定支出兜底", "Fixed-expense catch-all", "固定費その他"))]),
+        .init(id: "expense.investment", names: n("投资", "投資", "Investments", "投資"), symbol: "chart.line.uptrend.xyaxis", children: [
+            ("insurance", n("保险", "保險", "Insurance", "保険")),
+            ("outflow", n("流出", "流出", "Outflow", "資金流出")),
+            ("fallback", n("投资兜底", "投資兜底", "Investment catch-all", "投資その他"))]),
+        .init(id: "expense.sport", names: n("运动", "運動", "Sports", "運動"), symbol: "figure.run", children: [
+            ("swimming", n("游泳", "游泳", "Swimming", "水泳")),
+            ("fallback", n("运动兜底", "運動兜底", "Sports catch-all", "運動その他"))]),
+        .init(id: "expense.services", names: n("服务", "服務", "Services", "サービス"), symbol: "wrench.and.screwdriver", children: [
+            ("hair-salon", n("理发店", "理髮店", "Hair salon", "理髪店")),
+            ("massage", n("按摩", "按摩", "Massage", "マッサージ")),
+            ("fallback", n("服务兜底", "服務兜底", "Service catch-all", "サービスその他"))]),
+        .init(id: "expense.growth", names: n("成长", "成長", "Growth", "成長"), symbol: "book", children: [
+            ("materials", n("资料", "資料", "Study materials", "学習資料")),
+            ("exam", n("考试费", "考試費", "Exam fees", "受験料")),
+            ("fallback", n("成长兜底", "成長兜底", "Growth catch-all", "成長その他"))]),
+        .init(id: "expense.health", names: n("健康", "健康", "Health", "健康"), symbol: "heart.text.square", children: [
+            ("pharmacy", n("药店", "藥店", "Pharmacy", "薬局")),
+            ("hospital", n("医院", "醫院", "Hospital", "病院")),
+            ("fallback", n("健康兜底", "健康兜底", "Health catch-all", "健康その他"))]),
+        .init(id: "expense.social", names: n("人情", "人情", "Social Gifts", "交際"), symbol: "gift", children: [
+            ("cashgift", n("礼金", "禮金", "Cash gifts", "祝儀")),
+            ("gift", n("礼物", "禮物", "Gifts", "贈り物")),
+            ("lending", n("借出", "借出", "Lending", "貸付")),
+            ("fallback", n("人情兜底", "人情兜底", "Social catch-all", "交際その他"))]),
+        .init(id: "expense.housing", names: n("居住", "居住", "Housing", "住居"), symbol: "house", children: [
+            ("rent", n("房租", "房租", "Rent", "家賃")),
+            ("utilities", n("水电费", "水電費", "Utilities", "水道光熱費")),
+            ("fallback", n("居住兜底", "居住兜底", "Housing catch-all", "住居その他"))]),
+        .init(id: "expense.fallback", names: n("兜底", "兜底", "Catch-all", "その他"), symbol: "square.grid.2x2", children: [])
+    ]
+
+    /// Retained only to identify and safely archive rows from the previous tree.
+    private static let legacyExpenseRaw: [RawRoot] = [
         .init(id: "expense.food", names: n("餐饮", "餐飲", "Dining", "食事"), symbol: "fork.knife", children: [
             ("breakfast", n("早餐", "早餐", "Breakfast", "朝食")), ("meal", n("正餐", "正餐", "Meals", "食事")),
             ("fastfood", n("快餐", "速食", "Fast food", "ファストフード")), ("snack", n("零食", "零食", "Snacks", "おやつ")),
@@ -327,6 +510,41 @@ enum DefaultCategoryCatalog {
     ]
 
     private static let incomeRaw: [RawRoot] = [
+        .init(
+            id: "income.salary",
+            names: n("主动收入-工资", "主動收入-工資", "Active Income - Salary", "能動収入・給与"),
+            symbol: "envelope.open",
+            children: [
+                ("salary", n("工资", "工資", "Salary", "給与")),
+                ("side-income", n("副业收入", "副業收入", "Side Income", "副業収入")),
+                ("fallback", n("主动收入兜底", "主動收入兜底", "Active-income catch-all", "能動収入その他"))
+            ]
+        ),
+        .init(
+            id: "income.investment",
+            names: n("被动收入", "被動收入", "Passive Income", "受動収入"),
+            symbol: "chart.line.uptrend.xyaxis",
+            children: [
+                ("investment", n("投资", "投資", "Investment", "投資")),
+                ("monetization", n("变现", "變現", "Monetization", "換金")),
+                ("fallback", n("被动收入兜底", "被動收入兜底", "Passive-income catch-all", "受動収入その他"))
+            ]
+        ),
+        .init(
+            id: "income.other",
+            names: n("其他收入", "其他收入", "Other Income", "その他の収入"),
+            symbol: "ellipsis.circle",
+            children: [
+                ("lottery", n("彩票", "彩票", "Lottery", "宝くじ")),
+                ("red-packet", n("红包", "紅包", "Red Packet", "お年玉")),
+                ("fallback", n("其他收入兜底", "其他收入兜底", "Other-income catch-all", "その他収入その他"))
+            ]
+        )
+    ]
+
+    /// Retained only to identify and safely archive or migrate rows from the
+    /// previous twelve-root income tree.
+    private static let legacyIncomeRaw: [RawRoot] = [
         .init(id: "income.salary", names: n("工资薪酬", "工資薪酬", "Salary", "給与"), symbol: "banknote", children: [
             ("base", n("基本工资", "基本工資", "Base salary", "基本給")), ("allowance", n("津贴", "津貼", "Allowance", "手当")),
             ("overtime", n("加班费", "加班費", "Overtime", "残業代")), ("commission", n("佣金", "佣金", "Commission", "歩合給"))]),

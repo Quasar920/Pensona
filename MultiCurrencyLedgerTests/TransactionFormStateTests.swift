@@ -75,4 +75,55 @@ final class TransactionFormStateTests: XCTestCase {
         XCTAssertNil(copy.recognitionImportID)
         XCTAssertEqual(copy.date, Date(timeIntervalSince1970: 456))
     }
+
+    func testInstantForeignExpenseKeepsOriginalInputButPostsSettlementAmount() throws {
+        let card = Account(
+            name: "信用卡",
+            type: .creditCard,
+            defaultForeignCurrencySettlementMode: .instant,
+            defaultSettlementCurrencyCode: "CNY"
+        )
+        let cny = CurrencyWallet(currency: .CNY, account: card)
+        let usd = CurrencyWallet(currency: .USD, account: card)
+        var state = TransactionFormState(kind: .expense)
+        state.sourceWalletID = usd.id
+        state.amountText = "100"
+        state.foreignOriginalCurrencyCode = "USD"
+        state.foreignSettlementMode = .instant
+        state.settledAmountText = "710"
+
+        let draft = try state.makeDraft(wallets: [cny, usd], categories: [])
+
+        XCTAssertEqual(draft.amount, 710)
+        XCTAssertEqual(draft.sourceWallet?.id, cny.id)
+        XCTAssertEqual(draft.foreignOriginalAmount, 100)
+        XCTAssertEqual(draft.foreignOriginalCurrencyCode, "USD")
+        XCTAssertEqual(draft.settlementCurrencyCode, "CNY")
+        XCTAssertEqual(draft.settledAmount, 710)
+    }
+
+    func testCreditCardDestinationAutomaticallyCreatesRepaymentWithChosenAdjustmentWallets() throws {
+        let bank = Account(name: "储蓄卡", type: .bankCard)
+        let card = Account(name: "信用卡", type: .creditCard)
+        let cny = CurrencyWallet(currency: .CNY, balance: 1_000, account: bank)
+        let usd = CurrencyWallet(currency: .USD, balance: -100, account: card)
+        var state = TransactionFormState(kind: .transfer)
+        state.sourceWalletID = cny.id
+        state.destinationWalletID = usd.id
+        state.amountText = "350"
+        state.destinationAmountText = "50"
+        state.includesFee = true
+        state.feeText = "3"
+        state.feeWalletID = cny.id
+        state.discountAmountText = "2"
+        state.discountWalletID = usd.id
+
+        let draft = try state.makeDraft(wallets: [cny, usd], categories: [])
+
+        XCTAssertEqual(draft.transferPurpose, .creditCardRepayment)
+        XCTAssertEqual(draft.amount, 350)
+        XCTAssertEqual(draft.destinationAmount, 50)
+        XCTAssertEqual(draft.feeWallet?.id, cny.id)
+        XCTAssertEqual(draft.discountWallet?.id, usd.id)
+    }
 }

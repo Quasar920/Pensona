@@ -25,7 +25,8 @@ struct AccountListView: View {
     }
 
     private var selectedBook: LedgerBook? {
-        books.first { $0.id.uuidString == selectedBookID } ?? books.first
+        let activeBooks = books.filter { !$0.isArchived }
+        return activeBooks.first { $0.id.uuidString == selectedBookID } ?? activeBooks.first
     }
 
     var body: some View {
@@ -140,8 +141,11 @@ struct AccountListView: View {
     }
 
     private func ensureSelectedBook() {
-        guard let first = books.first else { return }
-        if !books.contains(where: { $0.id.uuidString == selectedBookID }) {
+        guard let first = books.first(where: { !$0.isArchived }) else {
+            selectedBookID = ""
+            return
+        }
+        if !books.contains(where: { !$0.isArchived && $0.id.uuidString == selectedBookID }) {
             selectedBookID = first.id.uuidString
         }
     }
@@ -587,11 +591,15 @@ private struct AssetTransactionRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: transaction.category?.symbolName ?? transaction.type.symbolName)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 38, height: 38)
-                .background(tint.opacity(0.11), in: Circle())
+            if let category = transaction.category {
+                CategoryIconImage(category: category, size: 38)
+            } else {
+                Image(systemName: transaction.type.symbolName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 38, height: 38)
+                    .background(tint.opacity(0.11), in: Circle())
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)

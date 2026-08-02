@@ -26,6 +26,10 @@ struct HomeView: View {
     @State private var detailPath = NavigationPath()
     @State private var deletingTransaction: LedgerTransaction?
     @State private var transactionActionError: String?
+    @State private var isBillSearchPresented = false
+    @State private var bookSwitcherGenie = CenteredGenieCardPresentation()
+    @State private var bookSwitcherSourceFrame = CGRect.zero
+    @State private var pendingBookSheet: HomeSheetDestination?
 
     init(
         addTransaction: @escaping () -> Void = {},
@@ -35,8 +39,12 @@ struct HomeView: View {
         _isDetailPresented = isDetailPresented
     }
 
+    private var activeBooks: [LedgerBook] {
+        books.filter { !$0.isArchived }
+    }
+
     private var selectedBook: LedgerBook? {
-        books.first { $0.id.uuidString == selectedBookID } ?? books.first
+        activeBooks.first { $0.id.uuidString == selectedBookID } ?? activeBooks.first
     }
 
     private var loadKey: BillLoadKey {
@@ -79,9 +87,8 @@ struct HomeView: View {
                     LazyVStack(spacing: LedgerLayout.sectionSpacing) {
                         BillTopControls(
                             bookName: selectedBook?.name ?? AppLocalization.string("选择账本"),
-                            searchText: $billState.searchText,
-                            isSearchExpanded: $billState.isSearchExpanded,
-                            openBook: { presentation.present(.bookSwitcher) },
+                            openBook: presentBookSwitcher,
+                            openSearch: { isBillSearchPresented = true },
                             openSettings: { presentation.present(.settings) }
                         )
 
@@ -131,6 +138,23 @@ struct HomeView: View {
                     .padding(.bottom, RootEntryLayout.scrollContentClearance)
                 }
             }
+            .overlay {
+                CenteredGenieCardHost(
+                    presentation: $bookSwitcherGenie,
+                    maximumWidth: 390,
+                    onDismissed: presentPendingBookSheet
+                ) {
+                    HomeBookSwitcherCard(
+                        books: activeBooks,
+                        selectedBookID: $selectedBookID,
+                        dismiss: { bookSwitcherGenie.requestDismissal() },
+                        manageBooks: {
+                            pendingBookSheet = .bookManagement
+                            bookSwitcherGenie.requestDismissal()
+                        }
+                    )
+                }
+            }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: LedgerTransaction.self) {
                 TransactionDetailView(transaction: $0)
@@ -142,6 +166,9 @@ struct HomeView: View {
                     selectedBookID: $selectedBookID,
                     selectedMonth: $billState.selectedMonth
                 )
+            }
+            .fullScreenCover(isPresented: $isBillSearchPresented) {
+                BillSearchView()
             }
             .confirmationDialog(
                 "确定删除这笔交易？",
@@ -167,6 +194,11 @@ struct HomeView: View {
                 applyPreviewStateIfNeeded()
             }
             .onChange(of: books.count) { _, _ in ensureSelectedBook() }
+            .onPreferenceChange(CenteredGenieSourceFramePreferenceKey.self) { frames in
+                if let frame = frames["home-book-switcher"], !frame.isEmpty {
+                    bookSwitcherSourceFrame = frame
+                }
+            }
             .task(id: loadKey) {
                 if !billState.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     try? await Task.sleep(for: .milliseconds(250))
@@ -184,6 +216,7 @@ struct HomeView: View {
                 Text(loadError ?? AppLocalization.string("未知错误"))
             }
         }
+        .coordinateSpace(name: CenteredGenieCoordinateSpace.name)
         .rootEntryVisibility(detailPath.isEmpty ? .visible : .hidden, for: .ledger)
         .onAppear { isDetailPresented = !detailPath.isEmpty }
         .onChange(of: detailPath.count) { _, count in
@@ -192,10 +225,26 @@ struct HomeView: View {
     }
 
     private func ensureSelectedBook() {
-        guard let first = books.first else { return }
-        if !books.contains(where: { $0.id.uuidString == selectedBookID }) {
+        guard let first = activeBooks.first else {
+            selectedBookID = ""
+            return
+        }
+        if !activeBooks.contains(where: { $0.id.uuidString == selectedBookID }) {
             selectedBookID = first.id.uuidString
         }
+    }
+
+    private func presentBookSwitcher() {
+        let fallback = CGRect(x: 24, y: 54, width: 160, height: LedgerLayout.minimumHitSize)
+        bookSwitcherGenie.present(
+            from: bookSwitcherSourceFrame.isEmpty ? fallback : bookSwitcherSourceFrame
+        )
+    }
+
+    private func presentPendingBookSheet() {
+        guard let destination = pendingBookSheet else { return }
+        pendingBookSheet = nil
+        presentation.present(destination)
     }
 
     private func openBudgetEditor() {
@@ -248,8 +297,7 @@ struct HomeView: View {
         case "budget-editor":
             DispatchQueue.main.async { openBudgetEditor() }
         case "bill-search":
-            billState.isSearchExpanded = true
-            billState.searchText = "餐饮"
+            isBillSearchPresented = true
         default:
             break
         }
@@ -291,6 +339,99 @@ struct HomeView: View {
             loadError = nil
         } catch {
             loadError = error.localizedDescription
+        }
+    }
+}
+
+private struct HomeBookSwitcherCard: View {
+    let books: [LedgerBook]
+    @Binding var selectedBookID: String
+    let dismiss: () -> Void
+    let manageBooks: () -> Void
+
+    var body: some View {
+        CenteredGenieCardSurface {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("切换账本")
+                            .font(.title3.weight(.bold))
+                        Text("选择要查看的账本")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(action: dismiss) {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.bold))
+                            .frame(width: 32, height: 32)
+                            .background(Color.primary.opacity(0.07), in: Circle())
+                    }
+                    .buttonStyle(LedgerGlassPressStyle())
+                    .accessibilityLabel("关闭")
+                }
+
+                bookRows
+
+                Button(action: manageBooks) {
+                    Label("管理账本", systemImage: "slider.horizontal.3")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(LedgerGlassPressStyle())
+                .foregroundStyle(HomePalette.accent)
+                .background(HomePalette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .accessibilityIdentifier("home-book-switcher-card")
+    }
+
+    @ViewBuilder
+    private var bookRows: some View {
+        if books.count > 4 {
+            ScrollView {
+                bookRowStack
+            }
+            .frame(maxHeight: 300)
+            .scrollIndicators(.hidden)
+        } else {
+            bookRowStack
+        }
+    }
+
+    private var bookRowStack: some View {
+        VStack(spacing: 8) {
+            ForEach(books) { book in
+                Button {
+                    selectedBookID = book.id.uuidString
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "book.closed.fill")
+                            .foregroundStyle(HomePalette.accent)
+                            .frame(width: 38, height: 38)
+                            .background(HomePalette.accent.opacity(0.12), in: Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(book.name)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text("\(book.accounts.filter { !$0.isHidden }.count) 个资产账户")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if selectedBookID == book.id.uuidString {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(HomePalette.accent)
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(LedgerGlassPressStyle())
+            }
         }
     }
 }
@@ -708,10 +849,14 @@ struct HomeTransactionRow: View {
 
     var body: some View {
         HStack(spacing: 13) {
-            Image(systemName: transaction.category?.symbolName ?? transaction.type.symbolName)
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(HomePalette.accent)
-                .frame(width: 40, height: 40)
+            if let category = transaction.category {
+                CategoryIconImage(category: category, size: 40)
+            } else {
+                Image(systemName: transaction.type.symbolName)
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(HomePalette.accent)
+                    .frame(width: 40, height: 40)
+            }
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -851,13 +996,18 @@ private struct PressableGlassButtonStyle: ButtonStyle {
 }
 
 extension LedgerTransaction {
+    var displayNote: String? {
+        guard let note else { return nil }
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     var homeCategoryTitle: String {
-        category?.name ?? type.title
+        category?.localizedName(locale: AppLocalization.locale) ?? type.title
     }
 
     var homeDetailText: String {
-        let trimmedNote = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedNote.isEmpty ? type.title : trimmedNote
+        displayNote ?? type.title
     }
 
     var homeAccountName: String {

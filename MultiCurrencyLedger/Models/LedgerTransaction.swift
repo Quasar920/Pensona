@@ -34,12 +34,24 @@ final class LedgerTransaction {
     var originalAmount: Decimal?
     var discountAmount: Decimal?
     var recognitionImportID: UUID?
+    var transferPurposeRawValue: String = TransferPurpose.standard.rawValue
+    var foreignSettlementModeRawValue: String?
+    var foreignOriginalAmount: Decimal?
+    var foreignOriginalCurrencyCode: String?
+    var settlementCurrencyCode: String?
+    var settledAmount: Decimal?
+    var settlementExchangeRate: Decimal?
+    var referenceExchangeRate: Decimal?
+    var discountCurrencyCode: String?
+    var installmentPlanID: UUID?
+    var installmentIndex: Int?
 
     @Relationship(deleteRule: .nullify) var sourceAccount: Account?
     @Relationship(deleteRule: .nullify) var sourceWallet: CurrencyWallet?
     @Relationship(deleteRule: .nullify) var destinationAccount: Account?
     @Relationship(deleteRule: .nullify) var destinationWallet: CurrencyWallet?
     @Relationship(deleteRule: .nullify) var feeWallet: CurrencyWallet?
+    @Relationship(deleteRule: .nullify) var discountWallet: CurrencyWallet?
     @Relationship(deleteRule: .nullify) var category: LedgerCategory?
     @Relationship(inverse: \TransactionTag.transactions) var tags: [TransactionTag]
     @Relationship(deleteRule: .cascade, inverse: \TransactionPaymentPart.transaction)
@@ -75,6 +87,18 @@ final class LedgerTransaction {
         originalAmount: Decimal? = nil,
         discountAmount: Decimal? = nil,
         recognitionImportID: UUID? = nil,
+        transferPurpose: TransferPurpose = .standard,
+        foreignSettlementMode: ForeignCurrencySettlementMode? = nil,
+        foreignOriginalAmount: Decimal? = nil,
+        foreignOriginalCurrencyCode: String? = nil,
+        settlementCurrencyCode: String? = nil,
+        settledAmount: Decimal? = nil,
+        settlementExchangeRate: Decimal? = nil,
+        referenceExchangeRate: Decimal? = nil,
+        discountWallet: CurrencyWallet? = nil,
+        discountCurrencyCode: String? = nil,
+        installmentPlanID: UUID? = nil,
+        installmentIndex: Int? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -107,6 +131,18 @@ final class LedgerTransaction {
         self.originalAmount = originalAmount
         self.discountAmount = discountAmount
         self.recognitionImportID = recognitionImportID
+        transferPurposeRawValue = transferPurpose.rawValue
+        foreignSettlementModeRawValue = foreignSettlementMode?.rawValue
+        self.foreignOriginalAmount = foreignOriginalAmount
+        self.foreignOriginalCurrencyCode = foreignOriginalCurrencyCode
+        self.settlementCurrencyCode = settlementCurrencyCode
+        self.settledAmount = settledAmount
+        self.settlementExchangeRate = settlementExchangeRate
+        self.referenceExchangeRate = referenceExchangeRate
+        self.discountWallet = discountWallet
+        self.discountCurrencyCode = discountCurrencyCode
+        self.installmentPlanID = installmentPlanID
+        self.installmentIndex = installmentIndex
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -118,5 +154,13 @@ final class LedgerTransaction {
     }
     var adjustmentDirection: AdjustmentDirection? {
         adjustmentDirectionRawValue.flatMap(AdjustmentDirection.init(rawValue:))
+    }
+    var transferPurpose: TransferPurpose {
+        get { TransferPurpose(rawValue: transferPurposeRawValue) ?? .standard }
+        set { transferPurposeRawValue = newValue.rawValue }
+    }
+    var foreignSettlementMode: ForeignCurrencySettlementMode? {
+        get { foreignSettlementModeRawValue.flatMap(ForeignCurrencySettlementMode.init(rawValue:)) }
+        set { foreignSettlementModeRawValue = newValue?.rawValue }
     }
 }

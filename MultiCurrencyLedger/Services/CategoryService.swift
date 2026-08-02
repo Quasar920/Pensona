@@ -73,6 +73,7 @@ final class CategoryService {
         bookID: UUID,
         parent: LedgerCategory? = nil
     ) throws -> LedgerCategory {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
         let cleanName = try validatedName(name)
         try validateParent(parent, type: type)
         try ensureUnique(
@@ -87,7 +88,7 @@ final class CategoryService {
             type: type,
             symbolName: symbolName,
             sortOrder: (siblings.map(\.sortOrder).max() ?? -1) + 1,
-            bookID: nil,
+            bookID: bookID,
             parentID: parent?.id
         )
         context.insert(category)
@@ -101,6 +102,7 @@ final class CategoryService {
         symbolName: String,
         parent: LedgerCategory?
     ) throws {
+        if let bookID = category.bookID { _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID) }
         let cleanName = try validatedName(name)
         try validateParent(parent, type: category.type)
         if parent?.id == category.id || isDescendant(parent, of: category) {
@@ -126,6 +128,7 @@ final class CategoryService {
         iconSource: CategoryIconSource = .builtIn,
         userIconRelativePath: String? = nil
     ) throws {
+        if let bookID = category.bookID { _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID) }
         let previousIconPath = category.userIconRelativePath
         let cleanName = try validatedName(name)
         try ensureUnique(
@@ -152,6 +155,7 @@ final class CategoryService {
 
     func reorder(_ orderedCategories: [LedgerCategory]) throws {
         guard let first = orderedCategories.first else { return }
+        try requireWritable(first)
         let ids = Set(orderedCategories.map(\.id))
         guard ids.count == orderedCategories.count,
               orderedCategories.allSatisfy({
@@ -171,6 +175,7 @@ final class CategoryService {
     }
 
     func convertRootToChild(_ category: LedgerCategory, under parent: LedgerCategory) throws {
+        try requireWritable(category)
         guard category.parentID == nil else { throw CategoryError.invalidParent }
         let all = try context.fetch(FetchDescriptor<LedgerCategory>())
         let childCount = all.count { $0.parentID == category.id }
@@ -179,11 +184,13 @@ final class CategoryService {
     }
 
     func moveChild(_ category: LedgerCategory, to parent: LedgerCategory) throws {
+        try requireWritable(category)
         guard category.parentID != nil else { throw CategoryError.invalidParent }
         try move(category, under: parent)
     }
 
     func promoteToRoot(_ category: LedgerCategory) throws {
+        try requireWritable(category)
         guard category.parentID != nil else { return }
         try ensureUnique(name: category.name, type: category.type, parentID: nil, excluding: category.id)
         let roots = try context.fetch(FetchDescriptor<LedgerCategory>()).filter {
@@ -203,6 +210,7 @@ final class CategoryService {
         _ category: LedgerCategory,
         migratingReferencesTo target: LedgerCategory? = nil
     ) throws {
+        if let bookID = category.bookID { _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID) }
         let iconPath = category.userIconRelativePath
         let summary = try usageSummary(for: category)
         if let target {
@@ -240,6 +248,7 @@ final class CategoryService {
     }
 
     func setArchived(_ archived: Bool, category: LedgerCategory) throws {
+        if let bookID = category.bookID { _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID) }
         category.isArchived = archived
         category.updatedAt = .now
         let all = try context.fetch(FetchDescriptor<LedgerCategory>())
@@ -254,6 +263,12 @@ final class CategoryService {
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw CategoryError.emptyName }
         return clean
+    }
+
+    private func requireWritable(_ category: LedgerCategory) throws {
+        if let bookID = category.bookID {
+            _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
+        }
     }
 
     private func validateParent(

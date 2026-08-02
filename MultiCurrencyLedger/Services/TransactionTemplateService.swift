@@ -33,6 +33,7 @@ final class TransactionTemplateService {
 
     @discardableResult
     func create(name: String, bookID: UUID, from draft: TransactionDraft) throws -> TransactionTemplate {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw TransactionTemplateError.emptyName }
         guard let sourceWallet = draft.sourceWallet,
@@ -125,12 +126,14 @@ final class TransactionTemplateService {
     }
 
     func setArchived(_ archived: Bool, template: TransactionTemplate) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: template.bookID)
         template.isArchived = archived
         template.updatedAt = .now
         try context.save()
     }
 
     func delete(_ template: TransactionTemplate) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: template.bookID)
         context.delete(template)
         try context.save()
     }

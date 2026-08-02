@@ -15,7 +15,8 @@ struct AccountDetailView: View {
     @State private var refreshGeneration = 0
 
     private var selectedBook: LedgerBook? {
-        books.first { $0.id.uuidString == selectedBookID } ?? books.first
+        let activeBooks = books.filter { !$0.isArchived }
+        return activeBooks.first { $0.id.uuidString == selectedBookID } ?? activeBooks.first
     }
 
     var body: some View {
@@ -208,6 +209,8 @@ struct AccountEditView: View {
     @State private var sortOrder: Int
     @State private var isHidden: Bool
     @State private var cardLastFour: String
+    @State private var settlementMode: ForeignCurrencySettlementMode
+    @State private var settlementCurrency: SupportedCurrency
     @State private var errorMessage: String?
 
     init(account: Account) {
@@ -218,6 +221,11 @@ struct AccountEditView: View {
         _sortOrder = State(initialValue: account.sortOrder)
         _isHidden = State(initialValue: account.isHidden)
         _cardLastFour = State(initialValue: AccountCardIdentityStore().lastFour(for: account.id) ?? "")
+        _settlementMode = State(initialValue: account.defaultForeignCurrencySettlementMode)
+        _settlementCurrency = State(initialValue:
+            account.defaultSettlementCurrencyCode
+                .flatMap(SupportedCurrency.init(rawValue:)) ?? .CNY
+        )
     }
 
     var body: some View {
@@ -248,6 +256,20 @@ struct AccountEditView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                if type == .creditCard {
+                    Section("外币结算") {
+                        Picker("结算方式", selection: $settlementMode) {
+                            ForEach(ForeignCurrencySettlementMode.allCases) {
+                                Text($0.title).tag($0)
+                            }
+                        }
+                        Picker("默认结算币种", selection: $settlementCurrency) {
+                            ForEach(SupportedCurrency.allCases) {
+                                Text("\($0.rawValue) · \($0.localizedName)").tag($0)
+                            }
+                        }
+                    }
+                }
                 TextField("备注", text: $note, axis: .vertical)
                 Stepper("排序：\(sortOrder)", value: $sortOrder, in: 0...999)
                 Toggle("从资产列表隐藏", isOn: $isHidden)
@@ -275,7 +297,9 @@ struct AccountEditView: View {
                 note: note,
                 sortOrder: sortOrder,
                 isHidden: isHidden,
-                cardLastFour: type.supportsCardLastFour ? cardLastFour : nil
+                cardLastFour: type.supportsCardLastFour ? cardLastFour : nil,
+                defaultForeignCurrencySettlementMode: settlementMode,
+                defaultSettlementCurrencyCode: settlementCurrency.rawValue
             )
             dismiss()
         } catch { errorMessage = error.localizedDescription }
@@ -324,11 +348,21 @@ struct TransactionCompactRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: transaction.category?.symbolName ?? transaction.type.symbolName)
-                .foregroundStyle(transaction.type.color)
-                .frame(width: 28)
+            if let category = transaction.category {
+                CategoryIconImage(category: category, size: 28)
+            } else {
+                Image(systemName: transaction.type.symbolName)
+                    .foregroundStyle(transaction.type.color)
+                    .frame(width: 28)
+            }
             VStack(alignment: .leading) {
                 Text(transaction.category?.name ?? transaction.type.title)
+                if let note = transaction.displayNote {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.primary.opacity(0.78))
+                        .lineLimit(1)
+                }
                 Text(transaction.date, format: .dateTime.month().day().hour().minute())
                     .font(.caption).foregroundStyle(.secondary)
             }

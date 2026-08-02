@@ -83,6 +83,7 @@ struct MonthlySummaryService {
 
         for transaction in transactions
         where transaction.date >= monthStart && transaction.date < monthEnd {
+            let exclusion = MonthlySummaryExclusionStore.exclusion(for: transaction.id)
             let principal = transaction.sourceAmount ?? transaction.amount ?? 0
             let principalCode = transaction.sourceCurrencyCode
                 ?? transaction.currencyCode
@@ -90,7 +91,9 @@ struct MonthlySummaryService {
 
             switch transaction.type {
             case .income:
-                if aaRecoveryIDs.contains(transaction.id) {
+                if exclusion.income {
+                    break
+                } else if aaRecoveryIDs.contains(transaction.id) {
                     break
                 } else if relatedIncomeIDs.contains(transaction.id) {
                     add(
@@ -110,6 +113,7 @@ struct MonthlySummaryService {
                     )
                 }
             case .expense:
+                guard !exclusion.expense else { continue }
                 let personalAmount = max(
                     0,
                     principal - (aaSplitByOriginalID[transaction.id]?.othersOwedAmount ?? 0)

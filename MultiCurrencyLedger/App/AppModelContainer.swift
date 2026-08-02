@@ -1,3 +1,4 @@
+import Foundation
 import SwiftData
 
 enum AppModelContainer {
@@ -7,7 +8,7 @@ enum AppModelContainer {
         #if PERFORMANCE_TESTING
         let isStoredInMemoryOnly = true
         #else
-        let isStoredInMemoryOnly = false
+        let isStoredInMemoryOnly = ProcessInfo.processInfo.environment["UI_TEST_MODE"] == "1"
         #endif
         let configuration = ModelConfiguration(
             nil,

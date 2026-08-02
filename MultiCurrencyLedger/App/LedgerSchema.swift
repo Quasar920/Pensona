@@ -241,7 +241,10 @@ enum LedgerSchemaV3: VersionedSchema {
 
 enum LedgerMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [LedgerSchemaLegacy.self, LedgerSchemaV1.self, LedgerSchemaV2.self, LedgerSchemaV3.self]
+        [
+            LedgerSchemaLegacy.self, LedgerSchemaV1.self, LedgerSchemaV2.self,
+            LedgerSchemaV3.self
+        ]
     }
 
     static var stages: [MigrationStage] {

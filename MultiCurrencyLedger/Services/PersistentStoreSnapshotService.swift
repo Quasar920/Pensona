@@ -22,7 +22,7 @@ enum PersistentStoreSnapshotError: LocalizedError, Equatable {
 }
 
 enum PersistentStoreSnapshotService {
-    static let schemaVersion = "3.0.0-aa-split"
+    static let schemaVersion = "4.1.0-foreign-card-settlement"
     static let pendingRestoreKey = "pendingMigrationStoreRestorePath"
     private static let preparedVersionKey = "preparedPersistentSchemaVersion"
 

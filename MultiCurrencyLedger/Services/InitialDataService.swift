@@ -7,7 +7,7 @@ enum InitialDataService {
 
         let books = try context.fetch(FetchDescriptor<LedgerBook>())
         if books.isEmpty {
-            context.insert(LedgerBook(name: "日常账本"))
+            context.insert(LedgerBook(name: AppLocalization.string("日常账本")))
         }
         try context.save()
     }

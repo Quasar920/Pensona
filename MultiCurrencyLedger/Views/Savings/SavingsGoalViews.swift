@@ -11,15 +11,23 @@ struct SavingsGoalListView: View {
     @Query(sort: \SavingsAllocation.date, order: .reverse) private var allocations: [SavingsAllocation]
     @Query(sort: \RepaymentReminder.dueDate) private var reminders: [RepaymentReminder]
 
-    @State private var showingPlanChooser = false
     @State private var showingGoalEditor = false
     @State private var showingReminderEditor = false
     @State private var allocationGoal: SavingsGoal?
     @State private var editingReminder: RepaymentReminder?
     @State private var errorMessage: String?
+    @State private var newPlanGenie = CenteredGenieCardPresentation()
+    @State private var newPlanSourceFrame = CGRect.zero
+    @State private var pendingNewPlanKind: NewPlanKind?
+
+    private enum NewPlanKind {
+        case goal
+        case reminder
+    }
 
     private var selectedBook: LedgerBook? {
-        books.first { $0.id.uuidString == selectedBookID } ?? books.first
+        let activeBooks = books.filter { !$0.isArchived }
+        return activeBooks.first { $0.id.uuidString == selectedBookID } ?? activeBooks.first
     }
 
     private var visibleGoals: [SavingsGoal] {
@@ -37,7 +45,7 @@ struct SavingsGoalListView: View {
 
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 14) {
-                        planSectionTitle("存钱目标", count: visibleGoals.count)
+                        planSectionTitle(AppLocalization.string("存钱目标"), count: visibleGoals.count)
 
                         if visibleGoals.isEmpty {
                             PlanEmptyCard(
@@ -58,7 +66,7 @@ struct SavingsGoalListView: View {
                             }
                         }
 
-                        planSectionTitle("还款提醒", count: reminders.count)
+                        planSectionTitle(AppLocalization.string("还款提醒"), count: reminders.count)
                             .padding(.top, 8)
 
                         if reminders.isEmpty {
@@ -86,30 +94,46 @@ struct SavingsGoalListView: View {
                     .padding(.bottom, RootEntryLayout.scrollContentClearance)
                 }
             }
-            .navigationTitle("计划")
+            .navigationTitle(AppLocalization.string("计划"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showingPlanChooser = true } label: {
+                    Button(action: presentNewPlanChooser) {
                         HStack(spacing: 5) {
                             Image(systemName: "plus")
-                            Text("新增计划")
+                            Text(AppLocalization.string("新增计划"))
                         }
                         .font(.subheadline.weight(.semibold))
                     }
                     .disabled(selectedBook == nil || activeAccounts.isEmpty && books.isEmpty)
                     .accessibilityHint("选择新增存钱目标或还款提醒")
+                    .accessibilityIdentifier("savings-new-plan")
+                    .centeredGenieSourceFrame(id: "savings-new-plan")
+                }
+            }
+            .overlay {
+                CenteredGenieCardHost(
+                    presentation: $newPlanGenie,
+                    maximumWidth: 360,
+                    onDismissed: presentPendingNewPlan
+                ) {
+                    SavingsNewPlanCard(
+                        dismiss: { newPlanGenie.requestDismissal() },
+                        createGoal: {
+                            pendingNewPlanKind = .goal
+                            newPlanGenie.requestDismissal()
+                        },
+                        createReminder: {
+                            pendingNewPlanKind = .reminder
+                            newPlanGenie.requestDismissal()
+                        }
+                    )
                 }
             }
             .navigationDestination(for: SavingsGoal.self) { goal in
                 SavingsGoalDetailView(goal: goal)
                     .toolbar(.visible, for: .navigationBar)
                     .rootEntryVisibility(.hidden, for: .savings)
-            }
-            .confirmationDialog("新增计划", isPresented: $showingPlanChooser) {
-                Button("存钱目标") { showingGoalEditor = true }
-                Button("还款提醒") { showingReminderEditor = true }
-                Button("取消", role: .cancel) {}
             }
             .sheet(isPresented: $showingGoalEditor) {
                 if let bookID = selectedBook?.id {
@@ -129,6 +153,11 @@ struct SavingsGoalListView: View {
             }
             .onAppear(perform: ensureSelectedBook)
             .onChange(of: books.count) { _, _ in ensureSelectedBook() }
+            .onPreferenceChange(CenteredGenieSourceFramePreferenceKey.self) { frames in
+                if let frame = frames["savings-new-plan"], !frame.isEmpty {
+                    newPlanSourceFrame = frame
+                }
+            }
             .alert("操作失败", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -138,13 +167,16 @@ struct SavingsGoalListView: View {
                 Text(errorMessage ?? AppLocalization.string("未知错误"))
             }
         }
+        .coordinateSpace(name: CenteredGenieCoordinateSpace.name)
     }
 
     private func planSectionTitle(_ title: String, count: Int) -> some View {
-        HStack {
+        let isEnglish = AppLocalization.locale.language.languageCode?.identifier == "en"
+        let itemUnit = isEnglish ? (count == 1 ? "Item" : "Items") : AppLocalization.string("项")
+        return HStack {
             Text(title).font(.title3.bold())
             Spacer()
-            Text("\(count) 项").font(.caption).foregroundStyle(.secondary)
+            Text("\(count) \(itemUnit)").font(.caption).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
     }
@@ -177,10 +209,109 @@ struct SavingsGoalListView: View {
     }
 
     private func ensureSelectedBook() {
-        guard let first = books.first else { return }
-        if !books.contains(where: { $0.id.uuidString == selectedBookID }) {
+        guard let first = books.first(where: { !$0.isArchived }) else {
+            selectedBookID = ""
+            return
+        }
+        if !books.contains(where: { !$0.isArchived && $0.id.uuidString == selectedBookID }) {
             selectedBookID = first.id.uuidString
         }
+    }
+
+    private func presentNewPlanChooser() {
+        let fallback = CGRect(x: 20, y: 58, width: 110, height: 36)
+        newPlanGenie.present(
+            from: newPlanSourceFrame.isEmpty ? fallback : newPlanSourceFrame
+        )
+    }
+
+    private func presentPendingNewPlan() {
+        guard let kind = pendingNewPlanKind else { return }
+        pendingNewPlanKind = nil
+        switch kind {
+        case .goal:
+            showingGoalEditor = true
+        case .reminder:
+            showingReminderEditor = true
+        }
+    }
+}
+
+private struct SavingsNewPlanCard: View {
+    let dismiss: () -> Void
+    let createGoal: () -> Void
+    let createReminder: () -> Void
+
+    var body: some View {
+        CenteredGenieCardSurface {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("新增计划")
+                            .font(.title3.weight(.bold))
+                        Text("选择要创建的计划类型")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(action: dismiss) {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.bold))
+                            .frame(width: 32, height: 32)
+                            .background(Color.primary.opacity(0.07), in: Circle())
+                    }
+                    .buttonStyle(LedgerGlassPressStyle())
+                    .accessibilityLabel("关闭")
+                }
+
+                choice(
+                    title: "存钱目标",
+                    detail: "设定目标金额与日期，持续记录存入进度。",
+                    symbol: "target",
+                    action: createGoal
+                )
+                choice(
+                    title: "还款提醒",
+                    detail: "记录待还金额与日期，不会自动创建交易。",
+                    symbol: "calendar.badge.clock",
+                    action: createReminder
+                )
+            }
+        }
+        .accessibilityIdentifier("savings-new-plan-card")
+    }
+
+    private func choice(
+        title: String,
+        detail: String,
+        symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 13) {
+                Image(systemName: symbol)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(HomePalette.accent)
+                    .frame(width: 42, height: 42)
+                    .background(HomePalette.accent.opacity(0.12), in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(13)
+            .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(LedgerGlassPressStyle())
     }
 }
 
@@ -238,6 +369,12 @@ private struct PlanSavingsGoalCard: View {
 
     private var targetDateText: String {
         guard let date = goal.targetDate else { return AppLocalization.string( "未设置目标日期") }
+        if AppLocalization.locale.language.languageCode?.identifier == "en" {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US")
+            formatter.dateFormat = "MMM d yyyy"
+            return "Target date \(formatter.string(from: date))"
+        }
         return AppLocalization.string( "目标日期 \(date.formatted(date: .abbreviated, time: .omitted))")
     }
 }

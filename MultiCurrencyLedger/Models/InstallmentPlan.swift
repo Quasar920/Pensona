@@ -29,6 +29,9 @@ final class InstallmentPlan {
     var merchantOrCounterparty: String?
     var note: String?
     var fractionDigits: Int
+    var principalCurrencyCode: String?
+    var settlementCurrencyCode: String?
+    var isForeignCurrencyRepayment: Bool = false
     var isPaused: Bool
     var isArchived: Bool
     var completedAt: Date?
@@ -53,6 +56,9 @@ final class InstallmentPlan {
         merchantOrCounterparty: String? = nil,
         note: String? = nil,
         fractionDigits: Int,
+        principalCurrencyCode: String? = nil,
+        settlementCurrencyCode: String? = nil,
+        isForeignCurrencyRepayment: Bool = false,
         isPaused: Bool = false,
         isArchived: Bool = false,
         completedAt: Date? = nil,
@@ -76,6 +82,9 @@ final class InstallmentPlan {
         self.merchantOrCounterparty = merchantOrCounterparty
         self.note = note
         self.fractionDigits = fractionDigits
+        self.principalCurrencyCode = principalCurrencyCode
+        self.settlementCurrencyCode = settlementCurrencyCode
+        self.isForeignCurrencyRepayment = isForeignCurrencyRepayment
         self.isPaused = isPaused
         self.isArchived = isArchived
         self.completedAt = completedAt

@@ -11,6 +11,7 @@ struct InstallmentPlanManagementView: View {
     @Query(sort: \InstallmentPlan.nextDueDate) private var plans: [InstallmentPlan]
     @Query private var occurrences: [InstallmentOccurrence]
     @State private var showingAdd = false
+    @State private var recordingForeignPlan: InstallmentPlan?
     @State private var errorMessage: String?
     @State private var resultMessage: String?
 
@@ -63,6 +64,11 @@ struct InstallmentPlanManagementView: View {
                 )
             }
         }
+        .sheet(item: $recordingForeignPlan) { plan in
+            ForeignInstallmentRepaymentView(plan: plan, wallets: wallets) {
+                resultMessage = "已记录第 \(plan.nextInstallmentIndex) 期还款"
+            }
+        }
         .alert("操作失败", isPresented: Binding(
             get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
         )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
@@ -76,6 +82,11 @@ struct InstallmentPlanManagementView: View {
                     Text(plan.name).font(.headline)
                     Text("\(plan.kind.title) · \(plan.nextInstallmentIndex)/\(plan.installmentCount) 期")
                         .font(.caption).foregroundStyle(.secondary)
+                    if plan.isForeignCurrencyRepayment {
+                        Text("\(plan.settlementCurrencyCode ?? "--") → \(plan.principalCurrencyCode ?? "--") · 每期单独汇率")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                     if !plan.isCompleted {
                         Text("下次 \(plan.nextDueDate.formatted(date: .abbreviated, time: .omitted))")
                             .font(.caption2).foregroundStyle(.secondary)
@@ -87,8 +98,16 @@ struct InstallmentPlanManagementView: View {
             }
             HStack {
                 if !plan.isCompleted {
-                    Button("补生成到今天") { generate(plan) }
-                        .buttonStyle(.bordered).disabled(plan.isPaused)
+                    if plan.isForeignCurrencyRepayment {
+                        Button("记录第 \(plan.nextInstallmentIndex + 1) 期") {
+                            recordingForeignPlan = plan
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(plan.isPaused)
+                    } else {
+                        Button("补生成到今天") { generate(plan) }
+                            .buttonStyle(.bordered).disabled(plan.isPaused)
+                    }
                     Button(plan.isPaused ? AppLocalization.string("恢复") : AppLocalization.string("暂停")) {
                         togglePause(plan)
                     }
@@ -130,6 +149,156 @@ struct InstallmentPlanManagementView: View {
     private func archive(_ plan: InstallmentPlan) {
         do { try InstallmentPlanService(context: context).setArchived(true, plan: plan) }
         catch { errorMessage = error.localizedDescription }
+    }
+}
+
+private struct ForeignInstallmentRepaymentView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    let plan: InstallmentPlan
+    let wallets: [CurrencyWallet]
+    let onSaved: () -> Void
+
+    @State private var settlementAmountText = ""
+    @State private var date = Date.now
+    @State private var feeText = ""
+    @State private var feeWalletID: UUID?
+    @State private var discountText = ""
+    @State private var discountWalletID: UUID?
+    @State private var errorMessage: String?
+
+    private var sourceWallet: CurrencyWallet? {
+        wallets.first { $0.id == plan.sourceWalletID }
+    }
+
+    private var destinationWallet: CurrencyWallet? {
+        wallets.first { $0.id == plan.destinationWalletID }
+    }
+
+    private var allocations: [Decimal] {
+        (try? InstallmentAllocator.allocations(
+            total: plan.totalPrincipal,
+            count: plan.installmentCount,
+            fractionDigits: plan.fractionDigits
+        )) ?? []
+    }
+
+    private var foreignPrincipal: Decimal {
+        guard allocations.indices.contains(plan.nextInstallmentIndex) else { return 0 }
+        return allocations[plan.nextInstallmentIndex]
+    }
+
+    private var actualRate: Decimal? {
+        guard let amount = DecimalParser.parse(settlementAmountText), amount > 0,
+              foreignPrincipal > 0 else { return nil }
+        return EntryCalculationState.round(amount / foreignPrincipal, scale: 8)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("本期还款") {
+                    LabeledContent(
+                        "外币本金",
+                        value: MoneyFormatter.string(
+                            foreignPrincipal,
+                            currencyCode: destinationWallet?.currencyCode ?? plan.principalCurrencyCode ?? ""
+                        )
+                    )
+                    TextField(
+                        "实际 \(sourceWallet?.currencyCode ?? plan.settlementCurrencyCode ?? "") 还款金额",
+                        text: $settlementAmountText
+                    )
+                    .keyboardType(.decimalPad)
+                    LabeledContent(
+                        "实际汇率",
+                        value: actualRate.map(EntryCalculationState.string) ?? "--"
+                    )
+                    DatePicker("还款日期", selection: $date)
+                }
+
+                Section("优惠与手续费") {
+                    TextField("手续费", text: $feeText)
+                        .keyboardType(.decimalPad)
+                    if positiveAmount(feeText) != nil {
+                        Picker("手续费扣款账户", selection: $feeWalletID) {
+                            Text("请选择").tag(nil as UUID?)
+                            ForEach(wallets) { Text(walletLabel($0)).tag($0.id as UUID?) }
+                        }
+                    }
+                    TextField("优惠", text: $discountText)
+                        .keyboardType(.decimalPad)
+                    if positiveAmount(discountText) != nil {
+                        Picker("优惠进入账户", selection: $discountWalletID) {
+                            Text("请选择").tag(nil as UUID?)
+                            ForEach(wallets) { Text(walletLabel($0)).tag($0.id as UUID?) }
+                        }
+                    }
+                }
+
+                Section {
+                    Text("每一期只记录当期实际本位币金额，并据此生成独立汇率；不会沿用上一期汇率。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("第 \(plan.nextInstallmentIndex + 1) 期还款")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存", action: save)
+                }
+            }
+            .alert("无法保存", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("好") {}
+            } message: {
+                Text(errorMessage ?? AppLocalization.string("未知错误"))
+            }
+        }
+    }
+
+    private func save() {
+        do {
+            guard let settlementAmount = positiveAmount(settlementAmountText) else {
+                throw ForeignCurrencySettlementError.invalidExchangeAmounts
+            }
+            let fee = positiveAmount(feeText)
+            let discount = positiveAmount(discountText)
+            if fee != nil, feeWalletID == nil {
+                throw ValidationError("请选择手续费扣款账户")
+            }
+            if discount != nil, discountWalletID == nil {
+                throw ValidationError("请选择优惠进入账户")
+            }
+            _ = try InstallmentPlanService(context: context).recordForeignInstallment(
+                for: plan,
+                foreignPrincipal: foreignPrincipal,
+                settlementAmount: settlementAmount,
+                date: date,
+                feeAmount: fee,
+                feeWallet: wallets.first { $0.id == feeWalletID },
+                discountAmount: discount,
+                discountWallet: wallets.first { $0.id == discountWalletID }
+            )
+            onSaved()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func positiveAmount(_ text: String) -> Decimal? {
+        DecimalParser.parse(text).flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    private func walletLabel(_ wallet: CurrencyWallet) -> String {
+        "\(wallet.account?.name ?? AppLocalization.string("未命名")) · \(wallet.currencyCode)"
     }
 }
 

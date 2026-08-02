@@ -2,6 +2,15 @@ import Foundation
 import SwiftData
 
 enum PreviewDataService {
+    private static let sampleDiningTransactionIDKey = "uiTestSampleDiningTransactionID"
+
+    static var sampleDiningTransactionID: UUID? {
+        guard ProcessInfo.processInfo.environment["UI_TEST_MODE"] == "1",
+              let rawValue = UserDefaults.standard.string(forKey: sampleDiningTransactionIDKey)
+        else { return nil }
+        return UUID(uuidString: rawValue)
+    }
+
     @MainActor
     static func seedIfRequested(context: ModelContext) throws {
         #if DEBUG || PERFORMANCE_TESTING
@@ -13,20 +22,21 @@ enum PreviewDataService {
         let transit = categories.first { $0.systemLocalizationKey == "category.expense.transport" }
         let shopping = categories.first { $0.systemLocalizationKey == "category.expense.shopping" }
         let salary = categories.first { $0.systemLocalizationKey == "category.income.salary" }
-        let travel = categories.first { $0.systemLocalizationKey == "category.expense.travel" }
-        let refund = categories.first { $0.systemLocalizationKey == "category.income.refund" }
+        let travel = categories.first { $0.systemLocalizationKey == "category.expense.transport.flight" }
+        let refund = categories.first { $0.systemLocalizationKey == "category.income.other.fallback" }
         guard let book = try context.fetch(FetchDescriptor<LedgerBook>()).first else {
             throw LedgerError.missingBook
         }
-        let travelBook = LedgerBook(name: "旅行账本", sortOrder: 1)
+        let isEnglishPreview = ProcessInfo.processInfo.environment["APP_PREVIEW_LANGUAGE"] == "en"
+        let travelBook = LedgerBook(name: isEnglishPreview ? "Travel Ledger" : "旅行账本", sortOrder: 1)
 
-        let daily = Account(name: "日常账户", type: .bankCard)
-        let savings = Account(name: "储蓄账户", type: .savings)
-        let recharge = Account(name: "交通卡", type: .eWallet)
-        let credit = Account(name: "招商信用卡", type: .creditCard)
-        let investment = Account(name: "指数基金", type: .investment)
-        let receivable = Account(name: "朋友借款", type: .receivable)
-        let payable = Account(name: "房租待付", type: .payable)
+        let daily = Account(name: isEnglishPreview ? "Everyday Account" : "日常账户", type: .bankCard)
+        let savings = Account(name: isEnglishPreview ? "Savings Account" : "储蓄账户", type: .savings)
+        let recharge = Account(name: isEnglishPreview ? "Transit Card" : "交通卡", type: .eWallet)
+        let credit = Account(name: isEnglishPreview ? "CMB Credit Card" : "招商信用卡", type: .creditCard)
+        let investment = Account(name: isEnglishPreview ? "Index Fund" : "指数基金", type: .investment)
+        let receivable = Account(name: isEnglishPreview ? "Loan to Friend" : "朋友借款", type: .receivable)
+        let payable = Account(name: isEnglishPreview ? "Rent Payable" : "房租待付", type: .payable)
         let cnyDaily = CurrencyWallet(currency: .CNY, balance: 18_500, account: daily)
         let usdDaily = CurrencyWallet(currency: .USD, balance: 1_200, account: daily)
         let cnySavings = CurrencyWallet(currency: .CNY, balance: 2_000, account: savings)
@@ -66,15 +76,15 @@ enum PreviewDataService {
             wallet: cnyDaily,
             category: salary,
             date: .now.addingTimeInterval(-2_400),
-            note: "工资到账"
+            note: isEnglishPreview ? "Salary received" : "工资到账"
         )
-        _ = try ledger.createExpense(
+        let dining = try ledger.createExpense(
             bookID: book.id,
             amount: 32,
             wallet: cnyDaily,
             category: food,
             date: .now.addingTimeInterval(-5_100),
-            note: "星巴克"
+            note: isEnglishPreview ? "Starbucks" : "星巴克"
         )
         _ = try ledger.createExpense(
             bookID: book.id,
@@ -82,7 +92,7 @@ enum PreviewDataService {
             wallet: cnyDaily,
             category: transit,
             date: .now.addingTimeInterval(-9_200),
-            note: "地铁出行"
+            note: isEnglishPreview ? "Subway commute" : "地铁出行"
         )
         _ = try ledger.createExpense(
             bookID: book.id,
@@ -90,7 +100,7 @@ enum PreviewDataService {
             wallet: cnyDaily,
             category: shopping,
             date: .now.addingTimeInterval(-86_400),
-            note: "超市采购"
+            note: isEnglishPreview ? "Grocery shopping" : "超市采购"
         )
         let previousMonth = Calendar.current.date(byAdding: .month, value: -1, to: .now) ?? .now
         _ = try ledger.createExpense(
@@ -99,7 +109,7 @@ enum PreviewDataService {
             wallet: cnyDaily,
             category: travel,
             date: previousMonth.addingTimeInterval(-172_800),
-            note: "酒店预订"
+            note: isEnglishPreview ? "Hotel booking" : "酒店预订"
         )
         _ = try ledger.createIncome(
             bookID: book.id,
@@ -107,7 +117,7 @@ enum PreviewDataService {
             wallet: cnyDaily,
             category: refund,
             date: previousMonth.addingTimeInterval(-259_200),
-            note: "差旅报销"
+            note: isEnglishPreview ? "Travel reimbursement" : "差旅报销"
         )
         let previewState = ProcessInfo.processInfo.environment["HOME_PREVIEW_STATE"]
             ?? ProcessInfo.processInfo.environment["ENTRY_PREVIEW_STATE"]
@@ -121,20 +131,28 @@ enum PreviewDataService {
         let goalService = SavingsGoalService(context: context)
         let emergencyGoal = try goalService.create(
             bookID: book.id,
-            name: "年度旅行",
+            name: isEnglishPreview ? "Annual Travel" : "年度旅行",
             targetAmount: 20_000,
             currencyCode: SupportedCurrency.CNY.rawValue,
             targetDate: Calendar.current.date(byAdding: .month, value: 8, to: .now),
             symbolName: "airplane",
             colorHex: "3478F6"
         )
-        _ = try goalService.allocate(6_800, to: emergencyGoal, sourceAccountID: daily.id, note: "当前进度")
+        _ = try goalService.allocate(
+            6_800,
+            to: emergencyGoal,
+            sourceAccountID: daily.id,
+            note: isEnglishPreview ? "Current progress" : "当前进度"
+        )
         _ = try RepaymentReminderService(context: context).create(
             accountID: credit.id,
             currencyCode: SupportedCurrency.CNY.rawValue,
             outstandingAmount: 1_280,
             dueDate: Calendar.current.date(byAdding: .day, value: 6, to: .now) ?? .now
         )
+        if ProcessInfo.processInfo.environment["UI_TEST_MODE"] == "1" {
+            UserDefaults.standard.set(dining.id.uuidString, forKey: sampleDiningTransactionIDKey)
+        }
         #endif
     }
 }

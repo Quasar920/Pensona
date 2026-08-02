@@ -62,6 +62,7 @@ final class BudgetService {
         categoryID: UUID? = nil
     ) throws -> MonthlyBudget {
         guard amount > 0 else { throw BudgetError.invalidAmount }
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
         if let categoryID {
             let categories = try context.fetch(FetchDescriptor<LedgerCategory>())
             guard categories.contains(where: {
@@ -104,6 +105,7 @@ final class BudgetService {
     }
 
     func remove(_ budget: MonthlyBudget) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: budget.bookID)
         context.delete(budget)
         try context.save()
     }

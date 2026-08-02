@@ -21,6 +21,8 @@ enum LedgerError: LocalizedError, Equatable {
     case aaSettlementExists
     case aaRecoveryManaged
     case missingBook
+    case bookArchived
+    case installmentSequenceConflict
 
     var errorDescription: String? {
         switch self {
@@ -43,6 +45,8 @@ enum LedgerError: LocalizedError, Equatable {
         case .aaSettlementExists: AppLocalization.string( "请先删除这笔支出关联的 AA 收款记录")
         case .aaRecoveryManaged: AppLocalization.string( "AA 收款只能从原支出的 AA 收款历史中处理")
         case .missingBook: AppLocalization.string( "交易必须归属一个存在的账本")
+        case .bookArchived: AppLocalization.string("账本已归档，请先恢复后再修改")
+        case .installmentSequenceConflict: AppLocalization.string("只能删除外币分期计划中最后一笔已还记录")
         }
     }
 }
@@ -71,7 +75,15 @@ final class LedgerService {
     ) throws -> LedgerTransaction {
         try requireBook(bookID)
         _ = try impactCalculator.deltas(for: draft)
-        return try persistNew(draft.makeTransaction(bookID: bookID), configureBeforeSave: configureBeforeSave)
+        let transaction = try persistNew(draft.makeTransaction(bookID: bookID), configureBeforeSave: configureBeforeSave)
+        MonthlySummaryExclusionStore.set(
+            MonthlySummaryExclusion(
+                income: draft.excludesFromMonthlyIncome,
+                expense: draft.excludesFromMonthlyExpense
+            ),
+            for: transaction.id
+        )
+        return transaction
     }
 
     /// Validates and writes a whole import batch in one transaction. No wallet
@@ -93,6 +105,15 @@ final class LedgerService {
             }
             try configureBeforeSave(transactions)
             try context.save()
+            for (draft, transaction) in zip(drafts, transactions) {
+                MonthlySummaryExclusionStore.set(
+                    MonthlySummaryExclusion(
+                        income: draft.excludesFromMonthlyIncome,
+                        expense: draft.excludesFromMonthlyExpense
+                    ),
+                    for: transaction.id
+                )
+            }
             NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
             return transactions
         } catch {
@@ -232,6 +253,7 @@ final class LedgerService {
             context.insert(transaction)
             context.insert(importRecord)
             try context.save()
+            MonthlySummaryExclusionStore.set(MonthlySummaryExclusion(), for: transaction.id)
             NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
             return transaction
         } catch {
@@ -275,6 +297,9 @@ final class LedgerService {
         configureBeforeSave: () throws -> Void = {}
     ) throws {
         guard !transactions.isEmpty else { return }
+        for bookID in Set(transactions.compactMap(\.bookID)) {
+            try requireBook(bookID)
+        }
         let snapshots = snapshots(for: transactions)
         var attachmentPaths: [String] = []
         do {
@@ -325,12 +350,33 @@ final class LedgerService {
                 attachmentPaths.append(attachment.relativePath)
                 context.delete(attachment)
             }
+            let installmentOccurrences = try context.fetch(FetchDescriptor<InstallmentOccurrence>())
+            let installmentPlans = try context.fetch(FetchDescriptor<InstallmentPlan>())
+            let planByID = Dictionary(uniqueKeysWithValues: installmentPlans.map { ($0.id, $0) })
+            let deletedOccurrences = installmentOccurrences
+                .filter { transactionIDs.contains($0.transactionID) }
+                .sorted { $0.installmentIndex > $1.installmentIndex }
+            for occurrence in deletedOccurrences {
+                if let plan = planByID[occurrence.planID], plan.isForeignCurrencyRepayment {
+                    guard occurrence.installmentIndex == plan.nextInstallmentIndex - 1 else {
+                        throw LedgerError.installmentSequenceConflict
+                    }
+                    plan.nextInstallmentIndex = occurrence.installmentIndex
+                    plan.nextDueDate = occurrence.installmentIndex == 0
+                        ? plan.startDate
+                        : occurrence.scheduledDate
+                    plan.completedAt = nil
+                    plan.updatedAt = .now
+                }
+                context.delete(occurrence)
+            }
             for transaction in transactions {
                 try reverseTransaction(transaction)
                 context.delete(transaction)
             }
             try configureBeforeSave()
             try context.save()
+            MonthlySummaryExclusionStore.remove(transactionIDs: transactionIDs)
             NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
             let store = AttachmentStore()
             for path in attachmentPaths { try? store.remove(relativePath: path) }
@@ -359,6 +405,7 @@ final class LedgerService {
             throw LedgerError.aaRecoveryManaged
         }
         guard let bookID = existing.bookID else { throw LedgerError.missingBook }
+        try requireBook(bookID)
         let replacement = draft.makeTransaction(bookID: bookID)
         let snapshots = snapshots(for: [existing, replacement])
         let transactionSnapshot = LedgerTransactionSnapshot(transaction: existing)
@@ -375,6 +422,13 @@ final class LedgerService {
                 throw AASplitError.expenseRequired
             }
             try context.save()
+            MonthlySummaryExclusionStore.set(
+                MonthlySummaryExclusion(
+                    income: draft.excludesFromMonthlyIncome,
+                    expense: draft.excludesFromMonthlyExpense
+                ),
+                for: existing.id
+            )
             NotificationCenter.default.post(name: .ledgerTransactionsDidChange, object: nil)
         } catch {
             context.rollback()
@@ -385,6 +439,9 @@ final class LedgerService {
     }
 
     func applyTransaction(_ transaction: LedgerTransaction) throws {
+        try ForeignCurrencySettlementService.validate(
+            TransactionDraft(transaction: transaction)
+        )
         try changeBalances(for: transaction, multiplier: 1)
     }
 
@@ -393,6 +450,9 @@ final class LedgerService {
     }
 
     func moveTransaction(_ transaction: LedgerTransaction, toBookID bookID: UUID) throws {
+        if let currentBookID = transaction.bookID {
+            try requireBook(currentBookID)
+        }
         try requireBook(bookID)
         transaction.bookID = bookID
         transaction.updatedAt = .now
@@ -434,7 +494,8 @@ final class LedgerService {
 
     private func requireBook(_ bookID: UUID) throws {
         let books = try context.fetch(FetchDescriptor<LedgerBook>())
-        guard books.contains(where: { $0.id == bookID }) else { throw LedgerError.missingBook }
+        guard let book = books.first(where: { $0.id == bookID }) else { throw LedgerError.missingBook }
+        guard !book.isArchived else { throw LedgerError.bookArchived }
     }
 
     private func snapshots(for transactions: [LedgerTransaction]) -> [WalletSnapshot] {
@@ -442,6 +503,7 @@ final class LedgerService {
         return transactions
             .flatMap { transaction in
                 [transaction.sourceWallet, transaction.destinationWallet, transaction.feeWallet]
+                    + [transaction.discountWallet]
                     + transaction.paymentParts.map(\.wallet)
             }
             .compactMap { $0 }
@@ -490,6 +552,17 @@ private struct LedgerTransactionSnapshot {
     let originalAmount: Decimal?
     let discountAmount: Decimal?
     let recognitionImportID: UUID?
+    let transferPurposeRawValue: String
+    let foreignSettlementModeRawValue: String?
+    let foreignOriginalAmount: Decimal?
+    let foreignOriginalCurrencyCode: String?
+    let settlementCurrencyCode: String?
+    let settledAmount: Decimal?
+    let settlementExchangeRate: Decimal?
+    let referenceExchangeRate: Decimal?
+    let discountCurrencyCode: String?
+    let installmentPlanID: UUID?
+    let installmentIndex: Int?
     let bookID: UUID?
     let reimbursementStatusRawValue: String
     let sourceAccount: Account?
@@ -497,6 +570,7 @@ private struct LedgerTransactionSnapshot {
     let destinationAccount: Account?
     let destinationWallet: CurrencyWallet?
     let feeWallet: CurrencyWallet?
+    let discountWallet: CurrencyWallet?
     let category: LedgerCategory?
     let tags: [TransactionTag]
     let paymentParts: [TransactionPaymentPart]
@@ -522,6 +596,17 @@ private struct LedgerTransactionSnapshot {
         originalAmount = transaction.originalAmount
         discountAmount = transaction.discountAmount
         recognitionImportID = transaction.recognitionImportID
+        transferPurposeRawValue = transaction.transferPurposeRawValue
+        foreignSettlementModeRawValue = transaction.foreignSettlementModeRawValue
+        foreignOriginalAmount = transaction.foreignOriginalAmount
+        foreignOriginalCurrencyCode = transaction.foreignOriginalCurrencyCode
+        settlementCurrencyCode = transaction.settlementCurrencyCode
+        settledAmount = transaction.settledAmount
+        settlementExchangeRate = transaction.settlementExchangeRate
+        referenceExchangeRate = transaction.referenceExchangeRate
+        discountCurrencyCode = transaction.discountCurrencyCode
+        installmentPlanID = transaction.installmentPlanID
+        installmentIndex = transaction.installmentIndex
         bookID = transaction.bookID
         reimbursementStatusRawValue = transaction.reimbursementStatusRawValue
         sourceAccount = transaction.sourceAccount
@@ -529,6 +614,7 @@ private struct LedgerTransactionSnapshot {
         destinationAccount = transaction.destinationAccount
         destinationWallet = transaction.destinationWallet
         feeWallet = transaction.feeWallet
+        discountWallet = transaction.discountWallet
         category = transaction.category
         tags = transaction.tags
         paymentParts = transaction.paymentParts
@@ -554,6 +640,17 @@ private struct LedgerTransactionSnapshot {
         transaction.originalAmount = originalAmount
         transaction.discountAmount = discountAmount
         transaction.recognitionImportID = recognitionImportID
+        transaction.transferPurposeRawValue = transferPurposeRawValue
+        transaction.foreignSettlementModeRawValue = foreignSettlementModeRawValue
+        transaction.foreignOriginalAmount = foreignOriginalAmount
+        transaction.foreignOriginalCurrencyCode = foreignOriginalCurrencyCode
+        transaction.settlementCurrencyCode = settlementCurrencyCode
+        transaction.settledAmount = settledAmount
+        transaction.settlementExchangeRate = settlementExchangeRate
+        transaction.referenceExchangeRate = referenceExchangeRate
+        transaction.discountCurrencyCode = discountCurrencyCode
+        transaction.installmentPlanID = installmentPlanID
+        transaction.installmentIndex = installmentIndex
         transaction.bookID = bookID
         transaction.reimbursementStatusRawValue = reimbursementStatusRawValue
         transaction.sourceAccount = sourceAccount
@@ -561,6 +658,7 @@ private struct LedgerTransactionSnapshot {
         transaction.destinationAccount = destinationAccount
         transaction.destinationWallet = destinationWallet
         transaction.feeWallet = feeWallet
+        transaction.discountWallet = discountWallet
         transaction.category = category
         transaction.tags = tags
         transaction.paymentParts = paymentParts

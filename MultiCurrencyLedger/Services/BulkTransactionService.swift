@@ -29,6 +29,9 @@ final class BulkTransactionService {
         date: Date
     ) throws {
         guard !transactions.isEmpty else { throw BulkTransactionError.emptySelection }
+        for transaction in transactions {
+            try LedgerBookAccess.requireActiveBook(in: context, for: transaction)
+        }
         let recoveryIDs = Set(
             try context.fetch(FetchDescriptor<AASettlement>()).map(\.recoveryTransactionID)
         )

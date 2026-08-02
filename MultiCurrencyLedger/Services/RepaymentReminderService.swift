@@ -33,6 +33,7 @@ final class RepaymentReminderService {
         outstandingAmount: Decimal,
         dueDate: Date
     ) throws -> RepaymentReminder {
+        try requireWritableAccount(id: accountID)
         let code = try validatedCurrency(
             accountID: accountID,
             currencyCode: currencyCode,
@@ -56,6 +57,8 @@ final class RepaymentReminderService {
         outstandingAmount: Decimal,
         dueDate: Date
     ) throws {
+        try requireWritableAccount(id: reminder.accountID)
+        try requireWritableAccount(id: accountID)
         let code = try validatedCurrency(
             accountID: accountID,
             currencyCode: currencyCode,
@@ -70,6 +73,7 @@ final class RepaymentReminderService {
     }
 
     func setCompleted(_ isCompleted: Bool, reminder: RepaymentReminder) throws {
+        try requireWritableAccount(id: reminder.accountID)
         reminder.isCompleted = isCompleted
         reminder.completedAt = isCompleted ? .now : nil
         reminder.updatedAt = .now
@@ -77,6 +81,7 @@ final class RepaymentReminderService {
     }
 
     func delete(_ reminder: RepaymentReminder) throws {
+        try requireWritableAccount(id: reminder.accountID)
         context.delete(reminder)
         try context.save()
     }
@@ -97,5 +102,12 @@ final class RepaymentReminderService {
             throw RepaymentReminderError.unsupportedCurrency
         }
         return code
+    }
+
+    private func requireWritableAccount(id: UUID) throws {
+        guard let account = try context.fetch(FetchDescriptor<Account>()).first(where: { $0.id == id }) else {
+            throw RepaymentReminderError.invalidAccount
+        }
+        try LedgerBookAccess.requireActiveBook(in: context, for: account)
     }
 }

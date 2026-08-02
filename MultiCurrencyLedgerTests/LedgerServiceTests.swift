@@ -554,7 +554,7 @@ final class LedgerServiceTests: XCTestCase {
         )
         let json = try Data(contentsOf: jsonURL)
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
-        XCTAssertEqual(root["version"] as? Int, 3)
+        XCTAssertEqual(root["version"] as? Int, 4)
         XCTAssertEqual((root["monthlyBudgets"] as? [[String: Any]])?.count, 1)
 
         let csvURL = try ExportService.makeCSV(transactions: [transaction])

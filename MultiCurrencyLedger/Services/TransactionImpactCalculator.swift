@@ -27,12 +27,19 @@ struct TransactionImpactCalculator {
             try appendPayments(from: draft, sign: 1, fallback: sourceWallet, to: &changes)
         case .transfer:
             let destinationWallet = try validateDestination(draft, sourceWallet: sourceWallet)
-            guard sourceWallet.currencyCode == destinationWallet.currencyCode else {
+            let isRepayment = ForeignCurrencySettlementService.isCreditCardRepayment(draft)
+            if !isRepayment, sourceWallet.currencyCode != destinationWallet.currencyCode {
+                throw LedgerError.currencyMismatch
+            }
+            let destinationAmount = draft.destinationAmount ?? draft.amount
+            guard destinationAmount > 0 else { throw LedgerError.destinationAmountRequired }
+            if !isRepayment, destinationAmount != draft.amount {
                 throw LedgerError.currencyMismatch
             }
             changes.append(WalletDelta(wallet: sourceWallet, amount: -draft.amount))
-            changes.append(WalletDelta(wallet: destinationWallet, amount: draft.amount))
+            changes.append(WalletDelta(wallet: destinationWallet, amount: destinationAmount))
             try appendFee(from: draft, to: &changes)
+            try appendDiscount(from: draft, to: &changes)
         case .exchange:
             let destinationWallet = try validateDestination(draft, sourceWallet: sourceWallet)
             guard sourceWallet.currencyCode != destinationWallet.currencyCode else {
@@ -85,6 +92,16 @@ struct TransactionImpactCalculator {
         guard feeAmount > 0 else { throw LedgerError.invalidAmount }
         guard let feeWallet = draft.feeWallet else { throw LedgerError.missingWallet }
         changes.append(WalletDelta(wallet: feeWallet, amount: -feeAmount))
+    }
+
+    private func appendDiscount(
+        from draft: TransactionDraft,
+        to changes: inout [WalletDelta]
+    ) throws {
+        guard let discountAmount = draft.discountAmount else { return }
+        guard discountAmount > 0 else { throw LedgerError.invalidAmount }
+        guard let discountWallet = draft.discountWallet else { throw LedgerError.missingWallet }
+        changes.append(WalletDelta(wallet: discountWallet, amount: discountAmount))
     }
 
     private func appendPayments(

@@ -124,6 +124,7 @@ final class RecurringScheduleService {
         endDate: Date? = nil,
         timeZoneIdentifier: String = TimeZone.current.identifier
     ) throws -> RecurringSchedule {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw RecurringScheduleError.emptyName }
         guard interval > 0 else { throw RecurringScheduleError.invalidInterval }
@@ -155,6 +156,7 @@ final class RecurringScheduleService {
         for schedule: RecurringSchedule,
         through date: Date = .now
     ) throws -> [LedgerTransaction] {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: schedule.bookID)
         guard !schedule.isPaused, !schedule.isArchived else { return [] }
         guard let timeZone = TimeZone(identifier: schedule.timeZoneIdentifier) else {
             throw RecurringScheduleError.invalidTimeZone
@@ -217,12 +219,14 @@ final class RecurringScheduleService {
     }
 
     func setPaused(_ paused: Bool, schedule: RecurringSchedule) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: schedule.bookID)
         schedule.isPaused = paused
         schedule.updatedAt = .now
         try context.save()
     }
 
     func setArchived(_ archived: Bool, schedule: RecurringSchedule) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: schedule.bookID)
         schedule.isArchived = archived
         schedule.updatedAt = .now
         try context.save()

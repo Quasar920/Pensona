@@ -10,6 +10,7 @@ struct TransactionFormState {
     var destinationWalletID: UUID?
     var categoryID: UUID?
     var feeWalletID: UUID?
+    var discountWalletID: UUID?
     var date: Date
     var note: String
     var merchantOrCounterparty: String
@@ -17,8 +18,14 @@ struct TransactionFormState {
     var adjustmentInputMode: AdjustmentInputMode
     var adjustmentReason: String
     var reimbursementStatus: ReimbursementStatus
+    var excludesFromMonthlyIncome: Bool
+    var excludesFromMonthlyExpense: Bool
     var includesFee: Bool
     var feeText: String
+    var settledAmountText: String
+    var referenceExchangeRateText: String
+    var foreignSettlementMode: ForeignCurrencySettlementMode?
+    var foreignOriginalCurrencyCode: String?
     var usesSplitPayment: Bool
     var paymentParts: [PaymentPartFormState]
     var aaSplitDraft: AASplitDraft?
@@ -31,12 +38,18 @@ struct TransactionFormState {
         !amountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !destinationAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !exchangeRateText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !settledAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !referenceExchangeRateText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !merchantOrCounterparty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || (includesFee && !feeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            || discountAmount != nil
+            || foreignSettlementMode != nil
             || paymentParts.contains { !$0.amountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             || aaSplitDraft != nil
             || reimbursementStatus == .pending
+            || excludesFromMonthlyIncome
+            || excludesFromMonthlyExpense
     }
 
     init(kind: TransactionKind = .expense, date: Date = .now) {
@@ -48,6 +61,7 @@ struct TransactionFormState {
         destinationWalletID = nil
         categoryID = nil
         feeWalletID = nil
+        discountWalletID = nil
         self.date = date
         note = ""
         merchantOrCounterparty = ""
@@ -55,8 +69,14 @@ struct TransactionFormState {
         adjustmentInputMode = .delta
         adjustmentReason = "手动校准"
         reimbursementStatus = .none
+        excludesFromMonthlyIncome = false
+        excludesFromMonthlyExpense = false
         includesFee = false
         feeText = ""
+        settledAmountText = ""
+        referenceExchangeRateText = ""
+        foreignSettlementMode = nil
+        foreignOriginalCurrencyCode = nil
         usesSplitPayment = false
         paymentParts = []
         aaSplitDraft = nil
@@ -67,10 +87,14 @@ struct TransactionFormState {
 
     init(draft: TransactionDraft) {
         kind = draft.type
-        amountText = Self.string(draft.amount)
+        amountText = Self.string(draft.foreignOriginalAmount ?? draft.amount)
         destinationAmountText = draft.destinationAmount.map(Self.string) ?? ""
         if draft.type == .exchange, draft.amount > 0, let destinationAmount = draft.destinationAmount {
             exchangeRateText = Self.string(destinationAmount / draft.amount)
+        } else if draft.transferPurpose == .creditCardRepayment,
+                  let destinationAmount = draft.destinationAmount,
+                  destinationAmount > 0 {
+            exchangeRateText = Self.string(draft.amount / destinationAmount)
         } else {
             exchangeRateText = ""
         }
@@ -78,6 +102,7 @@ struct TransactionFormState {
         destinationWalletID = draft.destinationWallet?.id
         categoryID = draft.category?.id
         feeWalletID = draft.feeWallet?.id
+        discountWalletID = draft.discountWallet?.id
         date = draft.date
         note = draft.note ?? ""
         merchantOrCounterparty = draft.merchantOrCounterparty ?? ""
@@ -85,8 +110,14 @@ struct TransactionFormState {
         adjustmentInputMode = .delta
         adjustmentReason = draft.adjustmentReason ?? "手动校准"
         reimbursementStatus = draft.reimbursementStatus
+        excludesFromMonthlyIncome = draft.excludesFromMonthlyIncome
+        excludesFromMonthlyExpense = draft.excludesFromMonthlyExpense
         includesFee = draft.feeAmount != nil
         feeText = draft.feeAmount.map(Self.string) ?? ""
+        settledAmountText = draft.settledAmount.map(Self.string) ?? ""
+        referenceExchangeRateText = draft.referenceExchangeRate.map(Self.string) ?? ""
+        foreignSettlementMode = draft.foreignSettlementMode
+        foreignOriginalCurrencyCode = draft.foreignOriginalCurrencyCode
         usesSplitPayment = draft.paymentParts.count >= 2
         paymentParts = draft.paymentParts.map {
             PaymentPartFormState(walletID: $0.wallet.id, amountText: Self.string($0.amount))
@@ -105,14 +136,21 @@ struct TransactionFormState {
         categoryID = nil
         destinationWalletID = nil
         feeWalletID = nil
+        discountWalletID = nil
         destinationAmountText = ""
         exchangeRateText = ""
         includesFee = false
         feeText = ""
+        settledAmountText = ""
+        referenceExchangeRateText = ""
+        foreignSettlementMode = nil
+        foreignOriginalCurrencyCode = nil
         adjustmentDirection = .increase
         adjustmentInputMode = .delta
         adjustmentReason = "手动校准"
         reimbursementStatus = .none
+        excludesFromMonthlyIncome = false
+        excludesFromMonthlyExpense = false
         usesSplitPayment = false
         paymentParts = []
         aaSplitDraft = nil
@@ -126,14 +164,21 @@ struct TransactionFormState {
         feeText = ""
         includesFee = false
         feeWalletID = sourceWalletID
+        discountWalletID = nil
         note = ""
         merchantOrCounterparty = ""
         for index in paymentParts.indices { paymentParts[index].amountText = "" }
         aaSplitDraft = nil
         reimbursementStatus = .none
+        excludesFromMonthlyIncome = false
+        excludesFromMonthlyExpense = false
         originalAmount = nil
         discountAmount = nil
         recognitionImportID = nil
+        settledAmountText = ""
+        referenceExchangeRateText = ""
+        foreignSettlementMode = nil
+        foreignOriginalCurrencyCode = nil
     }
 
     mutating func removeImportedMetadataForCopy(now: Date = .now) {
@@ -155,7 +200,8 @@ struct TransactionFormState {
             throw ValidationError("请输入大于 0 的有效金额")
         }
 
-        let amount: Decimal
+        var amount: Decimal
+        var resolvedSourceWallet = sourceWallet
         let resolvedAdjustmentDirection: AdjustmentDirection
         if kind == .adjustment, adjustmentInputMode == .finalBalance {
             let difference = enteredAmount - sourceWallet.balance
@@ -166,6 +212,44 @@ struct TransactionFormState {
             guard enteredAmount > 0 else { throw ValidationError("请输入大于 0 的有效金额") }
             amount = enteredAmount
             resolvedAdjustmentDirection = adjustmentDirection
+        }
+
+        let accountSettlementCode = sourceWallet.account?.defaultSettlementCurrencyCode
+            ?? sourceWallet.currencyCode
+        let foreignCode = foreignOriginalCurrencyCode
+        let isForeignCreditExpense = kind == .expense
+            && sourceWallet.account?.type == .creditCard
+            && foreignCode != nil
+            && foreignCode != accountSettlementCode
+        let resolvedForeignMode = isForeignCreditExpense
+            ? (foreignSettlementMode ?? sourceWallet.account?.defaultForeignCurrencySettlementMode ?? .instant)
+            : nil
+        if isForeignCreditExpense, let foreignCode {
+            switch resolvedForeignMode {
+            case .instant:
+                guard let settled = DecimalParser.parse(settledAmountText), settled > 0 else {
+                    throw ForeignCurrencySettlementError.missingSettlementAmount
+                }
+                guard let settlementWallet = wallets.first(where: {
+                    $0.account?.id == sourceWallet.account?.id
+                        && $0.currencyCode == accountSettlementCode
+                }) else {
+                    throw ValidationError("请先为信用卡添加默认结算币种")
+                }
+                amount = settled
+                resolvedSourceWallet = settlementWallet
+            case .repayment:
+                guard let foreignWallet = wallets.first(where: {
+                    $0.account?.id == sourceWallet.account?.id
+                        && $0.currencyCode == foreignCode
+                }) else {
+                    throw ValidationError("请先为信用卡添加所选外币")
+                }
+                amount = enteredAmount
+                resolvedSourceWallet = foreignWallet
+            case nil:
+                break
+            }
         }
 
         let isMovement = kind == .transfer || kind == .exchange
@@ -179,7 +263,15 @@ struct TransactionFormState {
         let destinationAmount: Decimal?
         switch kind {
         case .transfer:
-            destinationAmount = amount
+            if destinationWallet?.account?.type == .creditCard,
+               destinationWallet?.currencyCode != resolvedSourceWallet.currencyCode {
+                guard let parsed = DecimalParser.parse(destinationAmountText), parsed > 0 else {
+                    throw ValidationError("请输入大于 0 的外币偿还金额")
+                }
+                destinationAmount = parsed
+            } else {
+                destinationAmount = amount
+            }
         case .exchange:
             guard let parsed = DecimalParser.parse(destinationAmountText), parsed > 0 else {
                 throw ValidationError("请输入大于 0 的换入金额")
@@ -187,6 +279,17 @@ struct TransactionFormState {
             destinationAmount = parsed
         default:
             destinationAmount = nil
+        }
+
+        let resolvedDiscountAmount = discountAmount
+        let resolvedDiscountWallet: CurrencyWallet?
+        if kind == .transfer, let resolvedDiscountAmount, resolvedDiscountAmount > 0 {
+            guard let selected = wallets.first(where: { $0.id == discountWalletID }) else {
+                throw ValidationError("请选择优惠进入的钱包")
+            }
+            resolvedDiscountWallet = selected
+        } else {
+            resolvedDiscountWallet = nil
         }
 
         let feeAmount: Decimal?
@@ -228,7 +331,7 @@ struct TransactionFormState {
         return TransactionDraft(
             type: kind,
             amount: amount,
-            sourceWallet: sourceWallet,
+            sourceWallet: resolvedSourceWallet,
             destinationWallet: destinationWallet,
             destinationAmount: destinationAmount,
             feeAmount: feeAmount,
@@ -243,9 +346,21 @@ struct TransactionFormState {
                 ? (cleanAdjustmentReason.isEmpty ? "手动校准" : cleanAdjustmentReason)
                 : nil,
             originalAmount: originalAmount,
-            discountAmount: discountAmount,
+            discountAmount: resolvedDiscountAmount,
+            discountWallet: resolvedDiscountWallet,
             recognitionImportID: recognitionImportID,
-            reimbursementStatus: kind == .expense ? reimbursementStatus : .none
+            transferPurpose: kind == .transfer && destinationWallet?.account?.type == .creditCard
+                ? .creditCardRepayment
+                : .standard,
+            foreignSettlementMode: resolvedForeignMode,
+            foreignOriginalAmount: isForeignCreditExpense ? enteredAmount : nil,
+            foreignOriginalCurrencyCode: isForeignCreditExpense ? foreignCode : nil,
+            settlementCurrencyCode: isForeignCreditExpense ? accountSettlementCode : nil,
+            settledAmount: resolvedForeignMode == .instant ? amount : nil,
+            referenceExchangeRate: DecimalParser.parse(referenceExchangeRateText),
+            reimbursementStatus: kind == .expense ? reimbursementStatus : .none,
+            excludesFromMonthlyIncome: kind == .income && excludesFromMonthlyIncome,
+            excludesFromMonthlyExpense: kind == .expense && excludesFromMonthlyExpense
         )
     }
 

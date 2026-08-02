@@ -18,17 +18,19 @@ struct EntrySubcategoryOverlay: View {
     var body: some View {
         ZStack {
             Rectangle()
-                .fill(.regularMaterial)
-                .overlay(Color(uiColor: .systemBackground).opacity(0.18))
+                .fill(EntryCategoryAppearance.overlay)
                 .onTapGesture(perform: close)
 
             VStack(spacing: 14) {
                 HStack {
-                    Text(parent.localizedName(locale: locale)).font(.headline)
+                    Text(parent.localizedName(locale: locale))
+                        .font(.headline)
+                        .foregroundStyle(EntryCategoryAppearance.ink)
                     Spacer()
                     Button(action: close) { Image(systemName: "xmark") }
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.circle)
+                        .tint(EntryCategoryAppearance.ink)
                 }
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.fixed(dynamicTypeSize.isAccessibilitySize ? 104 : 76)), count: columnCount),
@@ -39,11 +41,16 @@ struct EntrySubcategoryOverlay: View {
                     }
                     Button(action: add) {
                         VStack(spacing: 5) {
-                            Image(systemName: "plus").font(.headline)
-                            Text("新分类").font(.caption2.weight(.semibold)).lineLimit(2)
+                            Image(systemName: "plus")
+                                .font(.headline)
+                                .foregroundStyle(LedgerPalette.accent)
+                            Text("新分类")
+                                .font(.caption2.weight(.semibold))
+                                .lineLimit(2)
+                                .foregroundStyle(EntryCategoryAppearance.ink)
                         }
                         .frame(width: dynamicTypeSize.isAccessibilitySize ? 104 : 76, height: 64)
-                        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
+                        .background(EntryCategoryAppearance.card, in: RoundedRectangle(cornerRadius: 16))
                     }
                     .buttonStyle(LedgerGlassPressStyle())
                 }
@@ -54,7 +61,7 @@ struct EntrySubcategoryOverlay: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.32), lineWidth: 0.8)
+                .stroke(Color.black.opacity(0.12), lineWidth: 0.8)
         }
     }
 
@@ -67,12 +74,16 @@ struct EntrySubcategoryOverlay: View {
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                     .minimumScaleFactor(0.78)
             }
-            .foregroundStyle(selectedID == child.id ? Color.accentColor : .primary)
+            .foregroundStyle(selectedID == child.id ? LedgerPalette.accent : EntryCategoryAppearance.ink)
             .frame(width: dynamicTypeSize.isAccessibilitySize ? 104 : 76, height: 64)
             .background(
-                selectedID == child.id ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.045),
+                EntryCategoryAppearance.card,
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(selectedID == child.id ? LedgerPalette.accent.opacity(0.75) : .clear, lineWidth: 1.5)
+            }
         }
         .buttonStyle(LedgerGlassPressStyle())
         .highPriorityGesture(

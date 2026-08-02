@@ -12,6 +12,9 @@ enum InstallmentPlanError: LocalizedError, Equatable {
     case crossBookReference
     case invalidCategory
     case generationLimitReached
+    case foreignRepaymentWalletsRequired
+    case foreignPlanRequired
+    case installmentAlreadyCompleted
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +28,9 @@ enum InstallmentPlanError: LocalizedError, Equatable {
         case .crossBookReference: AppLocalization.string( "分期不能跨账本")
         case .invalidCategory: AppLocalization.string( "消费分期只能使用当前账本的支出分类")
         case .generationLimitReached: AppLocalization.string( "一次最多补生成 120 期")
+        case .foreignRepaymentWalletsRequired: AppLocalization.string("外币分期需要不同币种的扣款钱包和信用卡钱包")
+        case .foreignPlanRequired: AppLocalization.string("该分期不是外币还款计划")
+        case .installmentAlreadyCompleted: AppLocalization.string("该分期计划已经完成")
         }
     }
 }
@@ -75,6 +81,7 @@ final class InstallmentPlanService {
         merchantOrCounterparty: String? = nil,
         note: String? = nil
     ) throws -> InstallmentPlan {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw InstallmentPlanError.emptyName }
         guard totalPrincipal > 0 else { throw InstallmentPlanError.invalidPrincipal }
@@ -136,11 +143,171 @@ final class InstallmentPlanService {
     }
 
     @discardableResult
+    func createForeignRepaymentPlanAndRecordFirst(
+        name: String,
+        bookID: UUID,
+        installmentCount: Int,
+        startDate: Date,
+        settlementAmount: Decimal,
+        sourceWallet: CurrencyWallet,
+        destinationWallet: CurrencyWallet,
+        feeAmount: Decimal? = nil,
+        feeWallet: CurrencyWallet? = nil,
+        discountAmount: Decimal? = nil,
+        discountWallet: CurrencyWallet? = nil,
+        note: String? = nil
+    ) throws -> (plan: InstallmentPlan, transaction: LedgerTransaction) {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { throw InstallmentPlanError.emptyName }
+        guard (2...120).contains(installmentCount) else { throw InstallmentPlanError.invalidCount }
+        guard sourceWallet.isEnabled,
+              destinationWallet.isEnabled,
+              sourceWallet.account?.isArchived == false,
+              destinationWallet.account?.isArchived == false,
+              sourceWallet.currencyCode != destinationWallet.currencyCode,
+              destinationWallet.account?.type == .creditCard else {
+            throw InstallmentPlanError.foreignRepaymentWalletsRequired
+        }
+        let outstanding = max(Decimal.zero, -destinationWallet.balance)
+        guard outstanding > 0 else { throw InstallmentPlanError.invalidPrincipal }
+        let fractionDigits = SupportedCurrency.fractionDigits(for: destinationWallet.currencyCode)
+        let principalParts = try InstallmentAllocator.allocations(
+            total: outstanding,
+            count: installmentCount,
+            fractionDigits: fractionDigits
+        )
+        let plan = InstallmentPlan(
+            name: cleanName,
+            bookID: bookID,
+            kind: .bill,
+            totalPrincipal: outstanding,
+            totalFee: 0,
+            installmentCount: installmentCount,
+            startDate: startDate,
+            sourceWalletID: sourceWallet.id,
+            destinationWalletID: destinationWallet.id,
+            note: note,
+            fractionDigits: fractionDigits,
+            principalCurrencyCode: destinationWallet.currencyCode,
+            settlementCurrencyCode: sourceWallet.currencyCode,
+            isForeignCurrencyRepayment: true
+        )
+        context.insert(plan)
+        do {
+            let transaction = try recordForeignInstallment(
+                for: plan,
+                foreignPrincipal: principalParts[0],
+                settlementAmount: settlementAmount,
+                date: startDate,
+                feeAmount: feeAmount,
+                feeWallet: feeWallet,
+                discountAmount: discountAmount,
+                discountWallet: discountWallet
+            )
+            return (plan, transaction)
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    @discardableResult
+    func recordForeignInstallment(
+        for plan: InstallmentPlan,
+        foreignPrincipal: Decimal,
+        settlementAmount: Decimal,
+        date: Date,
+        feeAmount: Decimal? = nil,
+        feeWallet: CurrencyWallet? = nil,
+        discountAmount: Decimal? = nil,
+        discountWallet: CurrencyWallet? = nil
+    ) throws -> LedgerTransaction {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: plan.bookID)
+        guard plan.isForeignCurrencyRepayment, plan.kind == .bill else {
+            throw InstallmentPlanError.foreignPlanRequired
+        }
+        guard !plan.isCompleted else { throw InstallmentPlanError.installmentAlreadyCompleted }
+        let wallets = try context.fetch(FetchDescriptor<CurrencyWallet>())
+        guard let source = wallets.first(where: { $0.id == plan.sourceWalletID && $0.isEnabled }),
+              let destinationID = plan.destinationWalletID,
+              let destination = wallets.first(where: { $0.id == destinationID && $0.isEnabled }) else {
+            throw InstallmentPlanError.missingWallet
+        }
+        let allocations = try InstallmentAllocator.allocations(
+            total: plan.totalPrincipal,
+            count: plan.installmentCount,
+            fractionDigits: plan.fractionDigits
+        )
+        let index = plan.nextInstallmentIndex
+        guard allocations.indices.contains(index),
+              foreignPrincipal == allocations[index] else {
+            throw InstallmentPlanError.invalidPrincipal
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let nextIndex = index + 1
+        let nextDate = RecurrenceDateCalculator.next(
+            after: plan.nextDueDate,
+            frequency: .monthly,
+            interval: 1,
+            anchorDate: plan.startDate,
+            calendar: calendar
+        ) ?? plan.nextDueDate
+        let oldIndex = plan.nextInstallmentIndex
+        let oldNextDate = plan.nextDueDate
+        let oldCompletedAt = plan.completedAt
+        let oldUpdatedAt = plan.updatedAt
+        let draft = TransactionDraft(
+            type: .transfer,
+            amount: settlementAmount,
+            sourceWallet: source,
+            destinationWallet: destination,
+            destinationAmount: foreignPrincipal,
+            feeAmount: feeAmount,
+            feeWallet: feeWallet,
+            date: date,
+            note: plan.note,
+            discountAmount: discountAmount,
+            discountWallet: discountWallet,
+            transferPurpose: .creditCardRepayment,
+            settlementCurrencyCode: source.currencyCode,
+            installmentPlanID: plan.id,
+            installmentIndex: index
+        )
+        do {
+            return try LedgerService(context: context).create(draft, bookID: plan.bookID) { transaction in
+                plan.nextInstallmentIndex = nextIndex
+                plan.nextDueDate = nextDate
+                plan.completedAt = nextIndex >= plan.installmentCount ? .now : nil
+                plan.updatedAt = .now
+                context.insert(InstallmentOccurrence(
+                    generationKey: AutomationGenerationKey.installment(planID: plan.id, index: index),
+                    planID: plan.id,
+                    installmentIndex: index,
+                    scheduledDate: date,
+                    principalAmount: foreignPrincipal,
+                    feeAmount: feeAmount ?? 0,
+                    transactionID: transaction.id
+                ))
+            }
+        } catch {
+            plan.nextInstallmentIndex = oldIndex
+            plan.nextDueDate = oldNextDate
+            plan.completedAt = oldCompletedAt
+            plan.updatedAt = oldUpdatedAt
+            throw error
+        }
+    }
+
+    @discardableResult
     func generateDue(
         for plan: InstallmentPlan,
         through date: Date = .now
     ) throws -> [LedgerTransaction] {
-        guard !plan.isPaused, !plan.isArchived, !plan.isCompleted else { return [] }
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: plan.bookID)
+        guard !plan.isForeignCurrencyRepayment,
+              !plan.isPaused, !plan.isArchived, !plan.isCompleted else { return [] }
         let wallets = try context.fetch(FetchDescriptor<CurrencyWallet>())
         let categories = try context.fetch(FetchDescriptor<LedgerCategory>())
         guard let source = wallets.first(where: {
@@ -248,6 +415,7 @@ final class InstallmentPlanService {
     }
 
     func setPaused(_ paused: Bool, plan: InstallmentPlan) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: plan.bookID)
         guard !plan.isCompleted else { return }
         plan.isPaused = paused
         plan.updatedAt = .now
@@ -256,6 +424,7 @@ final class InstallmentPlanService {
 
     /// Stops future generation without deleting already posted installments.
     func finishEarly(_ plan: InstallmentPlan, at date: Date = .now) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: plan.bookID)
         plan.completedAt = date
         plan.isPaused = false
         plan.updatedAt = date
@@ -263,6 +432,7 @@ final class InstallmentPlanService {
     }
 
     func setArchived(_ archived: Bool, plan: InstallmentPlan) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: plan.bookID)
         plan.isArchived = archived
         plan.updatedAt = .now
         try context.save()

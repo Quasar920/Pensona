@@ -28,6 +28,7 @@ final class LedgerBookService {
     }
 
     func rename(_ book: LedgerBook, to name: String) throws {
+        guard !book.isArchived else { throw LedgerError.bookArchived }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw ValidationError("请输入账本名称") }
 
@@ -45,9 +46,31 @@ final class LedgerBookService {
     }
 
     func delete(_ book: LedgerBook) throws {
+        guard try hasContent(in: book) == false else { throw LedgerError.bookInUse }
+        context.delete(book)
+        try context.save()
+    }
+
+    func archive(_ book: LedgerBook) throws {
+        guard !book.isArchived else { return }
+        guard try hasContent(in: book) else { throw ValidationError("空白账本请直接删除") }
+        book.archivedAt = .now
+        book.updatedAt = .now
+        try context.save()
+    }
+
+    func restore(_ book: LedgerBook) throws {
+        guard book.isArchived else { return }
+        book.archivedAt = nil
+        book.updatedAt = .now
+        try context.save()
+    }
+
+    func hasContent(in book: LedgerBook) throws -> Bool {
         let bookID = book.id
-        let books = try context.fetch(FetchDescriptor<LedgerBook>())
-        guard books.count > 1 else { throw LedgerError.bookInUse }
+        let hasAccounts = try context.fetchCount(FetchDescriptor<Account>(
+            predicate: #Predicate { $0.book?.id == bookID }
+        )) > 0
 
         let hasTransactions = try context.fetchCount(FetchDescriptor<LedgerTransaction>(
             predicate: #Predicate { $0.bookID == bookID }
@@ -83,15 +106,11 @@ final class LedgerBookService {
             predicate: #Predicate { $0.bookID == bookID }
         )) > 0
 
-        guard ![
-            hasTransactions, hasBudgets, hasTemplates, hasRecurringSchedules,
-            hasInstallmentPlans, hasRecognitionRecords, hasImportBatches,
-            hasSavingsGoals, hasAttachments, hasTags, hasCompatibilityCategories
-        ].contains(true) else {
-            throw LedgerError.bookInUse
-        }
-
-        context.delete(book)
-        try context.save()
+        return [
+            hasAccounts, hasTransactions, hasBudgets, hasTemplates,
+            hasRecurringSchedules, hasInstallmentPlans, hasRecognitionRecords,
+            hasImportBatches, hasSavingsGoals, hasAttachments, hasTags,
+            hasCompatibilityCategories
+        ].contains(true)
     }
 }

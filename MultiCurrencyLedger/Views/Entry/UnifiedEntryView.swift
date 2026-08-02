@@ -88,6 +88,8 @@ private struct EntryLoadedView: View {
     @State private var errorMessage: String?
     @State private var successMessage: String?
     @State private var showingNegativeWarning = false
+    @State private var showingPartialRepaymentChoice = false
+    @State private var showingForeignInstallment = false
     @State private var initialized = false
     @State private var pendingSaveAction: EntrySaveAction = .complete
     @State private var entrySession = EntrySessionState()
@@ -128,10 +130,11 @@ private struct EntryLoadedView: View {
     }
 
     private var selectedBook: LedgerBook? {
+        let activeBooks = books.filter { !$0.isArchived }
         if let bookID = editingTransaction?.bookID {
-            return books.first { $0.id == bookID }
+            return activeBooks.first { $0.id == bookID }
         }
-        return books.first { $0.id.uuidString == selectedBookID } ?? books.first
+        return activeBooks.first { $0.id.uuidString == selectedBookID } ?? activeBooks.first
     }
 
     private var allWallets: [CurrencyWallet] {
@@ -174,6 +177,7 @@ private struct EntryLoadedView: View {
             guard candidate.id != source.id else { return false }
             if form.kind == .transfer {
                 return candidate.currencyCode == source.currencyCode
+                    || candidate.account?.type == .creditCard
             }
             if form.kind == .exchange {
                 return candidate.currencyCode != source.currencyCode
@@ -287,6 +291,36 @@ private struct EntryLoadedView: View {
             } message: {
                 Text("应用允许负余额，但请确认金额和钱包选择无误。")
             }
+            .confirmationDialog(
+                "本次还款低于该币种当前欠款",
+                isPresented: $showingPartialRepaymentChoice,
+                titleVisibility: .visible
+            ) {
+                Button("记录本次还款（之后继续偿还）") {
+                    continueWithStandardSave()
+                }
+                if pendingDraft.map(isCrossCurrencyCreditRepayment) == true {
+                    Button("创建外币分期计划") {
+                        showingForeignInstallment = true
+                    }
+                }
+                Button("取消", role: .cancel, action: cancelPendingSave)
+            } message: {
+                Text("部分还款可以作为一次独立还款保存；外币还款也可以建立分期计划，每期分别记录实际汇率。")
+            }
+            .sheet(isPresented: $showingForeignInstallment) {
+                if let draft = pendingDraft,
+                   let destination = draft.destinationWallet {
+                    EntryForeignInstallmentSheet(
+                        draft: draft,
+                        outstanding: max(0, -destination.balance),
+                        confirm: createForeignInstallment,
+                        cancel: cancelPendingSave
+                    )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                }
+            }
         }
     }
 
@@ -302,10 +336,10 @@ private struct EntryLoadedView: View {
         if editingTransaction != nil {
             // Edit mode is permanently scoped to the transaction's original book.
         } else if let seedBookID = seed?.bookID,
-           books.contains(where: { $0.id == seedBookID }) {
+           books.contains(where: { $0.id == seedBookID && !$0.isArchived }) {
             selectedBookID = seedBookID.uuidString
-        } else if let first = books.first,
-                  !books.contains(where: { $0.id.uuidString == selectedBookID }) {
+        } else if let first = books.first(where: { !$0.isArchived }),
+                  !books.contains(where: { !$0.isArchived && $0.id.uuidString == selectedBookID }) {
             selectedBookID = first.id.uuidString
         }
 
@@ -406,6 +440,7 @@ private struct EntryLoadedView: View {
         pendingSaveAction = action
         do {
             let draft = try form.makeDraft(wallets: allWallets, categories: scopedCategories)
+            try ForeignCurrencySettlementService.validate(draft)
             let resolvedAASplit: AASplitDraft?
             if let aaDraft = form.aaSplitDraft {
                 let code = draft.sourceWallet?.currencyCode ?? SupportedCurrency.CNY.rawValue
@@ -419,6 +454,22 @@ private struct EntryLoadedView: View {
             }
             pendingDraft = draft
             pendingAASplitDraft = resolvedAASplit
+            if editingTransaction == nil, isPartialCreditRepayment(draft) {
+                showingPartialRepaymentChoice = true
+            } else {
+                continueWithStandardSave()
+            }
+        } catch {
+            pendingDraft = nil
+            pendingAASplitDraft = nil
+            entrySession.finishSubmission(error: error)
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func continueWithStandardSave() {
+        guard let draft = pendingDraft else { return }
+        do {
             if try createsNegativeBalance(draft) {
                 showingNegativeWarning = true
             } else {
@@ -457,32 +508,88 @@ private struct EntryLoadedView: View {
                     }
                 }
             }
-            if editingTransaction == nil { rememberSelections() }
-            pendingDraft = nil
-            pendingAASplitDraft = nil
-            if editingTransaction != nil {
-                HapticFeedbackService().notification(.success)
-                hasUnsavedChanges = false
-                dismiss()
-                onSaved?()
-            } else if pendingSaveAction == .complete && dismissAfterSave {
-                hasUnsavedChanges = false
-                HapticFeedbackService().notification(.success)
-                // 完成路径保持 submitting，防止收拢动画期间重复点击造成重复写入
-                requestSaveDismiss?() ?? requestDismiss?() ?? dismiss()
-            } else {
-                form.resetForContinuousEntry()
-                hasUnsavedChanges = false
-                ensureDestinationAndFeeSelections()
-                entrySession.finishSubmission()
-                successMessage = AppLocalization.string("已记下一笔")
-            }
+            finishSuccessfulSave()
         } catch {
             pendingDraft = nil
             pendingAASplitDraft = nil
             entrySession.finishSubmission(error: error)
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func createForeignInstallment(name: String, count: Int) {
+        guard let draft = pendingDraft,
+              let bookID = selectedBook?.id,
+              let sourceWallet = draft.sourceWallet,
+              let destinationWallet = draft.destinationWallet else {
+            cancelPendingSave()
+            return
+        }
+        do {
+            _ = try InstallmentPlanService(context: context)
+                .createForeignRepaymentPlanAndRecordFirst(
+                    name: name,
+                    bookID: bookID,
+                    installmentCount: count,
+                    startDate: draft.date,
+                    settlementAmount: draft.amount,
+                    sourceWallet: sourceWallet,
+                    destinationWallet: destinationWallet,
+                    feeAmount: draft.feeAmount,
+                    feeWallet: draft.feeWallet,
+                    discountAmount: draft.discountAmount,
+                    discountWallet: draft.discountWallet,
+                    note: draft.note
+                )
+            finishSuccessfulSave()
+        } catch {
+            pendingDraft = nil
+            pendingAASplitDraft = nil
+            entrySession.finishSubmission(error: error)
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func finishSuccessfulSave() {
+        if editingTransaction == nil { rememberSelections() }
+        pendingDraft = nil
+        pendingAASplitDraft = nil
+        if editingTransaction != nil {
+            HapticFeedbackService().notification(.success)
+            hasUnsavedChanges = false
+            dismiss()
+            onSaved?()
+        } else if pendingSaveAction == .complete && dismissAfterSave {
+            hasUnsavedChanges = false
+            HapticFeedbackService().notification(.success)
+            // 完成路径保持 submitting，防止收拢动画期间重复点击造成重复写入
+            requestSaveDismiss?() ?? requestDismiss?() ?? dismiss()
+        } else {
+            form.resetForContinuousEntry()
+            hasUnsavedChanges = false
+            ensureDestinationAndFeeSelections()
+            entrySession.finishSubmission()
+            successMessage = AppLocalization.string("已记下一笔")
+        }
+    }
+
+    private func cancelPendingSave() {
+        pendingDraft = nil
+        pendingAASplitDraft = nil
+        entrySession.finishSubmission()
+    }
+
+    private func isPartialCreditRepayment(_ draft: TransactionDraft) -> Bool {
+        guard ForeignCurrencySettlementService.isCreditCardRepayment(draft),
+              let destination = draft.destinationWallet else { return false }
+        let amount = draft.destinationAmount ?? draft.amount
+        let outstanding = max(0, -destination.balance)
+        return amount > 0 && amount < outstanding
+    }
+
+    private func isCrossCurrencyCreditRepayment(_ draft: TransactionDraft) -> Bool {
+        ForeignCurrencySettlementService.isCreditCardRepayment(draft)
+            && draft.sourceWallet?.currencyCode != draft.destinationWallet?.currencyCode
     }
 
     private func rememberSelections() {
@@ -502,17 +609,22 @@ private struct EntryLoadedView: View {
     private func createsNegativeBalance(_ replacement: TransactionDraft) throws -> Bool {
         guard let editingTransaction else {
             return try TransactionImpactCalculator().deltas(for: replacement).contains {
-                $0.wallet.balance + $0.amount < 0
+                $0.wallet.account?.type != .creditCard
+                    && $0.wallet.balance + $0.amount < 0
             }
         }
         let calculator = TransactionImpactCalculator()
         let oldDeltas = try calculator.deltas(for: TransactionDraft(transaction: editingTransaction))
         let newDeltas = try calculator.deltas(for: replacement)
         var projected: [UUID: Decimal] = [:]
+        var projectedWallets: [UUID: CurrencyWallet] = [:]
         for delta in oldDeltas + newDeltas { projected[delta.wallet.id] = delta.wallet.balance }
+        for delta in oldDeltas + newDeltas { projectedWallets[delta.wallet.id] = delta.wallet }
         for delta in oldDeltas { projected[delta.wallet.id, default: delta.wallet.balance] -= delta.amount }
         for delta in newDeltas { projected[delta.wallet.id, default: delta.wallet.balance] += delta.amount }
-        return projected.values.contains { $0 < 0 }
+        return projected.contains { walletID, balance in
+            projectedWallets[walletID]?.account?.type != .creditCard && balance < 0
+        }
     }
 
     private func wallet(id: UUID?) -> CurrencyWallet? {

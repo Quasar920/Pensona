@@ -29,4 +29,17 @@ final class AttachmentStoreTests: XCTestCase {
             XCTAssertEqual($0 as? AttachmentError, .invalidPath)
         }
     }
+
+    func testOversizedDecodableImageIsCompressedBeforeStorage() throws {
+        let onePixelPNG = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )!
+        var oversized = onePixelPNG
+        oversized.append(Data(count: AttachmentStore.maximumBytes + 1))
+
+        let prepared = try AttachmentImageProcessor.preparedData(oversized)
+
+        XCTAssertLessThanOrEqual(prepared.count, AttachmentStore.maximumBytes)
+        XCTAssertEqual(AttachmentStore.imageFormat(prepared)?.mimeType, "image/jpeg")
+    }
 }

@@ -10,12 +10,16 @@ struct LedgerBookSwitcherView: View {
     @State private var showingNewBook = false
     @State private var showingManagement = false
 
+    private var activeBooks: [LedgerBook] {
+        books.filter { !$0.isArchived }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 List {
                     Section {
-                        ForEach(books) { book in
+                        ForEach(activeBooks) { book in
                             Button {
                                 selectedBookID = book.id.uuidString
                                 dismiss()
@@ -168,10 +172,46 @@ struct LedgerBookManagementView: View {
 
     @State private var showingNewBook = false
 
+    private var activeBooks: [LedgerBook] { books.filter { !$0.isArchived } }
+    private var archivedBooks: [LedgerBook] { books.filter(\.isArchived) }
+
     var body: some View {
         NavigationStack {
             List {
-                ForEach(books) { book in
+                Section("使用中的账本") {
+                    ForEach(activeBooks) { book in
+                        bookRow(book)
+                    }
+                }
+                if !archivedBooks.isEmpty {
+                    Section("已归档") {
+                        ForEach(archivedBooks) { book in
+                            bookRow(book)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("管理账本")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("完成") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showingNewBook = true } label: {
+                        Label("新建账本", systemImage: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingNewBook) {
+                AddLedgerBookView { book in
+                    selectedBookID = book.id.uuidString
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func bookRow(_ book: LedgerBook) -> some View {
                     NavigationLink {
                         EditLedgerBookView(book: book)
                     } label: {
@@ -197,35 +237,34 @@ struct LedgerBookManagementView: View {
                         }
                         .padding(.vertical, 3)
                     }
-                }
-            }
-            .navigationTitle("管理账本")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("完成") { dismiss() }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showingNewBook = true } label: {
-                        Label("新建账本", systemImage: "plus")
-                    }
-                }
-            }
-            .sheet(isPresented: $showingNewBook) {
-                AddLedgerBookView { book in
-                    selectedBookID = book.id.uuidString
-                }
-            }
-        }
     }
 }
 
 private struct EditLedgerBookView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @AppStorage("selectedBookID") private var selectedBookID = ""
+    @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
+    private var books: [LedgerBook]
     let book: LedgerBook
 
     @State private var name: String
     @State private var errorMessage: String?
     @State private var saved = false
+    @State private var action: BookAction?
+    @State private var containsData = true
+
+    private enum BookAction: Identifiable {
+        case archive
+        case delete
+
+        var id: String {
+            switch self {
+            case .archive: "archive"
+            case .delete: "delete"
+            }
+        }
+    }
 
     init(book: LedgerBook) {
         self.book = book
@@ -235,12 +274,20 @@ private struct EditLedgerBookView: View {
     var body: some View {
         Form {
             Section("账本名称") {
-                TextField("账本名称", text: $name)
+                if book.isArchived {
+                    Text(book.name)
+                } else {
+                    TextField("账本名称", text: $name)
+                }
             }
             Section {
                 LabeledContent("资产账户", value: "\(book.accounts.count) 个")
                 LabeledContent("创建时间", value: book.createdAt.formatted(date: .abbreviated, time: .omitted))
+                if let archivedAt = book.archivedAt {
+                    LabeledContent("归档时间", value: archivedAt.formatted(date: .abbreviated, time: .omitted))
+                }
             }
+            lifecycleSection
             if saved {
                 Label("已保存", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
@@ -248,9 +295,14 @@ private struct EditLedgerBookView: View {
         }
         .navigationTitle("编辑账本")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: book.updatedAt) {
+            containsData = (try? LedgerBookService(context: context).hasContent(in: book)) ?? true
+        }
         .toolbar {
-            Button("保存", action: save)
-                .fontWeight(.semibold)
+            if !book.isArchived {
+                Button("保存", action: save)
+                    .fontWeight(.semibold)
+            }
         }
         .alert("无法保存", isPresented: Binding(
             get: { errorMessage != nil },
@@ -260,12 +312,80 @@ private struct EditLedgerBookView: View {
         } message: {
             Text(errorMessage ?? AppLocalization.string("未知错误"))
         }
+        .confirmationDialog(
+            action == .archive ? "归档这个账本？" : "删除这个空白账本？",
+            isPresented: Binding(get: { action != nil }, set: { if !$0 { action = nil } })
+        ) {
+            if action == .archive {
+                Button("归档", role: .destructive, action: archive)
+            } else if action == .delete {
+                Button("删除", role: .destructive, action: delete)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text(action == .archive
+                 ? "归档后会从日常账本切换中隐藏，且不能继续记账；你可以随时在“已归档”中恢复。"
+                 : "删除后无法恢复。")
+        }
+    }
+
+    @ViewBuilder
+    private var lifecycleSection: some View {
+        Section("账本状态") {
+            if book.isArchived {
+                Text("此账本已归档，不会出现在日常账本切换中。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("恢复账本", action: restore)
+                    .foregroundStyle(Color.accentColor)
+            } else if containsData {
+                Text("账本已有内容，只能归档，不能删除。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("归档账本", role: .destructive) { action = .archive }
+            } else {
+                Text("这是空白账本，可以直接删除。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("删除空白账本", role: .destructive) { action = .delete }
+            }
+        }
     }
 
     private func save() {
         do {
             try LedgerBookService(context: context).rename(book, to: name)
             saved = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func archive() {
+        performLifecycleChange { service in
+            try service.archive(book)
+        }
+    }
+
+    private func restore() {
+        performLifecycleChange { service in
+            try service.restore(book)
+        }
+    }
+
+    private func delete() {
+        performLifecycleChange { service in
+            try service.delete(book)
+        }
+    }
+
+    private func performLifecycleChange(_ change: (LedgerBookService) throws -> Void) {
+        do {
+            try change(LedgerBookService(context: context))
+            if selectedBookID == book.id.uuidString {
+                selectedBookID = books.first(where: { !$0.isArchived && $0.id != book.id })?.id.uuidString ?? ""
+            }
+            dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }

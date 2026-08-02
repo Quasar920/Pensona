@@ -28,25 +28,23 @@ struct RootTabView: View {
     @State private var entrySavedToastID: UUID?
 
     var body: some View {
-        ZStack {
-            persistentTab(.ledger) {
+        Group {
+            switch selection {
+            case .ledger:
                 HomeView(
                     addTransaction: presentation.presentNewEntry,
                     isDetailPresented: $isLedgerDetailPresented
                 )
-                    .rootEntryVisibility(.visible, for: .ledger)
-            }
-            persistentTab(.assets) {
+                .rootEntryVisibility(.visible, for: .ledger)
+            case .assets:
                 AccountListView(isDetailPresented: $isAssetsDetailPresented)
-                    .rootEntryVisibility(.visible, for: .assets)
-            }
-            persistentTab(.savings) {
+                .rootEntryVisibility(.visible, for: .assets)
+            case .savings:
                 SavingsGoalListView()
-                    .rootEntryVisibility(.visible, for: .savings)
-            }
-            persistentTab(.statistics) {
+                .rootEntryVisibility(.visible, for: .savings)
+            case .statistics:
                 ReportsView()
-                    .rootEntryVisibility(.visible, for: .statistics)
+                .rootEntryVisibility(.visible, for: .statistics)
             }
         }
         .onPreferenceChange(RootEntryVisibilityPreferenceKey.self) { visibility in
@@ -91,9 +89,7 @@ struct RootTabView: View {
             applyPreviewScreenIfNeeded()
             presentPendingRecognitionIfNeeded()
             presentPendingExternalURLIfNeeded()
-            if appLock.isLocked {
-                PrivacyShieldController.show(manager: appLock, allowsUnlock: true)
-            } else {
+            if !appLock.isLocked {
                 presentQuickLaunchIfNeeded()
             }
         }
@@ -104,10 +100,7 @@ struct RootTabView: View {
         }
         .onChange(of: scenePhase) { _, phase in handleScenePhase(phase) }
         .onChange(of: appLock.isLocked) { _, locked in
-            if locked, scenePhase == .active {
-                PrivacyShieldController.show(manager: appLock, allowsUnlock: true)
-            } else if !locked, scenePhase == .active {
-                PrivacyShieldController.hide()
+            if !locked, scenePhase == .active {
                 presentQuickLaunchIfNeeded()
             }
         }
@@ -128,17 +121,6 @@ struct RootTabView: View {
             get: { externalRouteError != nil },
             set: { if !$0 { externalRouteError = nil } }
         )) { Button("好") {} } message: { Text(externalRouteError ?? AppLocalization.string("未知错误")) }
-    }
-
-    private func persistentTab<Content: View>(
-        _ tab: LedgerTab,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        content()
-            .opacity(selection == tab ? 1 : 0)
-            .allowsHitTesting(selection == tab)
-            .accessibilityHidden(selection != tab)
-            .zIndex(selection == tab ? 1 : 0)
     }
 
     private var isRootEntryVisible: Bool {
@@ -226,17 +208,13 @@ struct RootTabView: View {
     private func handleScenePhase(_ phase: ScenePhase) {
         switch phase {
         case .active:
-            if appLock.isLocked {
-                PrivacyShieldController.show(manager: appLock, allowsUnlock: true)
-            } else {
-                PrivacyShieldController.hide()
+            if !appLock.isLocked {
                 presentQuickLaunchIfNeeded()
             }
         case .inactive, .background:
             appLock.lockForPrivacyIfNeeded()
-            PrivacyShieldController.show(manager: appLock, allowsUnlock: false)
         @unknown default:
-            PrivacyShieldController.show(manager: appLock, allowsUnlock: false)
+            break
         }
     }
 

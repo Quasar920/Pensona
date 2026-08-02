@@ -53,7 +53,9 @@ struct AssetDashboardService {
             descriptor = FetchDescriptor(
                 predicate: #Predicate { transaction in
                     (transaction.sourceAccount?.id == accountID
-                        || transaction.destinationAccount?.id == accountID)
+                        || transaction.destinationAccount?.id == accountID
+                        || transaction.feeWallet?.account?.id == accountID
+                        || transaction.discountWallet?.account?.id == accountID)
                         && transaction.bookID == bookID
                 },
                 sortBy: [SortDescriptor(\LedgerTransaction.date, order: .reverse)]
@@ -63,6 +65,8 @@ struct AssetDashboardService {
                 predicate: #Predicate { transaction in
                     transaction.sourceAccount?.id == accountID
                         || transaction.destinationAccount?.id == accountID
+                        || transaction.feeWallet?.account?.id == accountID
+                        || transaction.discountWallet?.account?.id == accountID
                 },
                 sortBy: [SortDescriptor(\LedgerTransaction.date, order: .reverse)]
             )

@@ -1,17 +1,29 @@
 import SwiftUI
 
+enum EntryKeypadInputMode: Equatable {
+    case amount
+    case wholeNumber
+}
+
 struct EntryGlassKeypad: View {
     @Binding var amountText: String
     let currencyCode: String
     let resetID: UUID
+    let inputMode: EntryKeypadInputMode
     let showsNextEntry: Bool
     let isSaving: Bool
+    let canComplete: Bool
     let nextEntry: () -> Void
     let complete: () -> Void
 
     @State private var calculation = EntryCalculationState()
+    @State private var hasEnteredValueSinceReset = false
 
-    private var fractionDigits: Int { SupportedCurrency.fractionDigits(for: currencyCode) }
+    private var fractionDigits: Int {
+        inputMode == .wholeNumber
+            ? 0
+            : SupportedCurrency.fractionDigits(for: currencyCode)
+    }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -24,31 +36,40 @@ struct EntryGlassKeypad: View {
             }
             Grid(horizontalSpacing: 7, verticalSpacing: 7) {
                 GridRow {
-                    key("7"); key("8"); key("9"); operation(.add); operation(.subtract)
+                    operation(.add); operation(.subtract); operation(.multiply); operation(.divide)
                 }
                 GridRow {
-                    key("4"); key("5"); key("6"); operation(.multiply); operation(.divide)
+                    key("7"); key("8"); key("9"); deleteKey
                 }
                 GridRow {
-                    key("1"); key("2"); key("3")
-                    actionButton(showsNextEntry ? "下一笔" : "清空", primary: false) {
+                    key("4"); key("5"); key("6"); key(".")
+                }
+                GridRow {
+                    key("1"); key("2"); key("3"); key("0")
+                }
+                GridRow {
+                    actionButton(
+                        showsNextEntry
+                            ? (AppLocalization.locale.language.languageCode?.identifier == "en" ? "Next" : AppLocalization.string("下一笔"))
+                            : AppLocalization.string("清空"),
+                        primary: false
+                    ) {
                         if showsNextEntry { nextEntry() }
                         else { calculation.clear(displayText: &amountText) }
                     }
                     .gridCellColumns(2)
                     .disabled(isSaving)
-                }
-                GridRow {
-                    key("."); key("0"); deleteKey
-                    actionButton("完成", primary: true, action: complete)
+                    actionButton(AppLocalization.string("完成"), primary: true, action: complete)
                         .gridCellColumns(2)
-                        .disabled(isSaving)
+                        .disabled(isSaving || !canComplete)
                 }
             }
         }
         .padding(10)
-        .ledgerSurface(.functional, cornerRadius: 22)
-        .onChange(of: resetID) { _, _ in calculation.reset() }
+        .onChange(of: resetID) { _, _ in
+            calculation.reset()
+            hasEnteredValueSinceReset = false
+        }
         .onChange(of: amountText) { _, newValue in
             if newValue.isEmpty { calculation.reset() }
         }
@@ -56,13 +77,20 @@ struct EntryGlassKeypad: View {
 
     private func key(_ label: String) -> some View {
         Button {
+            if inputMode == .wholeNumber, !hasEnteredValueSinceReset {
+                amountText = ""
+                calculation.reset()
+            }
             calculation.append(label, displayText: &amountText, fractionDigits: fractionDigits)
+            hasEnteredValueSinceReset = true
         } label: {
             Text(label)
                 .font(.system(size: 20, weight: .semibold, design: .rounded))
                 .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(EntryKeyStyle())
+        .disabled(inputMode == .wholeNumber && label == ".")
+        .opacity(inputMode == .wholeNumber && label == "." ? 0.32 : 1)
     }
 
     private func operation(_ operation: EntryCalculationOperator) -> some View {
@@ -75,11 +103,14 @@ struct EntryGlassKeypad: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(EntryKeyStyle())
+        .disabled(inputMode == .wholeNumber)
+        .opacity(inputMode == .wholeNumber ? 0.32 : 1)
         .accessibilityLabel(operation.accessibilityLabel)
     }
 
     private var deleteKey: some View {
         Button {
+            hasEnteredValueSinceReset = true
             calculation.delete(displayText: &amountText, fractionDigits: fractionDigits)
         } label: {
             Image(systemName: "delete.left")
@@ -88,6 +119,7 @@ struct EntryGlassKeypad: View {
         }
         .buttonStyle(EntryKeyStyle())
         .simultaneousGesture(LongPressGesture(minimumDuration: 0.7).onEnded { _ in
+            hasEnteredValueSinceReset = true
             calculation.clear(displayText: &amountText)
         })
         .accessibilityLabel("删除；长按清空")

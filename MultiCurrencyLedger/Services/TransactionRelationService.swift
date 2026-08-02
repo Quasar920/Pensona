@@ -61,6 +61,7 @@ final class TransactionRelationService {
         date: Date = .now,
         note: String? = nil
     ) throws -> LedgerTransaction {
+        try LedgerBookAccess.requireActiveBook(in: context, for: original)
         guard original.type == .expense else {
             throw TransactionRelationError.originalMustBeExpense
         }

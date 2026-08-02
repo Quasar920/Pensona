@@ -22,8 +22,21 @@ struct TransactionDraft {
     var adjustmentReason: String?
     var originalAmount: Decimal?
     var discountAmount: Decimal?
+    var discountWallet: CurrencyWallet?
     var recognitionImportID: UUID?
+    var transferPurpose: TransferPurpose
+    var foreignSettlementMode: ForeignCurrencySettlementMode?
+    var foreignOriginalAmount: Decimal?
+    var foreignOriginalCurrencyCode: String?
+    var settlementCurrencyCode: String?
+    var settledAmount: Decimal?
+    var settlementExchangeRate: Decimal?
+    var referenceExchangeRate: Decimal?
+    var installmentPlanID: UUID?
+    var installmentIndex: Int?
     var reimbursementStatus: ReimbursementStatus
+    var excludesFromMonthlyIncome: Bool
+    var excludesFromMonthlyExpense: Bool
 
     init(
         type: TransactionKind,
@@ -43,8 +56,21 @@ struct TransactionDraft {
         adjustmentReason: String? = nil,
         originalAmount: Decimal? = nil,
         discountAmount: Decimal? = nil,
+        discountWallet: CurrencyWallet? = nil,
         recognitionImportID: UUID? = nil,
-        reimbursementStatus: ReimbursementStatus = .none
+        transferPurpose: TransferPurpose = .standard,
+        foreignSettlementMode: ForeignCurrencySettlementMode? = nil,
+        foreignOriginalAmount: Decimal? = nil,
+        foreignOriginalCurrencyCode: String? = nil,
+        settlementCurrencyCode: String? = nil,
+        settledAmount: Decimal? = nil,
+        settlementExchangeRate: Decimal? = nil,
+        referenceExchangeRate: Decimal? = nil,
+        installmentPlanID: UUID? = nil,
+        installmentIndex: Int? = nil,
+        reimbursementStatus: ReimbursementStatus = .none,
+        excludesFromMonthlyIncome: Bool = false,
+        excludesFromMonthlyExpense: Bool = false
     ) {
         self.bookID = bookID
         self.type = type
@@ -63,8 +89,21 @@ struct TransactionDraft {
         self.adjustmentReason = adjustmentReason
         self.originalAmount = originalAmount
         self.discountAmount = discountAmount
+        self.discountWallet = discountWallet
         self.recognitionImportID = recognitionImportID
+        self.transferPurpose = transferPurpose
+        self.foreignSettlementMode = foreignSettlementMode
+        self.foreignOriginalAmount = foreignOriginalAmount
+        self.foreignOriginalCurrencyCode = foreignOriginalCurrencyCode
+        self.settlementCurrencyCode = settlementCurrencyCode
+        self.settledAmount = settledAmount
+        self.settlementExchangeRate = settlementExchangeRate
+        self.referenceExchangeRate = referenceExchangeRate
+        self.installmentPlanID = installmentPlanID
+        self.installmentIndex = installmentIndex
         self.reimbursementStatus = reimbursementStatus
+        self.excludesFromMonthlyIncome = excludesFromMonthlyIncome
+        self.excludesFromMonthlyExpense = excludesFromMonthlyExpense
     }
 
     init(transaction: LedgerTransaction) {
@@ -89,8 +128,22 @@ struct TransactionDraft {
         adjustmentReason = transaction.adjustmentReason
         originalAmount = transaction.originalAmount
         discountAmount = transaction.discountAmount
+        discountWallet = transaction.discountWallet
         recognitionImportID = transaction.recognitionImportID
+        transferPurpose = transaction.transferPurpose
+        foreignSettlementMode = transaction.foreignSettlementMode
+        foreignOriginalAmount = transaction.foreignOriginalAmount
+        foreignOriginalCurrencyCode = transaction.foreignOriginalCurrencyCode
+        settlementCurrencyCode = transaction.settlementCurrencyCode
+        settledAmount = transaction.settledAmount
+        settlementExchangeRate = transaction.settlementExchangeRate
+        referenceExchangeRate = transaction.referenceExchangeRate
+        installmentPlanID = transaction.installmentPlanID
+        installmentIndex = transaction.installmentIndex
         reimbursementStatus = transaction.reimbursementStatus
+        let exclusion = MonthlySummaryExclusionStore.exclusion(for: transaction.id)
+        excludesFromMonthlyIncome = exclusion.income
+        excludesFromMonthlyExpense = exclusion.expense
     }
 
     func makeTransaction(
@@ -126,7 +179,7 @@ struct TransactionDraft {
         transaction.sourceAmount = amount
         transaction.sourceCurrencyCode = sourceWallet?.currencyCode
         transaction.destinationAmount = switch type {
-        case .transfer: amount
+        case .transfer: destinationAmount ?? amount
         case .exchange: destinationAmount
         default: nil
         }
@@ -158,7 +211,35 @@ struct TransactionDraft {
         transaction.merchantOrCounterparty = cleanMerchant?.isEmpty == true ? nil : cleanMerchant
         transaction.originalAmount = originalAmount
         transaction.discountAmount = discountAmount
+        transaction.discountWallet = type == .transfer ? discountWallet : nil
+        transaction.discountCurrencyCode = type == .transfer && discountAmount != nil
+            ? discountWallet?.currencyCode
+            : nil
         transaction.recognitionImportID = recognitionImportID
+        transaction.transferPurpose = type == .transfer ? transferPurpose : .standard
+        transaction.foreignSettlementMode = foreignSettlementMode
+        transaction.foreignOriginalAmount = foreignOriginalAmount
+        transaction.foreignOriginalCurrencyCode = foreignOriginalCurrencyCode
+        transaction.settlementCurrencyCode = settlementCurrencyCode
+        transaction.settledAmount = settledAmount
+        if type == .expense,
+           foreignSettlementMode == .instant,
+           let settledAmount,
+           let foreignOriginalAmount,
+           foreignOriginalAmount > 0 {
+            transaction.settlementExchangeRate = settledAmount / foreignOriginalAmount
+        } else if type == .transfer,
+                  transferPurpose == .creditCardRepayment,
+                  sourceWallet?.currencyCode != destinationWallet?.currencyCode,
+                  let destinationAmount = transaction.destinationAmount,
+                  destinationAmount > 0 {
+            transaction.settlementExchangeRate = amount / destinationAmount
+        } else {
+            transaction.settlementExchangeRate = settlementExchangeRate
+        }
+        transaction.referenceExchangeRate = referenceExchangeRate
+        transaction.installmentPlanID = installmentPlanID
+        transaction.installmentIndex = installmentIndex
         transaction.reimbursementStatus = reimbursementStatus
         transaction.updatedAt = .now
     }

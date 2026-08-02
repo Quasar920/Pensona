@@ -12,7 +12,6 @@ struct EntryCategoryPager: View {
     @Binding var isReordering: Bool
     @Binding var isPresentingManagementOverlay: Bool
 
-    @State private var page = 0
     @State private var expandedRootID: UUID?
     @State private var actionCategory: LedgerCategory?
     @State private var editor: EditorContext?
@@ -29,16 +28,10 @@ struct EntryCategoryPager: View {
         categories.filter { $0.type == type && !$0.isArchived }
     }
     private var roots: [LedgerCategory] {
-        relevant.filter { $0.parentID == nil }.sorted(by: categorySort)
+        relevant.filter { $0.parentID == nil }.sorted(by: rootSort)
     }
     private var columns: Int { dynamicTypeSize.isAccessibilitySize ? 3 : 5 }
-    private var pageCapacity: Int { columns * 4 }
-    private var pages: [[GridItemValue]] {
-        let values = roots.map(GridItemValue.category) + [.add]
-        return stride(from: 0, to: values.count, by: pageCapacity).map {
-            Array(values[$0..<min($0 + pageCapacity, values.count)])
-        }
-    }
+    private var gridValues: [GridItemValue] { roots.map(GridItemValue.category) + [.add] }
     private var expandedRoot: LedgerCategory? {
         roots.first { $0.id == expandedRootID }
     }
@@ -72,14 +65,8 @@ struct EntryCategoryPager: View {
                 }
             }
 
-            ZStack {
-                TabView(selection: $page) {
-                    ForEach(Array(pages.enumerated()), id: \.offset) { index, values in
-                        pageGrid(values).tag(index)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: pages.count > 1 ? .always : .never))
-                .indexViewStyle(.page(backgroundDisplayMode: .interactive))
+        ZStack {
+            pageGrid(gridValues)
                 .accessibilityIdentifier("entry-category-pager")
 
                 if let expandedRoot {
@@ -94,10 +81,12 @@ struct EntryCategoryPager: View {
                         reorder: reorderChild,
                         close: { expandedRootID = nil }
                     )
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                }
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
-            .frame(height: dynamicTypeSize.isAccessibilitySize ? 360 : 210)
+        }
+        // Four compact rows keep every expense category above the amount
+        // panel and leave room for the iPhone home indicator.
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? 360 : 264)
             .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive, value: expandedRootID)
         }
         .background {
@@ -183,7 +172,6 @@ struct EntryCategoryPager: View {
             set: { if !$0 { errorMessage = nil } }
         )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         .onChange(of: type) { _, _ in
-            page = 0
             expandedRootID = nil
             isReordering = false
             isPresentingManagementOverlay = false
@@ -232,15 +220,15 @@ struct EntryCategoryPager: View {
             }
         }
         .padding(.horizontal, 2)
-        .padding(.bottom, pages.count > 1 ? 20 : 0)
+        .padding(.bottom, 0)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private func rootTile(_ category: LedgerCategory) -> some View {
         let selectedRootID = relevant.first(where: { $0.id == selectedID })?.parentID ?? selectedID
         return Button { selectRoot(category) } label: {
-            VStack(spacing: 3) {
-                CategoryIconImage(category: category, size: dynamicTypeSize.isAccessibilitySize ? 34 : 28)
+            VStack(spacing: 4) {
+                CategoryIconImage(category: category, size: dynamicTypeSize.isAccessibilitySize ? 48 : 36)
                 Text(category.localizedName(locale: locale))
                     .font(.caption2.weight(.semibold))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
@@ -248,12 +236,16 @@ struct EntryCategoryPager: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
-            .foregroundStyle(selectedRootID == category.id ? Color.accentColor : .primary)
-            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 76 : 44)
+            .foregroundStyle(selectedRootID == category.id ? LedgerPalette.accent : EntryCategoryAppearance.ink)
+            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 88 : 62)
             .background(
-                selectedRootID == category.id ? Color.accentColor.opacity(0.11) : Color.primary.opacity(0.04),
+                EntryCategoryAppearance.card,
                 in: RoundedRectangle(cornerRadius: 15, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(selectedRootID == category.id ? Color.accentColor.opacity(0.75) : .clear, lineWidth: 1.5)
+            }
             .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
         .buttonStyle(LedgerGlassPressStyle())
@@ -275,14 +267,30 @@ struct EntryCategoryPager: View {
 
     private var addRootTile: some View {
         Button { beginCreate(parent: nil) } label: {
-            VStack(spacing: 3) {
-                Image(systemName: "plus").font(.headline)
+            VStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 30 : 32, weight: .medium))
+                    .foregroundStyle(LedgerPalette.accent)
                 Text("新分类").font(.caption2.weight(.semibold))
             }
-            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 76 : 44)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 15))
+            .foregroundStyle(EntryCategoryAppearance.ink)
+            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 88 : 62)
+            .background(
+                EntryCategoryAppearance.card,
+                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
         .buttonStyle(LedgerGlassPressStyle())
+    }
+
+    private func rootSort(_ lhs: LedgerCategory, _ rhs: LedgerCategory) -> Bool {
+        // “兜底” is deliberately the final expense category, even if a user
+        // has added other root categories later.
+        let fallbackKey = "category.expense.fallback"
+        if lhs.systemLocalizationKey == fallbackKey { return false }
+        if rhs.systemLocalizationKey == fallbackKey { return true }
+        return categorySort(lhs, rhs)
     }
 
     private func selectRoot(_ category: LedgerCategory) {
@@ -491,6 +499,26 @@ struct EntryCategoryPager: View {
     private func categorySort(_ lhs: LedgerCategory, _ rhs: LedgerCategory) -> Bool {
         lhs.sortOrder == rhs.sortOrder ? lhs.createdAt < rhs.createdAt : lhs.sortOrder < rhs.sortOrder
     }
+}
+
+enum EntryCategoryAppearance {
+    /// Keep the sampled light card grey while using the requested dark preview.
+    static let card = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 65 / 255, green: 65 / 255, blue: 66 / 255, alpha: 1)
+            : UIColor(red: 227 / 255, green: 227 / 255, blue: 227 / 255, alpha: 1)
+    })
+    static let overlay = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 9 / 255, green: 14 / 255, blue: 20 / 255, alpha: 1)
+            : UIColor(red: 246 / 255, green: 246 / 255, blue: 246 / 255, alpha: 1)
+    })
+    static let darkInk = Color(red: 229 / 255, green: 229 / 255, blue: 231 / 255)
+    static let ink = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 229 / 255, green: 229 / 255, blue: 231 / 255, alpha: 1)
+            : UIColor(white: 0.04, alpha: 1)
+    })
 }
 
 private enum GridItemValue: Identifiable {

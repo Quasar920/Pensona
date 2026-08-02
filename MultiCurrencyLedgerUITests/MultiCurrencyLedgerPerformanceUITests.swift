@@ -8,7 +8,11 @@ final class MultiCurrencyLedgerPerformanceUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         app = XCUIApplication()
         app.launchEnvironment["HOME_SAMPLE_DATA"] = "1"
+        app.launchEnvironment["UI_TEST_MODE"] = "1"
         app.launchEnvironment["APP_PREVIEW_LANGUAGE"] = "zh-Hans"
+        if let profilerWindow = ProcessInfo.processInfo.environment["UI_PROFILER_ATTACH_SECONDS"] {
+            app.launchEnvironment["UI_PROFILER_ATTACH_SECONDS"] = profilerWindow
+        }
         switch app.state {
         case .runningBackground, .runningBackgroundSuspended, .runningForeground:
             app.activate()
@@ -16,6 +20,9 @@ final class MultiCurrencyLedgerPerformanceUITests: XCTestCase {
             app.launch()
         }
         XCUIDevice.shared.orientation = .portrait
+        let ready = app.descendants(matching: .any)["app-data-ready"].firstMatch
+        XCTAssertTrue(ready.waitForExistence(timeout: 12), "Sample data did not finish seeding")
+        XCTAssertFalse(app.descendants(matching: .any)["app-data-seed-failed"].exists)
         XCTAssertTrue(app.buttons["root-tab-ledger"].waitForExistence(timeout: 8))
     }
 
@@ -93,9 +100,12 @@ final class MultiCurrencyLedgerPerformanceUITests: XCTestCase {
     }
 
     private func waitForExternalProfilerAttachment() {
+        let configuredSeconds = ProcessInfo.processInfo.environment["UI_PROFILER_ATTACH_SECONDS"]
+            .flatMap(TimeInterval.init) ?? 0
+        guard configuredSeconds > 0 else { return }
         let attachmentWindow = XCTWaiter.wait(
             for: [XCTestExpectation(description: "External profiler attachment window")],
-            timeout: 8
+            timeout: configuredSeconds
         )
         XCTAssertEqual(attachmentWindow, .timedOut)
     }

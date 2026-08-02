@@ -60,7 +60,9 @@ final class SavingsGoalService {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw SavingsGoalError.emptyName }
         guard targetAmount > 0 else { throw SavingsGoalError.invalidTarget }
-        guard try context.fetch(FetchDescriptor<LedgerBook>()).contains(where: { $0.id == bookID }) else {
+        do {
+            _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
+        } catch LedgerError.missingBook {
             throw SavingsGoalError.missingBook
         }
         let goal = SavingsGoal(
@@ -84,6 +86,7 @@ final class SavingsGoalService {
         targetAmount: Decimal,
         targetDate: Date?
     ) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: goal.bookID)
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { throw SavingsGoalError.emptyName }
         guard targetAmount > 0 else { throw SavingsGoalError.invalidTarget }
@@ -102,6 +105,7 @@ final class SavingsGoalService {
         sourceAccountID: UUID? = nil,
         note: String? = nil
     ) throws -> SavingsAllocation {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: goal.bookID)
         guard amount != 0 else { throw SavingsGoalError.invalidAllocation }
         if let sourceAccountID {
             guard try context.fetch(FetchDescriptor<Account>()).contains(where: {
@@ -125,12 +129,16 @@ final class SavingsGoalService {
     }
 
     func delete(_ allocation: SavingsAllocation) throws {
+        if let bookID = allocation.goal?.bookID {
+            _ = try LedgerBookAccess.requireActiveBook(in: context, id: bookID)
+        }
         allocation.goal?.updatedAt = .now
         context.delete(allocation)
         try context.save()
     }
 
     func setStatus(_ status: SavingsGoalStatus, goal: SavingsGoal) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: goal.bookID)
         goal.status = status
         goal.updatedAt = .now
         try context.save()

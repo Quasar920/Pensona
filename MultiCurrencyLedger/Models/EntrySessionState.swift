@@ -86,6 +86,14 @@ struct EntrySessionState {
            DecimalParser.parse(form.destinationAmountText).map({ $0 > 0 }) != true {
             validation.set("请输入大于 0 的换入金额", for: .destinationAmount)
         }
+        if form.kind == .transfer,
+           let sourceWallet,
+           let destinationWallet = wallets.first(where: { $0.id == form.destinationWalletID }),
+           destinationWallet.account?.type == .creditCard,
+           destinationWallet.currencyCode != sourceWallet.currencyCode,
+           DecimalParser.parse(form.destinationAmountText).map({ $0 > 0 }) != true {
+            validation.set("请输入大于 0 的外币偿还金额", for: .destinationAmount)
+        }
         return validation.isEmpty
     }
 

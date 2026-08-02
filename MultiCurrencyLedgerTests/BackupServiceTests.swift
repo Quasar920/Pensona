@@ -78,6 +78,8 @@ final class BackupServiceTests: XCTestCase {
         )
         let iconData = Data([0x89, 0x50, 0x4E, 0x47, 0x01])
         try iconData.write(to: iconURL)
+        book.archivedAt = .now
+        try context.save()
         let data = try BackupService.encode(BackupService.makeDocument(
             context: context,
             baseCurrencyCode: "CNY",
@@ -87,6 +89,8 @@ final class BackupServiceTests: XCTestCase {
         XCTAssertEqual(preview.transactionCount, 2)
         XCTAssertEqual(preview.bookCount, 1)
 
+        book.archivedAt = nil
+        try context.save()
         try LedgerService(context: context).deleteTransactions(
             try context.fetch(FetchDescriptor<LedgerTransaction>())
         )
@@ -115,6 +119,7 @@ final class BackupServiceTests: XCTestCase {
         )
         XCTAssertEqual(try context.fetch(FetchDescriptor<RepaymentReminder>()).first?.outstandingAmount, 88)
         XCTAssertTrue(try context.fetch(FetchDescriptor<LedgerTransaction>()).allSatisfy { $0.bookID == book.id })
+        XCTAssertTrue(try context.fetch(FetchDescriptor<LedgerBook>()).first?.isArchived == true)
     }
 
     func testPreviewRejectsNewerBackupVersion() throws {

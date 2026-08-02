@@ -81,8 +81,8 @@ struct CategoryManagementView: View {
                     } label: {
                         HStack(spacing: 10) {
                             Color.clear.frame(width: CGFloat(node.level) * 18)
-                            Image(systemName: node.category.symbolName)
-                                .foregroundStyle(node.category.isArchived ? .secondary : Color.accentColor)
+                            CategoryIconImage(category: node.category, size: 24)
+                                .opacity(node.category.isArchived ? 0.48 : 1)
                             Text(node.category.name)
                                 .foregroundStyle(node.category.isArchived ? .secondary : .primary)
                             Spacer()

@@ -26,6 +26,7 @@ final class RecognitionWorkflowService {
     }
 
     func apply(_ decision: RecognitionDecision, in book: LedgerBook) throws -> RecognitionWorkflowOutcome {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: book.id)
         guard let draft = decision.confirmationDraft else {
             if case let .rejected(reason) = decision { return .rejected(reason: reason) }
             return .rejected(reason: .unsupportedType)

@@ -6,7 +6,7 @@ struct BackupSettings: Codable, Equatable {
 }
 
 struct LedgerBackupDocument: Codable {
-    static let currentVersion = 7
+    static let currentVersion = 9
 
     var version: Int
     var exportedAt: Date
@@ -147,11 +147,42 @@ struct LedgerBackupDocument: Codable {
     }
 }
 
-struct BookBackup: Codable { var id: UUID; var name: String; var sortOrder: Int; var createdAt: Date; var updatedAt: Date }
+struct BookBackup: Codable {
+    var id: UUID
+    var name: String
+    var sortOrder: Int
+    var isArchived: Bool?
+    var archivedAt: Date?
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID,
+        name: String,
+        sortOrder: Int,
+        isArchived: Bool? = nil,
+        archivedAt: Date? = nil,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.name = name
+        self.sortOrder = sortOrder
+        self.isArchived = isArchived
+        self.archivedAt = archivedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
 struct AccountBackup: Codable {
     var id: UUID; var bookID: UUID?; var name: String; var type: String; var note: String?
     var isHidden: Bool; var isArchived: Bool?; var sortOrder: Int; var createdAt: Date; var updatedAt: Date
-    private enum CodingKeys: String, CodingKey { case id, bookID, name, type, note, isHidden, isArchived, sortOrder, createdAt, updatedAt }
+    var defaultForeignCurrencySettlementMode: String?
+    var defaultSettlementCurrencyCode: String?
+    private enum CodingKeys: String, CodingKey {
+        case id, bookID, name, type, note, isHidden, isArchived, sortOrder, createdAt, updatedAt
+        case defaultForeignCurrencySettlementMode, defaultSettlementCurrencyCode
+    }
 }
 struct WalletBackup: Codable {
     var id: UUID; var accountID: UUID?; var currencyCode: String; var balance: Decimal
@@ -179,6 +210,13 @@ struct TransactionBackup: Codable {
     var tagIDs: [UUID]?; var paymentParts: [PaymentPartBackup]?; var merchantOrCounterparty: String?
     var originalAmount: Decimal?; var discountAmount: Decimal?; var recognitionImportID: UUID?
     var bookID: UUID?; var reimbursementStatus: String?
+    var excludesFromMonthlyIncome: Bool?; var excludesFromMonthlyExpense: Bool?
+    var transferPurpose: String?; var foreignSettlementMode: String?
+    var foreignOriginalAmount: Decimal?; var foreignOriginalCurrencyCode: String?
+    var settlementCurrencyCode: String?; var settledAmount: Decimal?
+    var settlementExchangeRate: Decimal?; var referenceExchangeRate: Decimal?
+    var discountWalletID: UUID?; var discountCurrencyCode: String?
+    var installmentPlanID: UUID?; var installmentIndex: Int?
 }
 struct RelationBackup: Codable {
     var id: UUID; var kind: String; var originalTransactionID: UUID; var relatedTransactionID: UUID
@@ -221,6 +259,8 @@ struct InstallmentPlanBackup: Codable {
     var sourceTransactionID: UUID?; var merchantOrCounterparty: String?; var note: String?
     var fractionDigits: Int; var isPaused: Bool; var isArchived: Bool; var completedAt: Date?
     var createdAt: Date; var updatedAt: Date
+    var principalCurrencyCode: String?; var settlementCurrencyCode: String?
+    var isForeignCurrencyRepayment: Bool?
 }
 struct InstallmentOccurrenceBackup: Codable {
     var id: UUID; var generationKey: String; var planID: UUID; var installmentIndex: Int
@@ -328,12 +368,22 @@ enum BackupService {
         return LedgerBackupDocument(
             settings: BackupSettings(baseCurrencyCode: baseCurrencyCode),
             books: try context.fetch(FetchDescriptor<LedgerBook>()).map {
-                BookBackup(id: $0.id, name: $0.name, sortOrder: $0.sortOrder, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+                BookBackup(
+                    id: $0.id,
+                    name: $0.name,
+                    sortOrder: $0.sortOrder,
+                    isArchived: $0.isArchived,
+                    archivedAt: $0.archivedAt,
+                    createdAt: $0.createdAt,
+                    updatedAt: $0.updatedAt
+                )
             },
             accounts: try context.fetch(FetchDescriptor<Account>()).map {
                 AccountBackup(id: $0.id, bookID: $0.book?.id, name: $0.name, type: $0.typeRawValue, note: $0.note,
                               isHidden: $0.isHidden, isArchived: $0.isArchived, sortOrder: $0.sortOrder,
-                              createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+                              createdAt: $0.createdAt, updatedAt: $0.updatedAt,
+                              defaultForeignCurrencySettlementMode: $0.defaultForeignCurrencySettlementModeRawValue,
+                              defaultSettlementCurrencyCode: $0.defaultSettlementCurrencyCode)
             },
             wallets: try context.fetch(FetchDescriptor<CurrencyWallet>()).map {
                 WalletBackup(id: $0.id, accountID: $0.account?.id, currencyCode: $0.currencyCode, balance: $0.balance,
@@ -384,7 +434,10 @@ enum BackupService {
                                       sourceTransactionID: $0.sourceTransactionID,
                                       merchantOrCounterparty: $0.merchantOrCounterparty, note: $0.note,
                                       fractionDigits: $0.fractionDigits, isPaused: $0.isPaused, isArchived: $0.isArchived,
-                                      completedAt: $0.completedAt, createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+                                      completedAt: $0.completedAt, createdAt: $0.createdAt, updatedAt: $0.updatedAt,
+                                      principalCurrencyCode: $0.principalCurrencyCode,
+                                      settlementCurrencyCode: $0.settlementCurrencyCode,
+                                      isForeignCurrencyRepayment: $0.isForeignCurrencyRepayment)
             },
             installmentOccurrences: try context.fetch(FetchDescriptor<InstallmentOccurrence>()).map {
                 InstallmentOccurrenceBackup(id: $0.id, generationKey: $0.generationKey, planID: $0.planID,
@@ -556,8 +609,22 @@ enum BackupService {
                 PaymentPartBackup(id: $0.id, walletID: $0.wallet?.id, amount: $0.amount,
                                   sortOrder: $0.sortOrder, createdAt: $0.createdAt)
             }, merchantOrCounterparty: value.merchantOrCounterparty, originalAmount: value.originalAmount,
-            discountAmount: value.discountAmount, recognitionImportID: value.recognitionImportID
-            , bookID: value.bookID, reimbursementStatus: value.reimbursementStatusRawValue
+            discountAmount: value.discountAmount, recognitionImportID: value.recognitionImportID,
+            bookID: value.bookID, reimbursementStatus: value.reimbursementStatusRawValue,
+            excludesFromMonthlyIncome: MonthlySummaryExclusionStore.exclusion(for: value.id).income,
+            excludesFromMonthlyExpense: MonthlySummaryExclusionStore.exclusion(for: value.id).expense,
+            transferPurpose: value.transferPurposeRawValue,
+            foreignSettlementMode: value.foreignSettlementModeRawValue,
+            foreignOriginalAmount: value.foreignOriginalAmount,
+            foreignOriginalCurrencyCode: value.foreignOriginalCurrencyCode,
+            settlementCurrencyCode: value.settlementCurrencyCode,
+            settledAmount: value.settledAmount,
+            settlementExchangeRate: value.settlementExchangeRate,
+            referenceExchangeRate: value.referenceExchangeRate,
+            discountWalletID: value.discountWallet?.id,
+            discountCurrencyCode: value.discountCurrencyCode,
+            installmentPlanID: value.installmentPlanID,
+            installmentIndex: value.installmentIndex
         )
     }
 
@@ -581,6 +648,12 @@ enum BackupService {
             }
             if value.reimbursementStatus == nil {
                 value.reimbursementStatus = ReimbursementStatus.none.rawValue
+            }
+            if value.excludesFromMonthlyIncome == nil {
+                value.excludesFromMonthlyIncome = false
+            }
+            if value.excludesFromMonthlyExpense == nil {
+                value.excludesFromMonthlyExpense = false
             }
             return value
         }
@@ -622,6 +695,16 @@ enum BackupService {
         for account in document.accounts where account.bookID.map({ !bookIDs.contains($0) }) == true {
             throw BackupServiceError.brokenReference("账户 \(account.name) 的账本不存在")
         }
+        for account in document.accounts {
+            if let mode = account.defaultForeignCurrencySettlementMode,
+               ForeignCurrencySettlementMode(rawValue: mode) == nil {
+                throw BackupServiceError.brokenReference("账户 \(account.name) 的外币结算方式无效")
+            }
+            if let code = account.defaultSettlementCurrencyCode,
+               SupportedCurrency(rawValue: code) == nil {
+                throw BackupServiceError.brokenReference("账户 \(account.name) 的默认结算币种无效")
+            }
+        }
         for wallet in document.wallets where wallet.accountID.map({ !accountIDs.contains($0) }) == true {
             throw BackupServiceError.brokenReference("钱包 \(wallet.currencyCode) 的账户不存在")
         }
@@ -635,7 +718,10 @@ enum BackupService {
             guard transaction.reimbursementStatus.flatMap(ReimbursementStatus.init(rawValue:)) != nil else {
                 throw BackupServiceError.brokenReference("流水 \(transaction.id) 的报销状态无效")
             }
-            let referencedWallets = [transaction.sourceWalletID, transaction.destinationWalletID, transaction.feeWalletID]
+            let referencedWallets = [
+                transaction.sourceWalletID, transaction.destinationWalletID,
+                transaction.feeWalletID, transaction.discountWalletID
+            ]
                 + (transaction.paymentParts ?? []).map(\.walletID)
             if referencedWallets.compactMap({ $0 }).contains(where: { !walletIDs.contains($0) }) {
                 throw BackupServiceError.brokenReference("流水 \(transaction.id) 的钱包不存在")
@@ -646,6 +732,25 @@ enum BackupService {
             if [transaction.sourceAccountID, transaction.destinationAccountID].compactMap({ $0 })
                 .contains(where: { !accountIDs.contains($0) }) {
                 throw BackupServiceError.brokenReference("流水 \(transaction.id) 的账户不存在")
+            }
+            if let purpose = transaction.transferPurpose,
+               TransferPurpose(rawValue: purpose) == nil {
+                throw BackupServiceError.brokenReference("流水 \(transaction.id) 的转账用途无效")
+            }
+            if let mode = transaction.foreignSettlementMode,
+               ForeignCurrencySettlementMode(rawValue: mode) == nil {
+                throw BackupServiceError.brokenReference("流水 \(transaction.id) 的外币结算方式无效")
+            }
+            let settlementCodes = [
+                transaction.foreignOriginalCurrencyCode,
+                transaction.settlementCurrencyCode,
+                transaction.discountCurrencyCode
+            ].compactMap { $0 }
+            if settlementCodes.contains(where: { SupportedCurrency(rawValue: $0) == nil }) {
+                throw BackupServiceError.brokenReference("流水 \(transaction.id) 的结算币种无效")
+            }
+            if transaction.installmentPlanID.map({ !planIDs.contains($0) }) == true {
+                throw BackupServiceError.brokenReference("流水 \(transaction.id) 的分期计划不存在")
             }
         }
         for relation in document.relations where
@@ -717,6 +822,16 @@ enum BackupService {
                   plan.categoryID.map({ categoryIDs.contains($0) }) ?? true,
                   plan.sourceTransactionID.map({ transactionIDs.contains($0) }) ?? true else {
                 throw BackupServiceError.brokenReference("分期计划 \(plan.name) 的引用不存在")
+            }
+            if plan.isForeignCurrencyRepayment == true {
+                guard let principalCode = plan.principalCurrencyCode,
+                      let settlementCode = plan.settlementCurrencyCode,
+                      SupportedCurrency(rawValue: principalCode) != nil,
+                      SupportedCurrency(rawValue: settlementCode) != nil,
+                      principalCode != settlementCode,
+                      plan.destinationWalletID != nil else {
+                    throw BackupServiceError.brokenReference("外币分期计划 \(plan.name) 的币种无效")
+                }
             }
         }
         if document.installmentOccurrences.contains(where: {
@@ -815,8 +930,15 @@ private extension BackupService {
 
         var books: [UUID: LedgerBook] = [:]
         for item in document.books {
-            let value = LedgerBook(id: item.id, name: item.name, sortOrder: item.sortOrder,
-                                   createdAt: item.createdAt, updatedAt: item.updatedAt)
+            let value = LedgerBook(
+                id: item.id,
+                name: item.name,
+                sortOrder: item.sortOrder,
+                isArchived: item.isArchived ?? false,
+                archivedAt: item.archivedAt,
+                createdAt: item.createdAt,
+                updatedAt: item.updatedAt
+            )
             context.insert(value); books[item.id] = value
         }
         var accounts: [UUID: Account] = [:]
@@ -827,7 +949,11 @@ private extension BackupService {
             let value = Account(id: item.id, name: item.name, type: type, note: item.note,
                                 book: item.bookID.flatMap { books[$0] },
                                 isHidden: item.isHidden, isArchived: item.isArchived ?? false,
-                                sortOrder: item.sortOrder, createdAt: item.createdAt, updatedAt: item.updatedAt)
+                                sortOrder: item.sortOrder,
+                                defaultForeignCurrencySettlementMode: item.defaultForeignCurrencySettlementMode
+                                    .flatMap(ForeignCurrencySettlementMode.init(rawValue:)),
+                                defaultSettlementCurrencyCode: item.defaultSettlementCurrencyCode,
+                                createdAt: item.createdAt, updatedAt: item.updatedAt)
             context.insert(value); accounts[item.id] = value
         }
 
@@ -888,10 +1014,31 @@ private extension BackupService {
                 paymentParts: parts,
                 merchantOrCounterparty: item.merchantOrCounterparty, originalAmount: item.originalAmount,
                 discountAmount: item.discountAmount, recognitionImportID: item.recognitionImportID,
+                transferPurpose: item.transferPurpose.flatMap(TransferPurpose.init(rawValue:)) ?? .standard,
+                foreignSettlementMode: item.foreignSettlementMode
+                    .flatMap(ForeignCurrencySettlementMode.init(rawValue:)),
+                foreignOriginalAmount: item.foreignOriginalAmount,
+                foreignOriginalCurrencyCode: item.foreignOriginalCurrencyCode,
+                settlementCurrencyCode: item.settlementCurrencyCode,
+                settledAmount: item.settledAmount,
+                settlementExchangeRate: item.settlementExchangeRate,
+                referenceExchangeRate: item.referenceExchangeRate,
+                discountWallet: item.discountWalletID.flatMap { wallets[$0] },
+                discountCurrencyCode: item.discountCurrencyCode,
+                installmentPlanID: item.installmentPlanID,
+                installmentIndex: item.installmentIndex,
                 createdAt: item.createdAt, updatedAt: item.updatedAt
             )
             for part in parts { part.transaction = value }
-            context.insert(value); transactions[item.id] = value
+            context.insert(value)
+            MonthlySummaryExclusionStore.set(
+                MonthlySummaryExclusion(
+                    income: item.excludesFromMonthlyIncome ?? false,
+                    expense: item.excludesFromMonthlyExpense ?? false
+                ),
+                for: value.id
+            )
+            transactions[item.id] = value
         }
 
         for item in document.relations {
@@ -978,8 +1125,11 @@ private extension BackupService {
                 startDate: item.startDate, nextDueDate: item.nextDueDate, sourceWalletID: item.sourceWalletID,
                 destinationWalletID: item.destinationWalletID, categoryID: item.categoryID,
                 sourceTransactionID: item.sourceTransactionID, merchantOrCounterparty: item.merchantOrCounterparty,
-                note: item.note, fractionDigits: item.fractionDigits, isPaused: item.isPaused,
-                isArchived: item.isArchived, completedAt: item.completedAt,
+                note: item.note, fractionDigits: item.fractionDigits,
+                principalCurrencyCode: item.principalCurrencyCode,
+                settlementCurrencyCode: item.settlementCurrencyCode,
+                isForeignCurrencyRepayment: item.isForeignCurrencyRepayment ?? false,
+                isPaused: item.isPaused, isArchived: item.isArchived, completedAt: item.completedAt,
                 createdAt: item.createdAt, updatedAt: item.updatedAt
             ))
         }

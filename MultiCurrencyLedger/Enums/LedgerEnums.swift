@@ -143,6 +143,25 @@ enum TransactionKind: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum ForeignCurrencySettlementMode: String, CaseIterable, Codable, Identifiable, Sendable {
+    case instant
+    case repayment
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .instant: AppLocalization.string("消费时结算")
+        case .repayment: AppLocalization.string("还款时结算")
+        }
+    }
+}
+
+enum TransferPurpose: String, Codable, Sendable {
+    case standard
+    case creditCardRepayment
+}
+
 enum CategoryKind: String, Codable { case expense, income }
 enum AdjustmentDirection: String, CaseIterable, Codable, Identifiable {
     case increase, decrease

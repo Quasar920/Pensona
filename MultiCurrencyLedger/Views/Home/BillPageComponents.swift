@@ -1,13 +1,9 @@
 import SwiftUI
 
 struct BillTopControls: View {
-    @Namespace private var glassNamespace
-    @FocusState private var searchFocused: Bool
-
     let bookName: String
-    @Binding var searchText: String
-    @Binding var isSearchExpanded: Bool
     let openBook: () -> Void
+    let openSearch: () -> Void
     let openSettings: () -> Void
 
     var body: some View {
@@ -22,48 +18,17 @@ struct BillTopControls: View {
                 }
                 .buttonStyle(.glass)
                 .accessibilityHint("切换账本")
+                .accessibilityIdentifier("home-book-switcher")
+                .centeredGenieSourceFrame(id: "home-book-switcher")
 
                 Spacer(minLength: 0)
 
-                if isSearchExpanded {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-                        TextField("搜索当前月", text: $searchText)
-                            .focused($searchFocused)
-                            .textInputAutocapitalization(.never)
-                            .submitLabel(.search)
-                        Button {
-                            closeSearch()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 32, height: 32)
-                        }
-                        .accessibilityLabel("关闭搜索")
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: 210, minHeight: LedgerLayout.minimumHitSize)
-                    .glassEffect(.regular, in: .capsule)
-                    .glassEffectID("bill-search", in: glassNamespace)
-                    .transition(.opacity)
-                    .onAppear {
-                        #if DEBUG
-                        guard ProcessInfo.processInfo.environment["BILL_PREVIEW_NO_FOCUS"] != "1" else { return }
-                        #endif
-                        searchFocused = true
-                    }
-                } else {
-                    Button {
-                        withAnimation(LedgerMotion.responsive) { isSearchExpanded = true }
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .frame(width: LedgerLayout.minimumHitSize, height: LedgerLayout.minimumHitSize)
-                    }
-                    .buttonStyle(.glass)
-                    .glassEffectID("bill-search", in: glassNamespace)
-                    .accessibilityLabel("搜索当前月账单")
+                Button(action: openSearch) {
+                    Image(systemName: "magnifyingglass")
+                        .frame(width: LedgerLayout.minimumHitSize, height: LedgerLayout.minimumHitSize)
                 }
+                .buttonStyle(.glass)
+                .accessibilityLabel("搜索账单")
 
                 Button(action: openSettings) {
                     Image(systemName: "gearshape")
@@ -72,17 +37,6 @@ struct BillTopControls: View {
                 .buttonStyle(.glass)
                 .accessibilityLabel("设置")
             }
-        }
-        .onChange(of: isSearchExpanded) { _, expanded in
-            if !expanded { searchFocused = false }
-        }
-    }
-
-    private func closeSearch() {
-        searchFocused = false
-        searchText = ""
-        withAnimation(LedgerMotion.responsive) {
-            isSearchExpanded = false
         }
     }
 }
@@ -341,6 +295,7 @@ private struct BillSwipeableTransactionRow: View {
             )
             .accessibilityAction(named: "编辑交易", edit)
             .accessibilityAction(named: "删除交易", delete)
+            .accessibilityIdentifier(transactionAccessibilityIdentifier)
         }
         .frame(height: 70)
         .clipped()
@@ -350,6 +305,15 @@ private struct BillSwipeableTransactionRow: View {
             dragTranslation = 0
             dragAxis = nil
         }
+    }
+
+    private var transactionAccessibilityIdentifier: String {
+        if transaction.id == PreviewDataService.sampleDiningTransactionID
+            || (ProcessInfo.processInfo.environment["UI_TEST_MODE"] == "1"
+                && ["星巴克", "Starbucks"].contains(transaction.displayNote)) {
+            return "sample-transaction-dining"
+        }
+        return "transaction-\(transaction.id.uuidString)"
     }
 
     private func constrainedOffset(_ proposed: CGFloat, for side: Side?) -> CGFloat {
@@ -457,18 +421,28 @@ private struct BillTransactionRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: transaction.category?.symbolName ?? transaction.type.symbolName)
-                .font(.title3.weight(.medium))
-                .foregroundStyle(HomePalette.accent)
-                .frame(width: 40, height: 40)
-                .background(HomePalette.accent.opacity(0.10), in: Circle())
+            if let category = transaction.category {
+                CategoryIconImage(category: category, size: 40)
+            } else {
+                Image(systemName: transaction.type.symbolName)
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(HomePalette.accent)
+                    .frame(width: 40, height: 40)
+                    .background(HomePalette.accent.opacity(0.10), in: Circle())
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(transaction.homeCategoryTitle)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
+                if let note = transaction.displayNote {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.primary.opacity(0.78))
+                        .lineLimit(1)
+                }
                 Text("\(transaction.homeAccountName) · \(transaction.date.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption)
+                    .font(transaction.displayNote == nil ? .caption : .caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

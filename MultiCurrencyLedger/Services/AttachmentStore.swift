@@ -1,5 +1,7 @@
 import Foundation
+import ImageIO
 import SwiftData
+import UniformTypeIdentifiers
 
 enum AttachmentError: LocalizedError, Equatable {
     case emptyData
@@ -95,7 +97,7 @@ struct AttachmentStore {
         try fileManager.removeItem(at: fileURL)
     }
 
-    private static func imageFormat(_ data: Data) -> (extensionName: String, mimeType: String)? {
+    static func imageFormat(_ data: Data) -> (extensionName: String, mimeType: String)? {
         let bytes = [UInt8](data.prefix(12))
         if bytes.starts(with: [0xFF, 0xD8, 0xFF]) { return ("jpg", "image/jpeg") }
         if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return ("png", "image/png") }
@@ -105,6 +107,71 @@ struct AttachmentStore {
             return ("heic", "image/heic")
         }
         return nil
+    }
+}
+
+enum AttachmentImageProcessor {
+    private static let preferredMaximumBytes = 12 * 1_024 * 1_024
+
+    static func preparedData(_ data: Data) throws -> Data {
+        guard !data.isEmpty else { throw AttachmentError.emptyData }
+        if data.count <= AttachmentStore.maximumBytes,
+           AttachmentStore.imageFormat(data) != nil {
+            return data
+        }
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            throw AttachmentError.unsupportedImage
+        }
+
+        var smallestResult: Data?
+        for maximumPixelSize in [4_096, 3_072, 2_560, 2_048] {
+            let thumbnailOptions: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+                kCGImageSourceShouldCacheImmediately: false
+            ]
+            guard let image = CGImageSourceCreateThumbnailAtIndex(
+                source,
+                0,
+                thumbnailOptions as CFDictionary
+            ) else {
+                continue
+            }
+
+            for quality in [0.86, 0.74, 0.62, 0.50] {
+                guard let encoded = jpegData(image, quality: quality) else { continue }
+                if smallestResult == nil || encoded.count < smallestResult!.count {
+                    smallestResult = encoded
+                }
+                if encoded.count <= preferredMaximumBytes {
+                    return encoded
+                }
+            }
+        }
+
+        guard let smallestResult else { throw AttachmentError.unsupportedImage }
+        guard smallestResult.count <= AttachmentStore.maximumBytes else {
+            throw AttachmentError.fileTooLarge
+        }
+        return smallestResult
+    }
+
+    private static func jpegData(_ image: CGImage, quality: Double) -> Data? {
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            return nil
+        }
+        let options = [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary
+        CGImageDestinationAddImage(destination, image, options)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
     }
 }
 
@@ -124,12 +191,14 @@ final class AttachmentService {
         originalFilename: String = "照片",
         to transaction: LedgerTransaction
     ) throws -> TransactionAttachment {
+        try LedgerBookAccess.requireActiveBook(in: context, for: transaction)
         guard let bookID = transaction.bookID else {
             throw AttachmentError.missingBook
         }
+        let preparedData = try AttachmentImageProcessor.preparedData(data)
         let id = UUID()
         let stored = try store.saveImage(
-            data,
+            preparedData,
             bookID: bookID,
             transactionID: transaction.id,
             attachmentID: id
@@ -155,6 +224,7 @@ final class AttachmentService {
     }
 
     func remove(_ attachment: TransactionAttachment) throws {
+        _ = try LedgerBookAccess.requireActiveBook(in: context, id: attachment.bookID)
         let path = attachment.relativePath
         context.delete(attachment)
         try context.save()

@@ -11,7 +11,7 @@ enum ExportService {
         baseCurrencyCode: String
     ) throws -> URL {
         let backup = BackupDTO(
-            version: 3,
+            version: 4,
             exportedAt: .now,
             settings: .init(baseCurrencyCode: baseCurrencyCode),
             accounts: accounts.map(AccountDTO.init),
@@ -33,7 +33,9 @@ enum ExportService {
     static func makeCSV(transactions: [LedgerTransaction]) throws -> URL {
         let headers = [
             "日期", "交易类型", "账本ID", "报销状态", "账户", "来源币种", "来源金额",
-            "目标账户", "目标币种", "目标金额", "分类", "手续费", "手续费币种", "备注"
+            "目标账户", "目标币种", "目标金额", "分类", "手续费", "手续费币种",
+            "手续费账户", "优惠", "优惠币种", "优惠账户", "转账用途", "结算方式",
+            "外币原始金额", "外币原始币种", "结算币种", "结算金额", "结算实际汇率", "备注"
         ]
         let formatter = ISO8601DateFormatter()
         let rows = transactions.sorted { $0.date < $1.date }.map { transaction in
@@ -51,6 +53,17 @@ enum ExportService {
                 transaction.category?.name ?? "",
                 decimalString(transaction.feeAmount),
                 transaction.feeCurrencyCode ?? "",
+                transaction.feeWallet?.account?.name ?? "",
+                decimalString(transaction.discountAmount),
+                transaction.discountCurrencyCode ?? "",
+                transaction.discountWallet?.account?.name ?? "",
+                transaction.transferPurposeRawValue,
+                transaction.foreignSettlementModeRawValue ?? "",
+                decimalString(transaction.foreignOriginalAmount),
+                transaction.foreignOriginalCurrencyCode ?? "",
+                transaction.settlementCurrencyCode ?? "",
+                decimalString(transaction.settledAmount),
+                decimalString(transaction.settlementExchangeRate),
                 transaction.note ?? ""
             ].map(csvField).joined(separator: ",")
         }
@@ -114,6 +127,8 @@ private struct AccountDTO: Codable {
     let updatedAt: Date
     let walletIDs: [UUID]
     let legacyBookID: UUID?
+    let defaultForeignCurrencySettlementMode: String?
+    let defaultSettlementCurrencyCode: String?
 
     init(_ value: Account) {
         id = value.id; name = value.name; type = value.typeRawValue; note = value.note
@@ -121,6 +136,8 @@ private struct AccountDTO: Codable {
         createdAt = value.createdAt; updatedAt = value.updatedAt
         walletIDs = value.wallets.map(\.id)
         legacyBookID = value.book?.id
+        defaultForeignCurrencySettlementMode = value.defaultForeignCurrencySettlementModeRawValue
+        defaultSettlementCurrencyCode = value.defaultSettlementCurrencyCode
     }
 }
 
@@ -187,6 +204,19 @@ private struct TransactionDTO: Codable {
     let categoryID: UUID?
     let bookID: UUID?
     let reimbursementStatus: String
+    let discountAmount: Decimal?
+    let discountWalletID: UUID?
+    let discountCurrencyCode: String?
+    let transferPurpose: String
+    let foreignSettlementMode: String?
+    let foreignOriginalAmount: Decimal?
+    let foreignOriginalCurrencyCode: String?
+    let settlementCurrencyCode: String?
+    let settledAmount: Decimal?
+    let settlementExchangeRate: Decimal?
+    let referenceExchangeRate: Decimal?
+    let installmentPlanID: UUID?
+    let installmentIndex: Int?
 
     init(_ value: LedgerTransaction) {
         id = value.id; type = value.typeRawValue; date = value.date; note = value.note
@@ -200,6 +230,19 @@ private struct TransactionDTO: Codable {
         exchangeRate = value.exchangeRate; adjustmentDirection = value.adjustmentDirectionRawValue
         adjustmentReason = value.adjustmentReason; categoryID = value.category?.id
         bookID = value.bookID; reimbursementStatus = value.reimbursementStatusRawValue
+        discountAmount = value.discountAmount
+        discountWalletID = value.discountWallet?.id
+        discountCurrencyCode = value.discountCurrencyCode
+        transferPurpose = value.transferPurposeRawValue
+        foreignSettlementMode = value.foreignSettlementModeRawValue
+        foreignOriginalAmount = value.foreignOriginalAmount
+        foreignOriginalCurrencyCode = value.foreignOriginalCurrencyCode
+        settlementCurrencyCode = value.settlementCurrencyCode
+        settledAmount = value.settledAmount
+        settlementExchangeRate = value.settlementExchangeRate
+        referenceExchangeRate = value.referenceExchangeRate
+        installmentPlanID = value.installmentPlanID
+        installmentIndex = value.installmentIndex
     }
 }
 
