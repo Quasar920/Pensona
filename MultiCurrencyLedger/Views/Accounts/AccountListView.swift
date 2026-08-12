@@ -32,7 +32,7 @@ struct AccountListView: View {
     var body: some View {
         NavigationStack(path: $detailPath) {
             ZStack {
-                AssetPagePalette.background.ignoresSafeArea()
+                LedgerPageBackground()
                 if let snapshot {
                     AssetDashboardScreen(
                         snapshot: snapshot,
@@ -703,30 +703,18 @@ private struct AssetCardDetailScreen: View {
 }
 
 private enum AssetPagePalette {
-    static let background = Color(uiColor: .systemGroupedBackground)
+    static let background = LedgerPalette.background
     static let ink = Color.primary
     static let secondaryInk = Color.secondary
-    static let accent = Color(red: 101 / 255, green: 91 / 255, blue: 223 / 255)
-    static let positive = Color(red: 34 / 255, green: 153 / 255, blue: 107 / 255)
-    static let negative = Color(red: 210 / 255, green: 73 / 255, blue: 76 / 255)
-    static let warning = Color(red: 222 / 255, green: 133 / 255, blue: 42 / 255)
-    static let shadow = Color(red: 34 / 255, green: 42 / 255, blue: 64 / 255).opacity(0.1)
+    static let accent = LedgerPalette.ink
+    static let positive = LedgerPalette.ink
+    static let negative = LedgerPalette.mutedInk
+    static let warning = LedgerPalette.mutedInk
+    static let shadow = LedgerPalette.ink.opacity(0.08)
 
     static func accent(for group: AssetGroup) -> Color {
-        switch group {
-        case .cash:
-            Color(red: 48 / 255, green: 150 / 255, blue: 116 / 255)
-        case .credit:
-            Color(red: 208 / 255, green: 91 / 255, blue: 132 / 255)
-        case .recharge:
-            Color(red: 43 / 255, green: 139 / 255, blue: 202 / 255)
-        case .investment:
-            Color(red: 111 / 255, green: 92 / 255, blue: 205 / 255)
-        case .receivable:
-            Color(red: 51 / 255, green: 160 / 255, blue: 175 / 255)
-        case .payable:
-            Color(red: 225 / 255, green: 130 / 255, blue: 61 / 255)
-        }
+        _ = group
+        return LedgerPalette.ink
     }
 }
 
@@ -741,7 +729,7 @@ private struct AssetGlassSurface: ViewModifier {
                 shape.fill(Color(uiColor: .secondarySystemGroupedBackground))
             }
             .overlay {
-                shape.stroke(Color(uiColor: .separator).opacity(0.22), lineWidth: 0.8)
+                shape.stroke(LedgerPalette.hairline, lineWidth: 0.8)
             }
             .shadow(
                 color: castsShadow ? AssetPagePalette.shadow : .clear,

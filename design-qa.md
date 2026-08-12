@@ -56,6 +56,71 @@ The revised screen preserves the original mist-white card system while making th
 
 final result: passed
 
+# OneTsu Morning Mist UI — Phase 0 Baseline (First Eight Tasks)
+
+- Date: 2026-08-10
+- Scope: the first eight tasks in roadmap phase 0 only.
+- Deferred by product decision: Debug/Release build gate, full unit suite, UI smoke suite, performance journey, and refreshed P0/P1/P2/deferred register.
+- Baseline device: dedicated clean iPhone 17 Pro Simulator, iOS 26.5 (`57316310-F6E5-4BDC-920D-69A6F402013A`).
+- App source: the existing current Debug simulator artifact; no new build or test gate was run for this capture.
+- Locale and sample state: Simplified Chinese, deterministic in-memory sample data, system `large` content size unless stated otherwise.
+- Artifact root: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-onetsu-morning-mist-phase0`.
+
+## Workspace Inventory and Boundary
+
+The working tree is intentionally dirty and contains two independently classified scopes. No file was cleaned, reverted, staged, committed, or pushed while freezing this baseline.
+
+Morning Mist visual-convergence scope:
+
+- Root and shared surfaces: `RootTabView.swift`, `LedgerGlassComponents.swift`, `LedgerBottomBar.swift`, and `EntryExpansionContainer.swift` visual hunks.
+- Ledger: `HomeView.swift`, `BillPageComponents.swift`, `BillSearchView.swift`, and `PensonaDashboardComponents.swift`.
+- Assets: `AccountListView.swift` and `AssetDashboardView.swift`.
+- Plans and reports: `SavingsGoalViews.swift` and `StatisticsDashboardView.swift`.
+- Entry: `EntryAmountPanel.swift`, `EntryContextGenieTransition.swift`, `TransactionFormSections.swift`, `UnifiedEntryView.swift`, and `CenteredGenieCard.swift`.
+- Settings presentation: the grouped-list and footer presentation hunks in `SettingsView.swift`.
+- Visual resources and verification: Ioskeley Mono font resources, `Info.plist` font declarations, the UI smoke-test expectation changes, and `2026-08-10-onetsu-morning-mist-ledger-ui-design.md`.
+
+Phase 1 functional scope, excluded from the visual-change classification:
+
+- `AppCapabilities.swift`, `AppLaunchCoordinator.swift`, and `AppLaunchCoordinatorTests.swift`.
+- App bootstrap/recovery, external-URL queueing, migration snapshot exposure, and capability gating hunks.
+- Brand/iCloud availability copy, URL/Shortcut error copy, module-name compatibility, and README updates.
+
+Shared files (`project.pbxproj`, `RootTabView.swift`, `Localizable.xcstrings`, and `SettingsView.swift`) contain both scopes; their hunks were reviewed and are recorded above rather than treating the entire dirty worktree as one visual change.
+
+## Root Page Baselines
+
+| Surface | Light | Dark |
+|---|---|---|
+| Ledger | `ledger-light.png` | `ledger-dark.png` |
+| Assets | `assets-light.png` | `assets-dark.png` |
+| Plans | `plans-light.png` | `plans-dark.png` |
+| Reports | `reports-light.png` | `reports-dark.png` |
+
+The four light captures are combined in `contact-roots-light.png`; the four dark captures are combined in `contact-roots-dark.png`.
+
+## Entry Baselines
+
+| State | Light | Dark |
+|---|---|---|
+| Base entry form | `entry-basic-light.png` | `entry-basic-dark.png` |
+| Expanded category layer | `entry-expanded-light.png` | `entry-expanded-dark.png` |
+
+Combined comparison: `contact-entry.png`.
+
+## Required State Coverage
+
+- Normal populated state: `ledger-light.png` and `ledger-dark.png`.
+- Empty state: `state-empty-light.png`.
+- Loading state: `state-loading-light.png`, supplemented by `loading-sequence.mov` and `contact-loading-10fps.png`.
+- Error state: `state-error-light.png`, showing the in-app unsupported-link error and recovery action.
+- Accessibility text state: `state-dynamic-type-accessibility3-light.png`, captured at `accessibility-extra-extra-extra-large`.
+- Combined state comparison: `contact-states.png`.
+
+Visual inspection confirmed that every root destination changed correctly, light and dark appearances differ, the entry expansion is not a duplicate capture, and empty/error/accessibility states are active. Frame-by-frame launch inspection also records a current limitation: the visible loading transition is the system white launch surface before the populated ledger appears; the custom in-app preparing view is too brief to produce a stable frame in this build. This is baseline evidence, not a pass claim for the deferred issue register.
+
+phase result: first eight baseline tasks complete; final five execution tasks and all phase acceptance gates remain deferred
+
 # Full Liquid Glass Redesign — Phase 0 Baseline
 
 - Date: 2026-07-20
@@ -585,5 +650,163 @@ The records area now uses one independent card per calendar day. Each card start
 - Tests: 10 passed.
 - Added coverage: cross-currency daily cash-flow conversion and transfer-principal exclusion.
 - Source audit: no home-screen matches remain for `最近记录`, `按日期浏览收支记录`, `全部`, `showingAllRecords`, or `monthHeading`.
+
+final result: passed
+
+# OneTsu Framework Redesign — Design QA
+
+**Comparison Target**
+
+- Source visual truth: `/Users/ian/.codex/generated_images/019fdfbc-45fd-7b63-8c63-d29b57e9c382/exec-6c5f774b-70b6-4715-ad98-e4332b197f94.png`
+- Rendered implementation: `/tmp/one-tsu-flow-final.png`
+- Supplemental rendered states: `/tmp/one-tsu-assets.png`, `/tmp/one-tsu-reports.png`
+- Source pixels: 853 × 1844. Implementation pixels: 1206 × 2622 (iPhone 17 Pro simulator); the implementation was proportionally normalized to the source height for the full-view comparison at `/tmp/one-tsu-comparison.png`.
+- State: light appearance, sample-data ledger, August 2026, "流水" selected. The sample transaction dates and current status-bar time are intentionally runtime-driven and therefore differ from the static source mock.
+
+**Findings**
+
+- No actionable P0, P1, or P2 differences remain for the selected flow-page framework.
+- Typography: the implementation uses the supplied Ioskeley Mono family for monetary figures and system type for navigation/content hierarchy. The active tab, monthly total, and transaction amounts preserve the visual hierarchy in the source. Small metadata uses a higher-contrast system fallback for readability on live glass.
+- Spacing and layout rhythm: the centered month header, large-radius content panel, summary card, grouped transaction cards, and floating bottom bar match the source ordering and vertical rhythm. Runtime-safe-area spacing is retained for the physical device.
+- Colors and visual tokens: the primary canvas is `#7F8D99`; the page lift, borders, and semantic income/expense colors remain intentionally subdued. The outer and inner surfaces use low-opacity ultra-thin material, making the background legible without turning the UI opaque.
+- Image quality and assets: the source relies on native UI symbols and category icons, not bespoke raster imagery. The implementation uses the app's existing category assets and SF Symbols; no placeholder or hand-drawn assets were introduced.
+- Copy and content: selected labels are preserved (`概览 / 流水 / 报表`, `本月支出`, `收入`, navigation labels). Live data replaces mock values and dates as intended.
+
+**Comparison History**
+
+1. Initial comparison (`/tmp/one-tsu-comparison.png`): the top book/search/settings controls were visually too opaque versus the selected glass reference.
+   - Fix: introduced the `floatingControl` surface role with reduced material fill and updated top controls to use it with white foregrounds.
+   - Post-fix evidence: `/tmp/one-tsu-flow-final.png` shows the controls as translucent, outlined controls separated from the slate canvas.
+
+**Focused Region Comparison**
+
+- Top controls and month header: inspected against the source and the post-fix flow screenshot; translucency, white foregrounds, circular utilities, and centered month affordance match the intended composition.
+- Content panel and bottom navigation: inspected against the source and post-fix flow screenshot; the large content radius, active blue indicator, summary split, date cards, and continuous floating navigation bar are present and visible above the fold.
+
+**Implementation Checklist**
+
+- [x] Apply `#7F8D99` environment canvas and restrained Liquid Glass tokens.
+- [x] Rebuild the ledger home into a large rounded panel with functional overview, flow, and report entry points.
+- [x] Carry shared background/material treatment to assets, plans, and reports while retaining each page's appropriate layout.
+- [x] Rename display name to OneTsu.
+- [x] Build and run in iPhone 17 Pro simulator; run `BillQueryServiceTests` (4 passed).
+
+**Follow-up Polish**
+
+- [P3] Revisit individual category-icon illustration styling if a bespoke OneTsu icon set is later commissioned.
+
+final result: passed
+
+# Settings Video Reference — Design QA
+
+**Comparison Target**
+
+- Source visual truth: `/Users/ian/Downloads/˗ˏˋ_Vinoth_Ragunathan_ˊˎ˗-Figma_→_SwiftUI__I_k_10368kbps-20260810013848.mp4`
+- Representative source frame: `/tmp/settings-video.wfthnZ/frame-001.jpg`
+- Rendered implementation: `/tmp/settings-video.wfthnZ/implementation-final-dark.png`
+- Supplemental rendered states: `/tmp/settings-video.wfthnZ/implementation-final-light.png`, `/tmp/settings-video.wfthnZ/ui-test-attachments/2BC13051-8E5A-42B1-A123-5EE49785C566.png`
+- Focused side-by-side comparison: `/tmp/settings-video.wfthnZ/settings-comparison.png`
+- Source pixels: 1444 × 1070. Implementation pixels: 1206 × 2622 (iPhone 17 Pro simulator, 402 × 874 points at 3×). Because the source video is a zoomed, panning crop, the comparison normalizes a representative section header and two-row card rather than treating the source as a full-page viewport.
+- State: Simplified Chinese, sample-data settings root, verified in light and dark system appearances.
+
+**Findings**
+
+- No actionable P0, P1, or P2 differences remain for the settings structure and visual language requested from the video.
+- Typography: native SwiftUI hierarchy distinguishes the large navigation title, section headers, primary row labels, and subdued explanatory copy while respecting Dynamic Type behavior.
+- Spacing and layout rhythm: inset grouped sections, rounded row surfaces, leading icon columns, separators, chevrons, and the centered about/version footer reproduce the source composition without hard-coded viewport positioning.
+- Colors and visual tokens: the implementation deliberately does not copy the video's black canvas. It preserves `LedgerPageBackground` and uses semantic secondary-system row surfaces, producing the app's mist-gray light background and deep-blue dark background.
+- Image quality and assets: SF Symbols provide crisp native row glyphs at every scale. The footer uses a OneTsu-aligned wallet mark rather than copying the unrelated app identity shown in the source video.
+- Copy and content: existing settings destinations remain functional; concise localized subtitles were added for the new two-level row hierarchy in English, Japanese, Simplified Chinese, and Traditional Chinese.
+
+**Comparison History**
+
+1. Initial render used an explicitly secondary foreground on custom section headers, which compounded the system section-header attenuation.
+   - Fix: moved the custom label to the primary semantic foreground and let the native section container apply the intended hierarchy.
+   - Post-fix evidence: the final light and dark captures show readable section labels without competing with row titles.
+2. The final dark capture was checked against the representative video frame for icon alignment, text baselines, row padding, separator placement, corner radii, and title/subtitle contrast.
+3. The final light capture verified that the video's black background did not leak into the app's established light appearance.
+
+**Primary Interaction Verification**
+
+- Settings preview launch: passed.
+- Grouped rows and localized subtitle assertions: passed.
+- Appearance destination navigation and return: passed.
+- Scroll to app identity/version footer: passed.
+- Footer navigation to About: passed.
+- UI test result: 1 test passed, 0 failures.
+
+**Implementation Checklist**
+
+- [x] Rebuild settings with native `List` and inset grouped `Section` surfaces.
+- [x] Preserve the app-owned background in both appearances.
+- [x] Add leading icons, primary/secondary copy, separators, and native navigation affordances.
+- [x] Add a centered OneTsu identity, version, and storage footer linked to About.
+- [x] Localize all newly introduced descriptions.
+- [x] Build for iPhone Simulator and run the focused settings UI smoke test.
+
+**Follow-up Polish**
+
+- [P3] Replace the footer's SF Symbol mark with a named reusable OneTsu app-icon asset if the product later exposes one inside the asset catalog.
+
+final result: passed
+
+# Monochrome Line-Art Redesign and Sliding Bottom Navigation — Design QA
+
+**Comparison Target**
+
+- Source visual truth:
+  - `/var/folders/76/x90l9tx10xqgf2tk6n65w8_c0000gn/T/codex-clipboard-d9cc4677-f1fd-42f1-ac02-028609c9411f.png`
+  - `/var/folders/76/x90l9tx10xqgf2tk6n65w8_c0000gn/T/codex-clipboard-a9259e56-3d9b-4245-aed6-66183b48a573.jpg`
+  - `/var/folders/76/x90l9tx10xqgf2tk6n65w8_c0000gn/T/codex-clipboard-7dbc5c54-4cd4-4928-9af2-9ea71dae1a22.png`
+- Source dimensions: 2028 × 1404 pixels for each supplied reference. These are focused component/style references rather than complete app viewports.
+- Rendered implementation states:
+  - `.build/qa-monochrome-line/ledger-light.png`
+  - `.build/qa-monochrome-line/assets-light.png`
+  - `.build/qa-monochrome-line/plans-light.png`
+  - `.build/qa-monochrome-line/reports-light.png`
+  - `.build/qa-monochrome-line/entry-light.png`
+  - `.build/qa-monochrome-line/ledger-dark.png`
+- Implementation viewport: iPhone 17 Pro simulator, 402 × 874 logical points at 3×, 1206 × 2622 physical pixels.
+- State: Simplified Chinese, seeded sample data, all four root destinations, entry sheet, and light/dark system appearances.
+- Combined full-view evidence: `.build/qa-monochrome-line/roots-contact.png`.
+- Focused bottom-navigation comparison: `.build/qa-monochrome-line/navigation-comparison.png`.
+- Focused line-art comparison: `.build/qa-monochrome-line/line-art-comparison.png`.
+
+**Findings**
+
+- No actionable P0, P1, or P2 visual differences remain for the requested navigation behavior or monochrome line-art direction.
+- Typography: selected navigation labels use the native rounded system face at a compact semibold weight; unselected destinations omit text entirely. Existing amount hierarchy and localized content remain intact.
+- Spacing and layout rhythm: the navigation rail is 62 points tall, unselected destinations remain compact icon targets, the selected destination expands to approximately 85 points, and the separate 56-point add action follows the reference composition without crowding the safe area.
+- Colors and visual tokens: all app-owned colors resolve to adaptive ink, paper, neutral gray, hairline, and muted-ink tokens. Light appearance uses warm white and restrained gray depth; dark appearance uses black and near-black surfaces with inverted line work. Explicit chromatic SwiftUI colors are no longer used in app views.
+- Image quality and assets: root navigation uses crisp monochrome SF Symbols. Existing category illustrations are preserved but rendered with zero saturation and slightly increased contrast so they read as a coherent black/gray line-art set.
+- Copy and content: the selected destination alone shows `流水`, `资产`, `计划`, or `报表`; data, localized labels, and the add-entry flow remain unchanged.
+
+**Primary Interaction Verification**
+
+- Tap navigation across all four root destinations: passed.
+- Press-and-drag from `流水` to `报表`: passed; the destination under the pointer becomes selected, expands, and reveals its label while the previous destination collapses to icon-only.
+- Selected-state spring animation and selection haptic: implemented; Reduce Motion falls back to a non-spring transition.
+- Separate primary add action opens the existing entry surface: preserved.
+- Simulator error/fault log after launch: no app errors or faults found.
+- Generic iOS Simulator Debug build: passed.
+- Focused UI result bundles: `.build/qa-monochrome-line/bottom-navigation-r2.xcresult` and `.build/qa-monochrome-line/root-tabs.xcresult`.
+
+**Comparison History**
+
+1. The first compile exposed an invalid chained frame argument in the new selected-item layout.
+   - Fix: split the width and minimum-height constraints into valid SwiftUI frame modifiers.
+2. The first drag UI assertion expected the historical title `统计`; the live destination title is `报表`.
+   - Fix: aligned the test marker with the localized product copy. The original hierarchy already showed the drag interaction working: `报表` expanded to about 85 points while `流水` collapsed to 46 points.
+3. Final source/implementation composites were inspected together for icon stroke language, selected capsule proportions, label visibility, rail geometry, grayscale hierarchy, and the separate primary action.
+   - Post-fix evidence: `.build/qa-monochrome-line/navigation-comparison.png` and `.build/qa-monochrome-line/line-art-comparison.png`.
+
+**Implementation Checklist**
+
+- [x] Replace chromatic brand, semantic, report, account, plan, and entry styling with adaptive monochrome tokens.
+- [x] Convert category artwork to grayscale line-art presentation without replacing the user's existing assets.
+- [x] Rebuild the bottom bar so only the active destination expands and shows its label.
+- [x] Support continuous drag selection across destination hit targets.
+- [x] Keep the add-entry action visually separate and fully functional.
+- [x] Verify all root destinations, entry view, light appearance, dark appearance, build, simulator logs, tap navigation, and drag navigation.
 
 final result: passed

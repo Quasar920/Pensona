@@ -4,57 +4,117 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @State private var errorMessage: String?
+    @State private var showingAbout = false
 
     var body: some View {
         NavigationStack {
             ZStack {
-                HomePalette.background.ignoresSafeArea()
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 14) {
-                        SettingsGroupCard(title: "数据导入与导出", symbol: "arrow.up.arrow.down.circle.fill") {
-                            SettingsDestinationRow(title: "账单导入", symbol: "square.and.arrow.down") {
-                                TransactionImportView()
-                            }
-                            SettingsDestinationRow(title: "备份与导出", symbol: "square.and.arrow.up") {
-                                ExportView()
-                            }
+                LedgerPageBackground()
+
+                List {
+                    Section {
+                        SettingsDestinationRow(
+                            title: "账单导入",
+                            subtitle: "从表格或文件导入历史账单",
+                            symbol: "square.and.arrow.down"
+                        ) {
+                            TransactionImportView()
                         }
-                        SettingsGroupCard(title: "安全与隐私", symbol: "lock.shield.fill") {
-                            SettingsDestinationRow(title: "密码、解锁与隐私遮罩", symbol: "faceid") {
-                                SecuritySettingsView()
-                            }
+                        SettingsDestinationRow(
+                            title: "备份与导出",
+                            subtitle: "导出账单并管理完整备份",
+                            symbol: "square.and.arrow.up"
+                        ) {
+                            ExportView()
                         }
-                        SettingsGroupCard(title: "外观与金额颜色", symbol: "paintpalette.fill") {
-                            SettingsDestinationRow(title: "显示、触觉与金额颜色", symbol: "circle.lefthalf.filled") {
-                                AppearanceAndAmountSettingsView()
-                            }
-                        }
-                        SettingsGroupCard(title: "币种与汇率", symbol: "yensign.bank.building.fill") {
-                            SettingsDestinationRow(title: "本位币与汇率管理", symbol: "arrow.triangle.2.circlepath") {
-                                CurrencyAndRatesSettingsView()
-                            }
-                        }
-                        SettingsGroupCard(title: "数据恢复与迁移", symbol: "externaldrive.badge.timemachine") {
-                            SettingsDestinationRow(title: "备份恢复、迁移快照与清除", symbol: "lifepreserver.fill") {
-                                DataRecoverySettingsView(clearAllData: clearAllData)
-                            }
-                        }
-                        SettingsGroupCard(title: "语言", symbol: "character.bubble.fill") {
-                            SettingsDestinationRow(title: "App 显示语言", symbol: "globe") {
-                                LanguageSettingsView()
-                            }
-                        }
-                        SettingsGroupCard(title: "关于与帮助", symbol: "info.circle.fill") {
-                            SettingsDestinationRow(title: "关于 App 与数据说明", symbol: "questionmark.circle") {
-                                AboutView()
-                            }
-                        }
+                    } header: {
+                        SettingsSectionHeader("数据导入与导出")
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
+
+                    Section {
+                        SettingsDestinationRow(
+                            title: "密码、解锁与隐私遮罩",
+                            subtitle: "保护本机数据和后台预览",
+                            symbol: "faceid"
+                        ) {
+                            SecuritySettingsView()
+                        }
+                    } header: {
+                        SettingsSectionHeader("安全与隐私")
+                    }
+
+                    Section {
+                        SettingsDestinationRow(
+                            title: "显示、触觉与金额颜色",
+                            subtitle: "选择主题、触觉反馈和收支配色",
+                            symbol: "circle.lefthalf.filled"
+                        ) {
+                            AppearanceAndAmountSettingsView()
+                        }
+                    } header: {
+                        SettingsSectionHeader("外观与金额颜色")
+                    }
+
+                    Section {
+                        SettingsDestinationRow(
+                            title: "本位币与汇率管理",
+                            subtitle: "设置本位币并管理换算汇率",
+                            symbol: "arrow.triangle.2.circlepath"
+                        ) {
+                            CurrencyAndRatesSettingsView()
+                        }
+                    } header: {
+                        SettingsSectionHeader("币种与汇率")
+                    }
+
+                    Section {
+                        SettingsDestinationRow(
+                            title: "备份恢复、迁移快照与清除",
+                            subtitle: "校验备份、迁移快照或清空数据",
+                            symbol: "lifepreserver.fill"
+                        ) {
+                            DataRecoverySettingsView(clearAllData: clearAllData)
+                        }
+                    } header: {
+                        SettingsSectionHeader("数据恢复与迁移")
+                    }
+
+                    Section {
+                        SettingsDestinationRow(
+                            title: "App 显示语言",
+                            subtitle: "选择 App 的显示语言",
+                            symbol: "globe"
+                        ) {
+                            LanguageSettingsView()
+                        }
+                    } header: {
+                        SettingsSectionHeader("语言")
+                    }
+
+                    Section {
+                        Button {
+                            showingAbout = true
+                        } label: {
+                            SettingsAboutFooter()
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings-about-footer")
+                        .listRowInsets(EdgeInsets(top: 22, leading: 16, bottom: 42, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
                 }
+                .listStyle(.insetGrouped)
+                .listSectionSpacing(22)
+                .scrollContentBackground(.hidden)
+                .listRowBackground(SettingsSurfacePalette.rowBackground)
+                .listRowSeparatorTint(LedgerPalette.separator)
+                .contentMargins(.top, 6, for: .scrollContent)
             }
             .navigationTitle("设置")
+            .navigationDestination(isPresented: $showingAbout) {
+                AboutView()
+            }
             .alert("操作失败", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -99,46 +159,39 @@ struct SettingsView: View {
     }
 }
 
-private struct SettingsGroupCard<Content: View>: View {
-    let title: LocalizedStringKey
-    let symbol: String
-    @ViewBuilder let content: Content
+private enum SettingsSurfacePalette {
+    static let rowBackground = Color(uiColor: .secondarySystemBackground).opacity(0.78)
+}
 
-    init(
-        title: LocalizedStringKey,
-        symbol: String,
-        @ViewBuilder content: () -> Content
-    ) {
+private struct SettingsSectionHeader: View {
+    let title: LocalizedStringKey
+
+    init(_ title: LocalizedStringKey) {
         self.title = title
-        self.symbol = symbol
-        self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: symbol)
-                .font(.headline)
-                .foregroundStyle(HomePalette.accent)
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-            content
-        }
-        .padding(.bottom, 6)
-        .ledgerGlassCard(cornerRadius: 24, tint: HomePalette.accent)
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(.primary)
+            .textCase(nil)
     }
 }
 
 private struct SettingsDestinationRow<Destination: View>: View {
     let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
     let symbol: String
     @ViewBuilder let destination: Destination
 
     init(
         title: LocalizedStringKey,
+        subtitle: LocalizedStringKey,
         symbol: String,
         @ViewBuilder destination: () -> Destination
     ) {
         self.title = title
+        self.subtitle = subtitle
         self.symbol = symbol
         self.destination = destination()
     }
@@ -147,20 +200,79 @@ private struct SettingsDestinationRow<Destination: View>: View {
         NavigationLink {
             destination
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
-                    .frame(width: 24)
-                Text(title).foregroundStyle(.primary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.bold()).foregroundStyle(.tertiary)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .frame(minHeight: 48)
-            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 45, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(LedgerGlassPressStyle())
+    }
+}
+
+private struct SettingsAboutFooter: View {
+    private var displayName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OneTsu"
+    }
+
+    private var version: String {
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return "\(shortVersion) (\(build))"
+    }
+
+    var body: some View {
+        VStack(spacing: 7) {
+            Image(systemName: "wallet.bifold.fill")
+                .font(.system(size: 27, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(HomePalette.accent)
+                .frame(width: 64, height: 64)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .stroke(HomePalette.glassBorder, lineWidth: 0.75)
+                }
+                .padding(.bottom, 5)
+
+            Text(displayName)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            HStack(spacing: 0) {
+                Text("版本")
+                Text(verbatim: " \(version)")
+            }
+
+            if AppCapabilities.current.cloudSync {
+                Text("本机；可选 iCloud 私有同步")
+                    .padding(.top, 4)
+            } else {
+                Text("storage.onDeviceOnly")
+                    .padding(.top, 4)
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("关于 App 与数据说明")
     }
 }
 
@@ -218,9 +330,17 @@ private struct AboutView: View {
     var body: some View {
         List {
             Section {
-                LabeledContent("名称", value: AppLocalization.string("多币种账本"))
+                LabeledContent("名称") {
+                    Text(verbatim: "OneTsu")
+                }
                 LabeledContent("版本", value: "1.0")
-                LabeledContent("数据存储", value: AppLocalization.string("本机；可选 iCloud 私有同步"))
+                LabeledContent("数据存储") {
+                    if AppCapabilities.current.cloudSync {
+                        Text("本机；可选 iCloud 私有同步")
+                    } else {
+                        Text("storage.onDeviceOnly")
+                    }
+                }
             }
             Section {
                 Text("一个金融账户可以拥有多个币种钱包。所有余额变化均由可追溯的统一流水驱动。")

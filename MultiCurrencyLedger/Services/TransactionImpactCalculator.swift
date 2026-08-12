@@ -22,6 +22,7 @@ struct TransactionImpactCalculator {
         case .expense:
             try validateCategory(draft.category, expected: .expense)
             try appendPayments(from: draft, sign: -1, fallback: sourceWallet, to: &changes)
+            try appendFee(from: draft, fallback: sourceWallet, to: &changes)
         case .income:
             try validateCategory(draft.category, expected: .income)
             try appendPayments(from: draft, sign: 1, fallback: sourceWallet, to: &changes)
@@ -38,7 +39,7 @@ struct TransactionImpactCalculator {
             }
             changes.append(WalletDelta(wallet: sourceWallet, amount: -draft.amount))
             changes.append(WalletDelta(wallet: destinationWallet, amount: destinationAmount))
-            try appendFee(from: draft, to: &changes)
+            try appendFee(from: draft, fallback: nil, to: &changes)
             try appendDiscount(from: draft, to: &changes)
         case .exchange:
             let destinationWallet = try validateDestination(draft, sourceWallet: sourceWallet)
@@ -50,7 +51,7 @@ struct TransactionImpactCalculator {
             }
             changes.append(WalletDelta(wallet: sourceWallet, amount: -draft.amount))
             changes.append(WalletDelta(wallet: destinationWallet, amount: destinationAmount))
-            try appendFee(from: draft, to: &changes)
+            try appendFee(from: draft, fallback: nil, to: &changes)
         case .adjustment:
             guard let direction = draft.adjustmentDirection,
                   let reason = draft.adjustmentReason?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -86,11 +87,12 @@ struct TransactionImpactCalculator {
 
     private func appendFee(
         from draft: TransactionDraft,
+        fallback: CurrencyWallet?,
         to changes: inout [WalletDelta]
     ) throws {
         guard let feeAmount = draft.feeAmount else { return }
         guard feeAmount > 0 else { throw LedgerError.invalidAmount }
-        guard let feeWallet = draft.feeWallet else { throw LedgerError.missingWallet }
+        guard let feeWallet = draft.feeWallet ?? fallback else { throw LedgerError.missingWallet }
         changes.append(WalletDelta(wallet: feeWallet, amount: -feeAmount))
     }
 

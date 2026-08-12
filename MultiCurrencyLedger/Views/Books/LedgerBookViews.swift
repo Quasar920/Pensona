@@ -290,7 +290,7 @@ private struct EditLedgerBookView: View {
             lifecycleSection
             if saved {
                 Label("已保存", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(LedgerPalette.ink)
             }
         }
         .navigationTitle("编辑账本")

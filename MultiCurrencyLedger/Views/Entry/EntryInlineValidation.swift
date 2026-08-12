@@ -7,7 +7,7 @@ struct EntryInlineValidation: View {
         if let message {
             Label(message, systemImage: "exclamationmark.circle.fill")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.red)
+                .foregroundStyle(LedgerPalette.ink)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

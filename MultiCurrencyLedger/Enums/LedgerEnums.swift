@@ -10,6 +10,82 @@ enum SupportedCurrency: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var id: String { rawValue }
     var code: String { rawValue }
+
+    /// Stable, locale-independent symbols for compact money displays.
+    ///
+    /// `NumberFormatter` intentionally qualifies foreign currencies for the
+    /// current locale (for example `CN¥` or `US$`). That is useful in prose,
+    /// but it makes ledger rows look like they contain an ISO currency code.
+    /// Keep the symbol choice explicit while still letting the formatter own
+    /// grouping, decimal separators, symbol placement, and bidirectional text.
+    var symbol: String {
+        switch self {
+        case .AED: "د.إ"
+        case .ARS: "AR$"
+        case .AUD: "A$"
+        case .BDT: "৳"
+        case .BGN: "лв"
+        case .BHD: "د.ب"
+        case .BRL: "R$"
+        case .CAD: "C$"
+        case .CHF: "CHF"
+        case .CLP: "CL$"
+        case .CNY: "¥"
+        case .COP: "COL$"
+        case .CZK: "Kč"
+        case .DKK: "kr"
+        case .EGP: "E£"
+        case .EUR: "€"
+        case .GBP: "£"
+        case .GEL: "₾"
+        case .GHS: "₵"
+        case .HKD: "HK$"
+        case .HUF: "Ft"
+        case .IDR: "Rp"
+        case .ILS: "₪"
+        case .INR: "₹"
+        case .ISK: "kr"
+        case .JOD: "د.ا"
+        case .JPY: "¥"
+        case .KES: "KSh"
+        case .KRW: "₩"
+        case .KWD: "د.ك"
+        case .KZT: "₸"
+        case .LKR: "Rs"
+        case .MAD: "د.م."
+        case .MXN: "MX$"
+        case .MYR: "RM"
+        case .NGN: "₦"
+        case .NOK: "kr"
+        case .NZD: "NZ$"
+        case .OMR: "ر.ع."
+        case .PEN: "S/"
+        case .PHP: "₱"
+        case .PKR: "Rs"
+        case .PLN: "zł"
+        case .QAR: "ر.ق"
+        case .RON: "lei"
+        case .RSD: "дин."
+        case .RUB: "₽"
+        case .SAR: "\u{20C1}"
+        case .SEK: "kr"
+        case .SGD: "S$"
+        case .THB: "฿"
+        case .TND: "د.ت"
+        case .TRY: "₺"
+        case .TWD: "NT$"
+        case .UAH: "₴"
+        case .USD: "$"
+        case .UYU: "$U"
+        case .VND: "₫"
+        case .ZAR: "R"
+        }
+    }
+
+    static func symbol(for code: String) -> String? {
+        SupportedCurrency(rawValue: code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())?.symbol
+    }
+
     var fractionDigits: Int {
         switch self {
         case .CLP, .ISK, .JPY, .KRW, .VND:

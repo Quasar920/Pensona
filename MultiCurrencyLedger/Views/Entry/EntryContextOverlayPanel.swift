@@ -9,12 +9,16 @@ struct EntryContextOverlayPanel: View {
     let mainAmountText: String
     let wallets: [CurrencyWallet]
     let currencyCode: String
+    let feeTemplates: [FeeRateTemplate]
     let maximumHeight: CGFloat
     let isAAPeopleInputActive: Bool
     let cancel: () -> Void
     let commit: () -> Void
     let paymentPartChanged: () -> Void
     let aaPeopleInputSelected: () -> Void
+    let feeInputChanged: () -> Void
+    let feeTemplateSelected: (FeeRateTemplate) -> Void
+    let manageFeeTemplates: () -> Void
 
     @AccessibilityFocusState private var titleFocused: Bool
 
@@ -36,17 +40,16 @@ struct EntryContextOverlayPanel: View {
                     .font(.headline)
                     .accessibilityFocused($titleFocused)
                 Spacer()
-                Button(action: cancel) {
-                    Image(systemName: "xmark")
-                        .font(.subheadline.weight(.bold))
-                        .frame(width: 30, height: 30)
-                        .background(Color.primary.opacity(0.07), in: Circle())
-                }
-                .buttonStyle(LedgerGlassPressStyle())
-                .accessibilityLabel("取消")
             }
 
             content
+
+            EntryContextPanelActionRow(
+                canConfirm: canConfirm,
+                confirmTitle: kind == .fee ? "完成" : "确认",
+                cancel: cancel,
+                confirm: commit
+            )
         }
         .padding(16)
         .background(panelSurface, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -64,6 +67,7 @@ struct EntryContextOverlayPanel: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
+        .accessibilityIdentifier("entry-context-panel-\(kind.rawValue)")
         .onAppear {
             Task { @MainActor in
                 titleFocused = true
@@ -72,9 +76,7 @@ struct EntryContextOverlayPanel: View {
     }
 
     private var panelSurface: Color {
-        colorScheme == .dark
-            ? Color(white: 0.10).opacity(0.94)
-            : Color.white.opacity(0.84)
+        EntryFloatingCardAppearance.surface(for: colorScheme)
     }
 
     @ViewBuilder
@@ -88,7 +90,9 @@ struct EntryContextOverlayPanel: View {
             splitPaymentOptions
         case .discount:
             discountOptions
-        case .fee, .foreignExpense:
+        case .fee:
+            feeOptions
+        case .foreignExpense:
             EmptyView()
         }
     }
@@ -109,14 +113,13 @@ struct EntryContextOverlayPanel: View {
     private var accountContentHeight: CGFloat {
         min(
             max(120, CGFloat(wallets.count + 1) * 56),
-            max(120, maximumHeight - 74)
+            max(120, maximumHeight - 128)
         )
     }
 
     private func accountRow(name: String, wallet: CurrencyWallet?) -> some View {
         Button {
             draft.selectedWalletID = wallet?.id
-            commit()
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: wallet?.account?.type.symbolName ?? "circle")
@@ -146,7 +149,7 @@ struct EntryContextOverlayPanel: View {
                     Text(aaPeopleDisplayText)
                         .font(.subheadline.weight(.semibold).monospacedDigit())
                         .foregroundStyle(
-                            draft.hasValidAAPeople ? Color.primary : Color.red
+                            draft.hasValidAAPeople ? Color.primary : LedgerPalette.ink
                         )
                         .lineLimit(1)
                         .minimumScaleFactor(0.65)
@@ -164,7 +167,7 @@ struct EntryContextOverlayPanel: View {
                                         ? Color.primary.opacity(
                                             isAAPeopleInputActive ? 0.18 : 0.10
                                         )
-                                        : Color.red.opacity(0.7),
+                                        : LedgerPalette.ink.opacity(0.7),
                                         lineWidth: 1
                                     )
                         }
@@ -194,21 +197,6 @@ struct EntryContextOverlayPanel: View {
                     .font(.headline.monospacedDigit())
             }
 
-            Button(action: commit) {
-                Text("完成")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 40)
-            }
-            .buttonStyle(LedgerGlassPressStyle())
-            .background(
-                LedgerPalette.accent.opacity(0.16),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LedgerPalette.accent.opacity(0.38), lineWidth: 0.8)
-            }
-            .disabled(!draft.hasValidAAPeople)
         }
     }
 
@@ -261,15 +249,15 @@ struct EntryContextOverlayPanel: View {
                             activePaymentPart = index
                             paymentPartChanged()
                         } label: {
-                            Text(
-                                draft.paymentParts[index].amountText.isEmpty
-                                    ? "输入金额"
-                                    : draft.paymentParts[index].amountText
+                            EntryContextAmountInputLabel(
+                                text: draft.paymentParts[index].amountText,
+                                isActive: activePaymentPart == index
                             )
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(activePaymentPart == index ? LedgerPalette.accent : .primary)
-                            .frame(width: 92, alignment: .trailing)
                         }
+                        .accessibilityIdentifier("entry-context-split-amount-\(index)")
+                        .accessibilityLabel("输入第 \(index + 1) 个账户金额")
+                        .accessibilityValue(draft.paymentParts[index].amountText)
+                        .accessibilityHint(activePaymentPart == index ? "正在输入金额" : "点按后开始输入金额")
                     }
                     .padding(10)
                     .background(
@@ -296,7 +284,7 @@ struct EntryContextOverlayPanel: View {
     private var splitPaymentContentHeight: CGFloat {
         min(
             max(120, CGFloat(draft.paymentParts.count) * 58 + 44),
-            max(120, maximumHeight - 74)
+            max(120, maximumHeight - 128)
         )
     }
 
@@ -311,6 +299,80 @@ struct EntryContextOverlayPanel: View {
         }
         .padding(14)
         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var feeOptions: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    draft.feeInputMode = draft.feeInputMode == .percentage
+                        ? .fixedAmount
+                        : .percentage
+                    draft.feeInputText = ""
+                    draft.feeTemplateName = nil
+                    feeInputChanged()
+                } label: {
+                    Text(draft.feeInputMode.toggleTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(width: 52)
+                        .frame(minHeight: 44)
+                        .background(LedgerPalette.selectionFill, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(LedgerGlassPressStyle())
+                .accessibilityLabel("切换手续费输入方式")
+
+                HStack {
+                    Text(draft.feeInputMode.inputTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    EntryContextAmountInputLabel(
+                        text: draft.feeInputText,
+                        isActive: true
+                    )
+                }
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+                .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
+            }
+
+            VStack(spacing: 8) {
+                ForEach(feeTemplates) { template in
+                    Button {
+                        feeTemplateSelected(template)
+                    } label: {
+                        HStack {
+                            Text(template.name)
+                            Spacer()
+                            Text("\(NSDecimalNumber(decimal: template.percentage).stringValue)%")
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 42)
+                        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(LedgerGlassPressStyle())
+                    .accessibilityIdentifier("entry-fee-template-\(template.id.uuidString)")
+                }
+
+                Button(action: manageFeeTemplates) {
+                    Label("管理手续费模板", systemImage: "slider.horizontal.3")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                }
+                .buttonStyle(LedgerGlassPressStyle())
+                .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private var canConfirm: Bool {
+        switch kind {
+        case .aa: draft.hasValidAAPeople
+        case .fee: draft.hasValidFeeInput
+        default: true
+        }
     }
 
     private func walletName(for id: UUID?) -> String {
@@ -333,6 +395,7 @@ struct EntryContextTransitionPanel: View {
     let mainAmountText: String
     let wallets: [CurrencyWallet]
     let currencyCode: String
+    let feeTemplates: [FeeRateTemplate]
     let targetHeight: CGFloat
 
     private var title: String {
@@ -352,14 +415,16 @@ struct EntryContextTransitionPanel: View {
                 Text(title)
                     .font(.headline)
                 Spacer()
-                Image(systemName: "xmark")
-                    .font(.subheadline.weight(.bold))
-                    .frame(width: 30, height: 30)
-                    .background(Color.primary.opacity(0.07), in: Circle())
             }
 
             content
             Spacer(minLength: 0)
+            EntryContextPanelActionRow(
+                canConfirm: kind == .aa ? draft.hasValidAAPeople : (kind == .fee ? draft.hasValidFeeInput : true),
+                confirmTitle: kind == .fee ? "完成" : "确认",
+                cancel: {},
+                confirm: {}
+            )
         }
         .padding(16)
         .frame(height: targetHeight, alignment: .top)
@@ -373,9 +438,7 @@ struct EntryContextTransitionPanel: View {
     }
 
     private var panelSurface: Color {
-        colorScheme == .dark
-            ? Color(white: 0.10).opacity(0.94)
-            : Color.white.opacity(0.84)
+        EntryFloatingCardAppearance.surface(for: colorScheme)
     }
 
     @ViewBuilder
@@ -404,7 +467,7 @@ struct EntryContextTransitionPanel: View {
                     )
                     .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(
-                        draft.hasValidAAPeople ? Color.primary : Color.red
+                        draft.hasValidAAPeople ? Color.primary : LedgerPalette.ink
                     )
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
@@ -418,7 +481,7 @@ struct EntryContextTransitionPanel: View {
                             .stroke(
                                 draft.hasValidAAPeople
                                     ? Color.primary.opacity(0.18)
-                                    : Color.red.opacity(0.7),
+                                    : LedgerPalette.ink.opacity(0.7),
                                 lineWidth: 1
                             )
                     }
@@ -445,17 +508,6 @@ struct EntryContextTransitionPanel: View {
                         .font(.headline.monospacedDigit())
                 }
 
-                Text("完成")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .background(
-                        LedgerPalette.accent.opacity(0.16),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(LedgerPalette.accent.opacity(0.38), lineWidth: 0.8)
-                    }
             }
         case .splitPayment:
             VStack(spacing: 8) {
@@ -469,14 +521,10 @@ struct EntryContextTransitionPanel: View {
                             .frame(height: 34)
                             .background(Color.primary.opacity(0.07), in: Capsule())
 
-                        Text(
-                            draft.paymentParts[index].amountText.isEmpty
-                                ? "输入金额"
-                                : draft.paymentParts[index].amountText
+                        EntryContextAmountInputLabel(
+                            text: draft.paymentParts[index].amountText,
+                            isActive: activePaymentPart == index
                         )
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(activePaymentPart == index ? LedgerPalette.accent : .primary)
-                        .frame(width: 92, alignment: .trailing)
                     }
                     .padding(10)
                     .background(
@@ -505,7 +553,36 @@ struct EntryContextTransitionPanel: View {
             }
             .padding(14)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        case .fee, .foreignExpense:
+        case .fee:
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    Text(draft.feeInputMode.toggleTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(width: 52, height: 44)
+                        .background(LedgerPalette.selectionFill, in: RoundedRectangle(cornerRadius: 12))
+                    EntryContextAmountInputLabel(text: draft.feeInputText, isActive: true)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.horizontal, 12)
+                        .frame(height: 44)
+                        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
+                }
+                ForEach(feeTemplates.prefix(3)) { template in
+                    HStack {
+                        Text(template.name)
+                        Spacer()
+                        Text("\(NSDecimalNumber(decimal: template.percentage).stringValue)%")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .frame(height: 42)
+                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
+                }
+                Label("管理手续费模板", systemImage: "slider.horizontal.3")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
+            }
+        case .foreignExpense:
             EmptyView()
         }
     }
@@ -534,5 +611,65 @@ struct EntryContextTransitionPanel: View {
 
     private func walletName(for id: UUID?) -> String {
         wallets.first(where: { $0.id == id })?.account?.name ?? "选择账户"
+    }
+}
+
+struct EntryContextPanelActionRow: View {
+    let canConfirm: Bool
+    var confirmTitle = "确认"
+    let cancel: () -> Void
+    let confirm: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button("取消", action: cancel)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            Button(confirmTitle, action: confirm)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(LedgerPalette.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .disabled(!canConfirm)
+                .opacity(canConfirm ? 1 : 0.45)
+        }
+        .font(.subheadline.weight(.semibold))
+        .buttonStyle(LedgerGlassPressStyle())
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct EntryContextAmountInputLabel: View {
+    let text: String
+    let isActive: Bool
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(text.isEmpty ? "输入金额" : text)
+            if isActive {
+                EntryContextInputCaret()
+                    .accessibilityIdentifier("entry-context-input-caret")
+            }
+        }
+        .font(.subheadline.monospacedDigit())
+        .foregroundStyle(isActive ? LedgerPalette.accent : .primary)
+        .frame(width: 102, alignment: .trailing)
+    }
+}
+
+private struct EntryContextInputCaret: View {
+    @State private var isVisible = true
+
+    var body: some View {
+        Rectangle()
+            .fill(LedgerPalette.accent)
+            .frame(width: 2, height: 20)
+            .opacity(isVisible ? 1 : 0.15)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
+                    isVisible = false
+                }
+            }
     }
 }

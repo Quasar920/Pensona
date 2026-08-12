@@ -5,6 +5,12 @@ enum CenteredGenieCoordinateSpace {
     static let name = "centered-genie-card"
 }
 
+/// The visual motion used to reveal a centered card.
+enum CenteredCardTransitionStyle {
+    case genie
+    case floatingCard
+}
+
 struct CenteredGenieSourceFramePreferenceKey: PreferenceKey {
     static var defaultValue: [String: CGRect] = [:]
 
@@ -97,6 +103,7 @@ struct CenteredGenieCardPresentation: Equatable {
 }
 
 private struct CenteredGenieLayerModifier: ViewModifier {
+    let style: CenteredCardTransitionStyle
     let progress: Double
     let panelFrame: CGRect
     let sourceFrame: CGRect
@@ -104,7 +111,16 @@ private struct CenteredGenieLayerModifier: ViewModifier {
     let reduceMotion: Bool
 
     func body(content: Content) -> some View {
-        if reduceMotion || panelFrame.isEmpty || sourceFrame.isEmpty {
+        if reduceMotion {
+            content
+                .scaleEffect(1 - 0.03 * CGFloat(progress))
+                .opacity(1 - progress)
+        } else if style == .floatingCard {
+            content
+                .scaleEffect(1 - 0.06 * CGFloat(progress))
+                .offset(y: 18 * CGFloat(progress))
+                .opacity(1 - progress)
+        } else if panelFrame.isEmpty || sourceFrame.isEmpty {
             content
                 .scaleEffect(1 - 0.06 * CGFloat(progress), anchor: sourceAnchor)
                 .opacity(1 - progress)
@@ -147,6 +163,7 @@ private struct CenteredGenieLayerModifier: ViewModifier {
 
 private extension View {
     func centeredGenieLayer(
+        style: CenteredCardTransitionStyle,
         progress: Double,
         panelFrame: CGRect,
         sourceFrame: CGRect,
@@ -154,6 +171,7 @@ private extension View {
         reduceMotion: Bool
     ) -> some View {
         modifier(CenteredGenieLayerModifier(
+            style: style,
             progress: progress,
             panelFrame: panelFrame,
             sourceFrame: sourceFrame,
@@ -170,8 +188,23 @@ struct CenteredGenieCardHost<Card: View>: View {
 
     @Binding var presentation: CenteredGenieCardPresentation
     let maximumWidth: CGFloat
+    let transitionStyle: CenteredCardTransitionStyle
     let onDismissed: () -> Void
     @ViewBuilder let card: () -> Card
+
+    init(
+        presentation: Binding<CenteredGenieCardPresentation>,
+        maximumWidth: CGFloat,
+        transitionStyle: CenteredCardTransitionStyle = .genie,
+        onDismissed: @escaping () -> Void,
+        @ViewBuilder card: @escaping () -> Card
+    ) {
+        _presentation = presentation
+        self.maximumWidth = maximumWidth
+        self.transitionStyle = transitionStyle
+        self.onDismissed = onDismissed
+        self.card = card
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -200,21 +233,26 @@ struct CenteredGenieCardHost<Card: View>: View {
         }
     }
 
+    @ViewBuilder
     private func interactiveCard(in proxy: GeometryProxy) -> some View {
-        card()
-            .frame(width: cardWidth(in: proxy))
-            .background {
-                GeometryReader { cardProxy in
-                    Color.clear.preference(
-                        key: CenteredGenieCardFramePreferenceKey.self,
-                        value: cardProxy.frame(in: .global)
-                    )
-                }
-            }
-            .position(screenCenteredPosition(in: proxy))
-            .opacity(presentation.isPresented ? 1 : 0)
-            .allowsHitTesting(presentation.isPresented)
-            .accessibilityAddTraits(.isModal)
+        if transitionStyle == .floatingCard {
+            card()
+                .frame(width: cardWidth(in: proxy))
+                .background(cardFrameReporter)
+                .offset(floatingCardOrigin(in: proxy))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .opacity(presentation.isPresented ? 1 : 0)
+                .allowsHitTesting(presentation.isPresented)
+                .accessibilityAddTraits(.isModal)
+        } else {
+            card()
+                .frame(width: cardWidth(in: proxy))
+                .background(cardFrameReporter)
+                .position(screenCenteredPosition(in: proxy))
+                .opacity(presentation.isPresented ? 1 : 0)
+                .allowsHitTesting(presentation.isPresented)
+                .accessibilityAddTraits(.isModal)
+        }
     }
 
     private func transitionCard(in proxy: GeometryProxy) -> some View {
@@ -225,6 +263,7 @@ struct CenteredGenieCardHost<Card: View>: View {
             .position(x: targetFrame.midX, y: targetFrame.midY)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .centeredGenieLayer(
+                style: transitionStyle,
                 progress: presentation.progress,
                 panelFrame: targetFrame,
                 sourceFrame: sourceFrame,
@@ -236,7 +275,21 @@ struct CenteredGenieCardHost<Card: View>: View {
     }
 
     private func cardWidth(in proxy: GeometryProxy) -> CGFloat {
-        min(maximumWidth, max(260, proxy.size.width - 36))
+        if transitionStyle == .floatingCard {
+            // Keep notification-style cards compact and anchored to the
+            // triggering control instead of spanning the page width.
+            return min(maximumWidth, min(320, max(280, proxy.size.width * 0.78)))
+        }
+        return min(maximumWidth, max(260, proxy.size.width - 36))
+    }
+
+    private var cardFrameReporter: some View {
+        GeometryReader { cardProxy in
+            Color.clear.preference(
+                key: CenteredGenieCardFramePreferenceKey.self,
+                value: cardProxy.frame(in: .global)
+            )
+        }
     }
 
     private func localFrame(_ globalFrame: CGRect, in proxy: GeometryProxy) -> CGRect {
@@ -258,6 +311,18 @@ struct CenteredGenieCardHost<Card: View>: View {
         return CGPoint(
             x: screenBounds.midX - hostFrame.minX,
             y: screenBounds.midY - hostFrame.minY
+        )
+    }
+
+    /// A floating card keeps its top-left corner connected to the tapped
+    /// control, while clamping horizontally so it remains within the screen.
+    private func floatingCardOrigin(in proxy: GeometryProxy) -> CGSize {
+        let source = localFrame(presentation.sourceFrame, in: proxy)
+        let inset: CGFloat = 16
+        let maxX = max(inset, proxy.size.width - cardWidth(in: proxy) - inset)
+        return CGSize(
+            width: min(max(inset, source.minX), maxX),
+            height: max(inset, source.maxY + 10)
         )
     }
 
@@ -303,9 +368,17 @@ struct CenteredGenieCardHost<Card: View>: View {
     }
 
     private var transitionAnimation: Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.20)
-            : .timingCurve(0.22, 0.72, 0.18, 1, duration: 0.62)
+        if reduceMotion {
+            return .easeOut(duration: 0.20)
+        }
+        if transitionStyle == .floatingCard {
+            // The card settles with one restrained overshoot, matching the
+            // physical, slightly shaky arrival of the reference video.
+            return presentation.phase == .opening
+                ? .spring(response: 0.42, dampingFraction: 0.70)
+                : .timingCurve(0.20, 0.72, 0.24, 1, duration: 0.24)
+        }
+        return .timingCurve(0.22, 0.72, 0.18, 1, duration: 0.62)
     }
 }
 

@@ -165,7 +165,8 @@ struct EntryAmountPanel: View {
         }
         .padding(.vertical, 5)
         .padding(.horizontal, 14)
-        .ledgerSurface(.summary, cornerRadius: 20)
+        .overlay(alignment: .top) { Divider().opacity(0.58) }
+        .overlay(alignment: .bottom) { Divider().opacity(0.58) }
         .frame(maxWidth: .infinity)
         .onChange(of: state.amountText) { _, _ in updateExchange(driver: .sourceAmount) }
         .onChange(of: state.amountText) { _, _ in updateRepaymentRate() }

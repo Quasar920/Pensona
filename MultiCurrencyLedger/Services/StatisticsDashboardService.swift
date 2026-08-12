@@ -180,7 +180,7 @@ struct StatisticsDashboardService {
             switch transaction.type {
             case TransactionKind.income.rawValue:
                 income += principal
-                signed = principal - fee
+                signed = principal
             case TransactionKind.expense.rawValue:
                 expense += principal + fee
                 signed = -principal - fee

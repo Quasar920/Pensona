@@ -57,7 +57,7 @@ struct ExportView: View {
                         .font(.footnote)
                         ForEach(preview.warnings, id: \.self) {
                             Label($0, systemImage: "exclamationmark.triangle")
-                                .font(.footnote).foregroundStyle(.orange)
+                                .font(.footnote).foregroundStyle(LedgerPalette.mutedInk)
                         }
                         Button("恢复此备份", role: .destructive) { showingRestoreConfirmation = true }
                     }

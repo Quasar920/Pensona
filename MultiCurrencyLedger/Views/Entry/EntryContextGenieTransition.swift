@@ -34,67 +34,16 @@ private struct EntryContextGenieLayerModifier: ViewModifier {
     let reduceMotion: Bool
 
     func body(content: Content) -> some View {
-        if reduceMotion || panelFrame.isEmpty || tagFrame.isEmpty {
+        if reduceMotion {
             content
-                .scaleEffect(
-                    1 - 0.06 * CGFloat(progress),
-                    anchor: tagAnchor
-                )
+                .scaleEffect(1 - 0.03 * CGFloat(progress))
                 .opacity(1 - progress)
         } else {
-            let shader = ShaderLibrary.entryContextGenieLayer(
-                .float2(canvasSize),
-                .float4(
-                    panelFrame.minX,
-                    panelFrame.minY,
-                    panelFrame.width,
-                    panelFrame.height
-                ),
-                .float4(
-                    tagFrame.minX,
-                    tagFrame.minY,
-                    tagFrame.width,
-                    tagFrame.height
-                ),
-                .float(progress)
-            )
             content
-                .compositingGroup()
-                .layerEffect(
-                    shader,
-                    // Declare only the furthest displacement this mapping can
-                    // sample. This avoids both edge clipping and the cost of
-                    // unconditional full-screen padding.
-                    maxSampleOffset: maximumSampleOffset
-                )
+                .scaleEffect(1 - 0.06 * CGFloat(progress))
+                .offset(y: 18 * CGFloat(progress))
+                .opacity(1 - progress)
         }
-    }
-
-    private var maximumSampleOffset: CGSize {
-        let horizontalEdgeTravel = max(
-            abs(panelFrame.minX - tagFrame.minX),
-            abs(panelFrame.maxX - tagFrame.maxX)
-        )
-        let bendTravel = abs(tagFrame.midX - panelFrame.midX) * 0.18
-        let verticalEdgeTravel = max(
-            abs(panelFrame.minY - tagFrame.minY),
-            abs(panelFrame.maxY - tagFrame.maxY)
-        )
-
-        return CGSize(
-            width: min(canvasSize.width, horizontalEdgeTravel + bendTravel + 2),
-            height: min(canvasSize.height, verticalEdgeTravel + 2)
-        )
-    }
-
-    private var tagAnchor: UnitPoint {
-        guard canvasSize.width > 1, canvasSize.height > 1 else {
-            return .center
-        }
-        return UnitPoint(
-            x: min(1, max(0, tagFrame.midX / canvasSize.width)),
-            y: min(1, max(0, tagFrame.midY / canvasSize.height))
-        )
     }
 }
 

@@ -189,13 +189,14 @@ struct ReportQueryService {
         switch metric {
         case .expense:
             if recoveryRelation != nil { return -principal }
+            if transaction.type == .income { return 0 }
             return transaction.type == .expense ? principal + fee : fee
         case .income:
             return transaction.type == .income && recoveryRelation == nil ? principal : 0
         case .net:
             if recoveryRelation != nil { return principal }
             switch transaction.type {
-            case .income: return principal - fee
+            case .income: return principal
             case .expense: return -principal - fee
             case .adjustment:
                 return (transaction.adjustmentDirection == .decrease ? -principal : principal) - fee

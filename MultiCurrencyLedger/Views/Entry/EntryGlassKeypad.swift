@@ -10,6 +10,7 @@ struct EntryGlassKeypad: View {
     let currencyCode: String
     let resetID: UUID
     let inputMode: EntryKeypadInputMode
+    var fractionDigitsOverride: Int? = nil
     let showsNextEntry: Bool
     let isSaving: Bool
     let canComplete: Bool
@@ -20,9 +21,9 @@ struct EntryGlassKeypad: View {
     @State private var hasEnteredValueSinceReset = false
 
     private var fractionDigits: Int {
-        inputMode == .wholeNumber
-            ? 0
-            : SupportedCurrency.fractionDigits(for: currencyCode)
+        if inputMode == .wholeNumber { return 0 }
+        return fractionDigitsOverride
+            ?? SupportedCurrency.fractionDigits(for: currencyCode)
     }
 
     var body: some View {

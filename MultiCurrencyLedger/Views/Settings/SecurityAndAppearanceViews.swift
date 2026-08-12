@@ -248,7 +248,7 @@ struct AppLockGateView: View {
             VStack(spacing: 18) {
                 Image(systemName: "lock.shield.fill")
                     .font(.system(size: 52)).foregroundStyle(Color.accentColor)
-                Text("多币种账本已锁定").font(.title2.bold())
+                Text("brand.locked").font(.title2.bold())
                 if allowsUnlock {
                     SecureField("输入密码", text: $password)
                         .textContentType(.password)
@@ -267,7 +267,7 @@ struct AppLockGateView: View {
                         }
                     }
                     if let message = manager.errorMessage {
-                        Text(message).font(.footnote).foregroundStyle(.red)
+                        Text(message).font(.footnote).foregroundStyle(LedgerPalette.ink)
                     }
                 } else {
                     Text("账本内容已隐藏").foregroundStyle(.secondary)

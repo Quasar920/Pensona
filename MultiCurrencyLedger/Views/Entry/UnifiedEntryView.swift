@@ -189,7 +189,7 @@ private struct EntryLoadedView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                HomePalette.background.ignoresSafeArea()
+                LedgerPageBackground()
                 if allWallets.isEmpty {
                     ContentUnavailableView {
                         Label("还不能记账", systemImage: "plus.circle")

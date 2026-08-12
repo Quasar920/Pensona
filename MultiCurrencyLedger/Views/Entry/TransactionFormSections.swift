@@ -133,6 +133,8 @@ struct EntryComposerView: View {
     @State private var keypadResetID = UUID()
     @State private var categoryReordering = false
     @State private var categoryManagementOverlay = false
+    @State private var showingFeeTemplateManager = false
+    @StateObject private var feeTemplateStore = FeeRateTemplateStore()
 
     private var sourceWallet: CurrencyWallet? { wallets.first { $0.id == state.sourceWalletID } }
     private var destinationWallet: CurrencyWallet? { wallets.first { $0.id == state.destinationWalletID } }
@@ -214,6 +216,16 @@ struct EntryComposerView: View {
                     contextPresentation.draft = draft
                 }
             )
+        case .fee:
+            return Binding(
+                get: { contextPresentation.draft?.feeInputText ?? "" },
+                set: { newValue in
+                    guard var draft = contextPresentation.draft else { return }
+                    draft.feeInputText = newValue
+                    draft.feeTemplateName = nil
+                    contextPresentation.draft = draft
+                }
+            )
         }
     }
 
@@ -290,6 +302,7 @@ struct EntryComposerView: View {
                             editSplitPayment: { presentContext(.splitPayment) },
                             editAA: { presentContext(.aa) },
                             editDiscount: { presentContext(.discount) },
+                            editFee: { presentContext(.fee) },
                             editForeignCurrency: { legacyContextOverlay = .foreignExpense },
                             hiddenKind: contextPresentation.hiddenTagKind,
                             // Preserve the original layout slot. A frozen,
@@ -300,13 +313,13 @@ struct EntryComposerView: View {
                         EntryMovementContextTags(
                             state: $state,
                             editDiscount: { legacyContextOverlay = .discount },
-                            editFee: { legacyContextOverlay = .fee }
+                            editFee: { presentContext(.fee) }
                         )
                     }
                     if let successMessage {
                         Label(successMessage, systemImage: "checkmark.circle.fill")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(LedgerPalette.ink)
                     }
                 }
             }
@@ -342,10 +355,13 @@ struct EntryComposerView: View {
                     inputMode: contextPresentation.inputTarget == .aaPeople
                         ? .wholeNumber
                         : .amount,
+                    fractionDigitsOverride: contextPresentation.inputTarget == .fee
+                        && contextPresentation.draft?.feeInputMode == .percentage
+                        ? 4
+                        : nil,
                     showsNextEntry: showsNextEntry && !contextPresentation.isActive,
                     isSaving: isSaving || contextPresentation.isTransitioning,
-                    canComplete: contextPresentation.kind != .aa
-                        || contextPresentation.draft?.hasValidAAPeople == true,
+                    canComplete: canCompleteContextInput,
                     nextEntry: nextEntry,
                     complete: {
                         if contextPresentation.isActive {
@@ -436,6 +452,9 @@ struct EntryComposerView: View {
                 .presentationDetents([datePickerMode == .date ? .large : .medium])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showingFeeTemplateManager) {
+            FeeTemplateManagementView(store: feeTemplateStore, kind: state.kind)
+        }
         .onChange(of: state.kind) { _, kind in
             activeAmount = .source
             categoryReordering = false
@@ -483,7 +502,7 @@ struct EntryComposerView: View {
             let availableTop: CGFloat = 12
             let availableBottom = max(availableTop + 120, tagTop - 12)
             let availableHeight = max(120, availableBottom - availableTop)
-            let panelWidth = min(480, max(240, proxy.size.width - 36))
+            let panelWidth = min(320, max(280, proxy.size.width * 0.78))
             let canvasHeight = min(proxy.size.height, tagBottom + 10)
             let canvasSize = CGSize(
                 width: proxy.size.width,
@@ -501,6 +520,7 @@ struct EntryComposerView: View {
                     mainAmountText: state.amountText,
                     wallets: wallets,
                     currencyCode: sourceWallet?.currencyCode ?? SupportedCurrency.CNY.rawValue,
+                    feeTemplates: feeTemplateStore.templates(for: state.kind),
                     maximumHeight: availableHeight,
                     isAAPeopleInputActive: contextPresentation.inputTarget == .aaPeople,
                     cancel: { dismissContext(intent: .cancel) },
@@ -509,7 +529,10 @@ struct EntryComposerView: View {
                     aaPeopleInputSelected: {
                         contextPresentation.selectAAPeopleInput()
                         keypadResetID = UUID()
-                    }
+                    },
+                    feeInputChanged: { keypadResetID = UUID() },
+                    feeTemplateSelected: applyFeeTemplate,
+                    manageFeeTemplates: { showingFeeTemplateManager = true }
                 )
                 .frame(width: panelWidth)
                 .position(
@@ -534,6 +557,7 @@ struct EntryComposerView: View {
                             mainAmountText: state.amountText,
                             wallets: wallets,
                             currencyCode: sourceWallet?.currencyCode ?? SupportedCurrency.CNY.rawValue,
+                            feeTemplates: feeTemplateStore.templates(for: state.kind),
                             targetHeight: contextPresentation.targetFrame.height
                         )
                         .frame(width: contextPresentation.targetFrame.width)
@@ -668,10 +692,42 @@ struct EntryComposerView: View {
         }
     }
 
+    private func applyFeeTemplate(_ template: FeeRateTemplate) {
+        guard var draft = contextPresentation.draft else { return }
+        draft.feeInputMode = .percentage
+        draft.feeInputText = NSDecimalNumber(decimal: template.percentage).stringValue
+        draft.feeTemplateName = template.name
+        var candidate = state
+        guard candidate.applyFee(
+            inputText: draft.feeInputText,
+            mode: draft.feeInputMode,
+            currencyCode: draft.feeCurrencyCode,
+            templateName: draft.feeTemplateName
+        ) else {
+            return
+        }
+        contextPresentation.draft = draft
+        dismissContext(intent: .commit)
+    }
+
+    private var canCompleteContextInput: Bool {
+        switch contextPresentation.kind {
+        case .aa:
+            contextPresentation.draft?.hasValidAAPeople == true
+        case .fee:
+            contextPresentation.draft?.hasValidFeeInput == true
+        default:
+            true
+        }
+    }
+
     private var contextTransitionAnimation: Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.20)
-            : .timingCurve(0.22, 0.72, 0.18, 1, duration: 0.62)
+        if reduceMotion {
+            return .easeOut(duration: 0.20)
+        }
+        return contextPresentation.phase == .opening
+            ? .spring(response: 0.42, dampingFraction: 0.70)
+            : .timingCurve(0.20, 0.72, 0.24, 1, duration: 0.24)
     }
 
     private var dateTimeControls: some View {

@@ -241,7 +241,7 @@ struct TransactionListView: View {
                         } label: {
                             Label("编辑", systemImage: "pencil")
                         }
-                        .tint(.blue)
+                        .tint(LedgerPalette.ink)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {

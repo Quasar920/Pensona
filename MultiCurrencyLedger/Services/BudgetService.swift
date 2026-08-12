@@ -227,7 +227,8 @@ struct BudgetStatisticsService {
                     valuation: valuation
                 )
             }
-            if let fee = transaction.feeAmount,
+            if transaction.type != .income,
+               let fee = transaction.feeAmount,
                budget.categoryID == nil || categoryMatches {
                 add(
                     fee,

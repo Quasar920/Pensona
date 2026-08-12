@@ -17,12 +17,34 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
         assertTab("ledger", marker: app.buttons["root-entry-button"])
         assertTab("assets", marker: app.navigationBars["资产"])
         assertTab("savings", marker: app.navigationBars["计划"])
-        assertTab("statistics", marker: app.navigationBars["统计"])
+        assertTab("statistics", marker: app.navigationBars["报表"])
+    }
+
+    func testBottomNavigationCentersEntryAndPlacesTapLogAboveRight() {
+        let ledger = app.buttons["root-tab-ledger"]
+        let assets = app.buttons["root-tab-assets"]
+        let entry = app.buttons["root-entry-button"]
+        let savings = app.buttons["root-tab-savings"]
+        let statistics = app.buttons["root-tab-statistics"]
+        let tapLog = app.buttons["taplog-button"]
+        XCTAssertTrue(ledger.waitForExistence(timeout: 3))
+        XCTAssertTrue(tapLog.exists)
+
+        XCTAssertLessThan(ledger.frame.midX, assets.frame.midX)
+        XCTAssertLessThan(assets.frame.midX, entry.frame.midX)
+        XCTAssertLessThan(entry.frame.midX, savings.frame.midX)
+        XCTAssertLessThan(savings.frame.midX, statistics.frame.midX)
+        XCTAssertEqual(entry.frame.midX, app.frame.midX, accuracy: 2)
+        XCTAssertLessThan(tapLog.frame.minY, entry.frame.minY)
+        XCTAssertGreaterThan(tapLog.frame.midX, app.frame.midX)
+
+        statistics.tap()
+        XCTAssertTrue(app.navigationBars["报表"].waitForExistence(timeout: 3))
     }
 
     func testEntryCategorySublayerAndActionPanel() {
         app.buttons["root-entry-button"].tap()
-        XCTAssertTrue(app.staticTexts["支出"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["entry-close-button"].waitForExistence(timeout: 3))
 
         let dining = app.buttons["餐饮"].firstMatch
         XCTAssertTrue(dining.waitForExistence(timeout: 3))
@@ -32,11 +54,50 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
 
         dining.tap()
         XCTAssertTrue(app.buttons["新分类"].waitForExistence(timeout: 2))
+        let subcategoryCard = app.descendants(matching: .any)["entry-subcategory-layer"]
+        XCTAssertTrue(subcategoryCard.waitForExistence(timeout: 2))
+        XCTAssertEqual(subcategoryCard.frame.midX, app.frame.midX, accuracy: 3)
+        XCTAssertEqual(subcategoryCard.frame.midY, app.frame.midY, accuracy: 3)
+        XCTAssertLessThan(subcategoryCard.frame.height, app.frame.height * 0.5)
+
+        let income = app.buttons["收入"].firstMatch
+        income.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["entry-subcategory-layer"].waitForNonExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["支出"].isSelected)
+
+        app.buttons["餐饮"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["entry-subcategory-layer"].waitForExistence(timeout: 2))
+        let discount = app.buttons["entry-context-tag-discount"]
+        discount.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.descendants(matching: .any)["entry-subcategory-layer"].waitForNonExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["entry-context-source-tag-discount"].exists)
+    }
+
+    func testEntryCloseImmediatelyDiscardsUnsavedAmount() {
+        app.buttons["root-entry-button"].tap()
+        XCTAssertTrue(app.buttons["entry-close-button"].waitForExistence(timeout: 3))
+        app.buttons["1"].firstMatch.tap()
+        app.buttons["entry-close-button"].tap()
+
+        XCTAssertTrue(app.buttons["root-entry-button"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["放弃这笔未保存的记账？"].exists)
+    }
+
+    func testEntryTimeUsesWheelDatePicker() {
+        app.buttons["root-entry-button"].tap()
+        XCTAssertTrue(app.buttons["entry-close-button"].waitForExistence(timeout: 3))
+
+        app.buttons["选择时间"].tap()
+
+        let wheel = app.descendants(matching: .any)["entry-date-time-wheel"]
+        XCTAssertTrue(wheel.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.pickerWheels.firstMatch.exists)
+        app.buttons["取消"].tap()
     }
 
     func testEntryContextGeniePanelsOpenAndClose() {
         app.buttons["root-entry-button"].tap()
-        XCTAssertTrue(app.staticTexts["支出"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["entry-close-button"].waitForExistence(timeout: 3))
 
         for (tag, title) in [
             ("AA", "AA 分摊"),
@@ -49,7 +110,15 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 2))
 
             let cancelButton = app.buttons["取消"].firstMatch
+            let confirmButton = app.buttons["确认"].firstMatch
             XCTAssertTrue(cancelButton.waitForExistence(timeout: 2))
+            XCTAssertTrue(confirmButton.exists)
+            if tag == "组合支付" {
+                let amountInput = app.buttons["entry-context-split-amount-0"]
+                XCTAssertTrue(amountInput.waitForExistence(timeout: 2))
+                amountInput.tap()
+                XCTAssertTrue(app.otherElements["entry-context-input-caret"].exists)
+            }
             cancelButton.tap()
             XCTAssertTrue(cancelButton.waitForNonExistence(timeout: 2))
         }
@@ -68,6 +137,34 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
 
         XCTAssertTrue(sourceTag.waitForNonExistence(timeout: 2))
         XCTAssertTrue(app.buttons["entry-context-tag-aa"].waitForExistence(timeout: 2))
+    }
+
+    func testIncomeFeeTemplateAppliesImmediately() {
+        app.buttons["root-entry-button"].tap()
+        XCTAssertTrue(app.buttons["entry-close-button"].waitForExistence(timeout: 3))
+
+        app.buttons["收入"].firstMatch.tap()
+        app.buttons["1"].firstMatch.tap()
+        for _ in 0..<3 { app.buttons["0"].firstMatch.tap() }
+
+        let feeTag = app.buttons["entry-context-tag-fee"]
+        XCTAssertTrue(feeTag.waitForExistence(timeout: 3))
+        feeTag.tap()
+
+        let panel = app.descendants(matching: .any)["entry-context-panel-fee"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 2))
+        XCTAssertEqual(panel.frame.midX, app.frame.midX, accuracy: 3)
+        XCTAssertTrue(app.buttons["取消"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["完成"].firstMatch.exists)
+
+        let template = app.buttons["entry-fee-template-5F44B167-3506-4DE5-A540-CF1496239E46"]
+        XCTAssertTrue(template.waitForExistence(timeout: 2))
+        template.tap()
+
+        XCTAssertTrue(panel.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(feeTag.waitForExistence(timeout: 2))
+        XCTAssertTrue(feeTag.label.contains("3.80"), "Expected calculated fee in tag, got: \(feeTag.label)")
+        XCTAssertTrue(app.staticTexts["996.2"].exists || app.staticTexts["996.20"].exists)
     }
 
     func testBillSwipeAndAssetDetail() {
@@ -165,6 +262,27 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
             "Expected a seeded repayment reminder completion control"
         )
         (complete.exists ? complete : reopen).tap()
+    }
+
+    func testSettingsPreviewShowsGroupedRowsAndAboutDetails() {
+        app.terminate()
+        app.launchEnvironment["APP_PREVIEW_SCREEN"] = "settings"
+        app.launch()
+        waitForDataReady()
+
+        XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["数据导入与导出"].exists)
+        XCTAssertTrue(app.staticTexts["从表格或文件导入历史账单"].exists)
+
+        app.staticTexts["显示、触觉与金额颜色"].tap()
+        XCTAssertTrue(app.navigationBars["外观与金额颜色"].waitForExistence(timeout: 3))
+        app.navigationBars["外观与金额颜色"].buttons.firstMatch.tap()
+
+        for _ in 0..<4 { app.swipeUp() }
+        let aboutFooter = app.buttons["settings-about-footer"]
+        XCTAssertTrue(aboutFooter.waitForExistence(timeout: 3))
+        aboutFooter.tap()
+        XCTAssertTrue(app.navigationBars["关于与帮助"].waitForExistence(timeout: 3))
     }
 
     private func assertTab(_ identifier: String, marker: XCUIElement) {

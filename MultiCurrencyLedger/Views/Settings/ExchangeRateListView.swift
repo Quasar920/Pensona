@@ -33,7 +33,7 @@ struct ExchangeRateListView: View {
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                             } else {
-                                Text("未设置").foregroundStyle(.orange)
+                                Text("未设置").foregroundStyle(LedgerPalette.mutedInk)
                             }
                         }
                     }

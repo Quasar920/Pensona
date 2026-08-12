@@ -23,6 +23,7 @@ struct EntryCategoryPager: View {
     @State private var pendingDelete: DeleteRequest?
     @State private var errorMessage: String?
     @State private var globalFrame: CGRect = .zero
+    @State private var gridGlobalFrame: CGRect = .zero
 
     private var relevant: [LedgerCategory] {
         categories.filter { $0.type == type && !$0.isArchived }
@@ -61,27 +62,20 @@ struct EntryCategoryPager: View {
                     }
                     .font(.caption.weight(.semibold))
                 } else if let selected = relevant.first(where: { $0.id == selectedID }) {
-                    Text(selected.localizedName(locale: locale)).font(.caption).foregroundStyle(.blue)
+                    Text(selected.localizedName(locale: locale)).font(.caption).foregroundStyle(LedgerPalette.ink)
                 }
             }
 
         ZStack {
             pageGrid(gridValues)
                 .accessibilityIdentifier("entry-category-pager")
-
-                if let expandedRoot {
-                    EntrySubcategoryOverlay(
-                        parent: expandedRoot,
-                        children: expandedChildren,
-                        selectedID: selectedID,
-                        isReordering: isReordering,
-                        select: selectChild,
-                        add: { beginCreate(parent: expandedRoot) },
-                        longPress: showActions,
-                        reorder: reorderChild,
-                        close: { expandedRootID = nil }
-                    )
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: CategoryGridFramePreferenceKey.self,
+                    value: proxy.frame(in: .global)
+                )
             }
         }
         // Four compact rows keep every expense category above the amount
@@ -98,6 +92,43 @@ struct EntryCategoryPager: View {
             }
         }
         .onPreferenceChange(CategoryPagerFramePreferenceKey.self) { globalFrame = $0 }
+        .onPreferenceChange(CategoryGridFramePreferenceKey.self) { gridGlobalFrame = $0 }
+        .overlay {
+            if let expandedRoot {
+                GeometryReader { proxy in
+                    let hostFrame = proxy.frame(in: .global)
+                    let availableHeight = max(180, overlayBounds.height - 160)
+
+                    ZStack {
+                        Color.black.opacity(0.42)
+                            .contentShape(Rectangle())
+                            .onTapGesture { expandedRootID = nil }
+
+                        EntrySubcategoryOverlay(
+                            parent: expandedRoot,
+                            children: expandedChildren,
+                            selectedID: selectedID,
+                            isReordering: isReordering,
+                            select: selectChild,
+                            add: { beginCreate(parent: expandedRoot) },
+                            longPress: showActions,
+                            reorder: reorderChild,
+                            close: { expandedRootID = nil }
+                        )
+                        .frame(width: min(360, overlayBounds.width - 36))
+                        .frame(height: subcategoryPanelHeight(maximum: availableHeight))
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("entry-subcategory-layer")
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    }
+                    .frame(width: overlayBounds.width, height: overlayBounds.height)
+                    .position(
+                        x: overlayBounds.midX - hostFrame.minX,
+                        y: overlayBounds.midY - hostFrame.minY
+                    )
+                }
+            }
+        }
         .overlay {
             if actionCategory != nil || editor != nil || targetAction != nil {
                 ZStack {
@@ -190,6 +221,7 @@ struct EntryCategoryPager: View {
             }
             #endif
         }
+        .zIndex(expandedRootID == nil ? 0 : 1_000)
     }
 
     private var service: CategoryService { CategoryService(context: context) }
@@ -244,7 +276,7 @@ struct EntryCategoryPager: View {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(selectedRootID == category.id ? Color.accentColor.opacity(0.75) : .clear, lineWidth: 1.5)
+                    .stroke(selectedRootID == category.id ? LedgerPalette.ink.opacity(0.75) : .clear, lineWidth: 1.5)
             }
             .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
@@ -499,6 +531,17 @@ struct EntryCategoryPager: View {
     private func categorySort(_ lhs: LedgerCategory, _ rhs: LedgerCategory) -> Bool {
         lhs.sortOrder == rhs.sortOrder ? lhs.createdAt < rhs.createdAt : lhs.sortOrder < rhs.sortOrder
     }
+
+    private func subcategoryPanelHeight(maximum: CGFloat) -> CGFloat {
+        let itemCount = expandedChildren.count + 1
+        let rowCount = max(1, Int(ceil(Double(itemCount) / Double(columns == 3 ? 2 : 4))))
+        let tileHeight: CGFloat = 64
+        let rowSpacing: CGFloat = 12
+        let headerAndPadding: CGFloat = 80
+        let gridHeight = CGFloat(rowCount) * tileHeight
+            + CGFloat(max(0, rowCount - 1)) * rowSpacing
+        return min(maximum, headerAndPadding + gridHeight)
+    }
 }
 
 enum EntryCategoryAppearance {
@@ -510,7 +553,7 @@ enum EntryCategoryAppearance {
     })
     static let overlay = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
-            ? UIColor(red: 9 / 255, green: 14 / 255, blue: 20 / 255, alpha: 1)
+            ? UIColor(white: 0.045, alpha: 1)
             : UIColor(red: 246 / 255, green: 246 / 255, blue: 246 / 255, alpha: 1)
     })
     static let darkInk = Color(red: 229 / 255, green: 229 / 255, blue: 231 / 255)
@@ -574,6 +617,11 @@ private struct DeleteRequest {
 }
 
 private struct CategoryPagerFramePreferenceKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
+}
+
+private struct CategoryGridFramePreferenceKey: PreferenceKey {
     static let defaultValue: CGRect = .zero
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }

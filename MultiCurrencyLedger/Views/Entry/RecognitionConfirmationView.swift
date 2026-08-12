@@ -76,7 +76,7 @@ struct RecognitionConfirmationView: View {
                     Form {
                         Section {
                             Label(reasonText(draft.decisionReason), systemImage: "exclamationmark.shield.fill")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(LedgerPalette.mutedInk)
                         } footer: {
                             Text("AI 结果尚未入账；保存前请核对高亮字段。")
                         }

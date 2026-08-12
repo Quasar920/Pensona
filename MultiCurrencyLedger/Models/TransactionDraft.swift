@@ -184,9 +184,11 @@ struct TransactionDraft {
         default: nil
         }
         transaction.destinationCurrencyCode = isMovement ? destinationWallet?.currencyCode : nil
-        transaction.feeAmount = isMovement ? feeAmount : nil
-        transaction.feeCurrencyCode = isMovement ? feeWallet?.currencyCode : nil
-        transaction.feeWallet = isMovement && feeAmount != nil ? feeWallet : nil
+        transaction.feeAmount = feeAmount
+        transaction.feeCurrencyCode = feeAmount != nil
+            ? (feeWallet?.currencyCode ?? sourceWallet?.currencyCode)
+            : nil
+        transaction.feeWallet = feeAmount != nil ? feeWallet : nil
         if type == .exchange, amount > 0, let destinationAmount {
             transaction.exchangeRate = destinationAmount / amount
         } else {

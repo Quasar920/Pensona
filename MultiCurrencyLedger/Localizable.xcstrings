@@ -1,6 +1,306 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "brand.error.unsupportedURL" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This bookkeeping link is not supported by OneTsu" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "この記帳リンクは OneTsu ではサポートされていません" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这不是 OneTsu 支持的记账链接" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "這不是 OneTsu 支援的記帳連結" } }
+      }
+    },
+    "brand.intent.createDraft" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Create a draft with OneTsu parameters and confirm it in the app before recording it." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu のパラメータで下書きを作成し、App で確認してから記録します。" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "使用 OneTsu 的参数创建草稿，并在 App 中确认后入账。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "使用 OneTsu 的參數建立草稿，並在 App 中確認後入帳。" } }
+      }
+    },
+    "brand.locked" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu is locked" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu はロックされています" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu 已锁定" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu 已鎖定" } }
+      }
+    },
+    "brand.shortcuts.candidates" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "3. Add OneTsu’s “Get Recognition Candidates” action." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "3. OneTsu の「記帳認識候補を取得」アクションを追加します。" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "3. 添加 OneTsu 的“获取记账识别候选”。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "3. 加入 OneTsu 的「取得記帳辨識候選項目」。" } }
+      }
+    },
+    "brand.shortcuts.confirm" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "5. Add OneTsu’s “Recognize and Record” action, passing the OCR text and API response JSON." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "5. OneTsu の「認識して記帳」アクションを追加し、OCR テキストと API の JSON 応答を渡します。" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "5. 添加 OneTsu 的“识别并记账”，传入 OCR 文本与 API 返回的 JSON。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "5. 加入 OneTsu 的「辨識並記帳」，傳入 OCR 文字與 API 回傳的 JSON。" } }
+      }
+    },
+    "launch.failure.restore" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Restore and retry" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "復元して再試行" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "恢复并重试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "還原並重試" } }
+      }
+    },
+    "launch.failure.retry" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Try again" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "再試行" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重新尝试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "重新嘗試" } }
+      }
+    },
+    "launch.failure.snapshotHeader" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Migration snapshots" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "移行スナップショット" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "迁移快照" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "移轉快照" } }
+      }
+    },
+    "launch.failure.snapshotMessage" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "You can restore a protected snapshot created before a schema migration. The current database is never erased silently." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "スキーマ移行前に作成された保護スナップショットを復元できます。現在のデータベースが通知なく消去されることはありません。" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "你可以恢复 Schema 迁移前生成的受保护快照；当前数据库不会被静默清空。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "你可以還原 Schema 移轉前建立的受保護快照；目前資料庫不會被靜默清除。" } }
+      }
+    },
+    "launch.failure.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu couldn’t open your local ledger" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu でローカル帳簿を開けませんでした" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu 无法打开本地账本" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu 無法開啟本機帳本" } }
+      }
+    },
+    "launch.preparing.message" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Checking your on-device ledger and recovery snapshots." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "端末内の帳簿と復元スナップショットを確認しています。" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在检查本地账本与恢复快照。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在檢查本機帳本與復原快照。" } }
+      }
+    },
+    "launch.preparing.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Preparing OneTsu" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "OneTsu を準備しています" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在准备 OneTsu" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在準備 OneTsu" } }
+      }
+    },
+    "storage.onDeviceOnly" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stored only on this device" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "この端末内にのみ保存" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅存储在本机" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "僅儲存在本機" } }
+      }
+    },
+    "从表格或文件导入历史账单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import past transactions from a spreadsheet or file"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スプレッドシートやファイルから過去の取引を読み込みます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从表格或文件导入历史账单"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從試算表或檔案匯入歷史帳單"
+          }
+        }
+      }
+    },
+    "保护本机数据和后台预览" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protect on-device data and app-switcher previews"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端末内データとアプリ切り替え画面のプレビューを保護します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保护本机数据和后台预览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保護本機資料與 App 切換器預覽"
+          }
+        }
+      }
+    },
+    "导出账单并管理完整备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export transactions and manage complete backups"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取引を書き出し、完全なバックアップを管理します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出账单并管理完整备份"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匯出帳單並管理完整備份"
+          }
+        }
+      }
+    },
+    "校验备份、迁移快照或清空数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Validate backups, migrate snapshots, or erase data"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バックアップの検証、スナップショットの移行、またはデータ消去を行います"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "校验备份、迁移快照或清空数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驗證備份、移轉快照或清除資料"
+          }
+        }
+      }
+    },
+    "设置本位币并管理换算汇率" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set the base currency and manage exchange rates"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基準通貨を設定し、為替レートを管理します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置本位币并管理换算汇率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定本位幣並管理換算匯率"
+          }
+        }
+      }
+    },
+    "选择 App 的显示语言" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the app’s display language"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App の表示言語を選択します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 App 的显示语言"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇 App 的顯示語言"
+          }
+        }
+      }
+    },
+    "选择主题、触觉反馈和收支配色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the theme, haptics, and income/expense colors"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テーマ、触覚フィードバック、収支カラーを選択します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择主题、触觉反馈和收支配色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇主題、觸覺回饋與收支配色"
+          }
+        }
+      }
+    },
     " · 已停用" : {
       "localizations" : {
         "en" : {

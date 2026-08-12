@@ -94,6 +94,7 @@ struct EntryMovementContextTags: View {
         HStack(spacing: 8) {
             if state.kind == .transfer {
                 contextTag(
+                    kind: nil,
                     title: amountTitle(
                         prefix: "优惠",
                         amountText: state.discountAmountText,
@@ -104,6 +105,7 @@ struct EntryMovementContextTags: View {
                 )
             }
             contextTag(
+                kind: .fee,
                 title: amountTitle(
                     prefix: "手续费",
                     amountText: state.feeText,
@@ -117,6 +119,7 @@ struct EntryMovementContextTags: View {
     }
 
     private func contextTag(
+        kind: EntryContextOverlayKind?,
         title: String,
         isSelected: Bool,
         action: @escaping () -> Void
@@ -141,6 +144,22 @@ struct EntryMovementContextTags: View {
             }
         }
         .buttonStyle(LedgerGlassPressStyle())
+        .accessibilityIdentifier(
+            kind.map { "entry-context-tag-\($0.rawValue)" }
+                ?? "entry-context-tag-secondary"
+        )
+        .background {
+            if let kind {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: EntryContextTagFramePreferenceKey.self,
+                        value: [
+                            kind: proxy.frame(in: .named(EntryContextCoordinateSpace.name))
+                        ]
+                    )
+                }
+            }
+        }
     }
 
     private func amountTitle(prefix: String, amountText: String, walletID: UUID?) -> String {

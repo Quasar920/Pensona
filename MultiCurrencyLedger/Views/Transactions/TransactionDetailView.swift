@@ -165,7 +165,17 @@ struct TransactionDetailView: View {
                                 }
                             }
                             if let original = transaction.originalAmount {
-                                DetailValueRow(title: AppLocalization.string("原价"), value: MoneyFormatter.string(original, currencyCode: transaction.currencyCode ?? transaction.sourceCurrencyCode ?? "CNY"))
+                                DetailValueRow(
+                                    title: transaction.type == .income && transaction.feeAmount != nil
+                                        ? "手续费前金额"
+                                        : AppLocalization.string("原价"),
+                                    value: MoneyFormatter.string(
+                                        original,
+                                        currencyCode: transaction.currencyCode
+                                            ?? transaction.sourceCurrencyCode
+                                            ?? "CNY"
+                                    )
+                                )
                             }
                             if let discount = transaction.discountAmount, discount > 0 {
                                 DetailValueRow(

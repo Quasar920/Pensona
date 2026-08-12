@@ -99,7 +99,7 @@ struct TransactionFilterView: View {
                         if !draft.hasValidDateRange {
                             Label("结束日期不能早于开始日期", systemImage: "exclamationmark.circle.fill")
                                 .font(.footnote)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(LedgerPalette.ink)
                         }
                     }
                 }
@@ -112,7 +112,7 @@ struct TransactionFilterView: View {
                     if !amountInputsAreValid {
                         Label("请输入有效金额，且最低金额不能高于最高金额", systemImage: "exclamationmark.circle.fill")
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(LedgerPalette.ink)
                     }
                 }
 

@@ -38,9 +38,9 @@ struct ReportsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                HomePalette.background.ignoresSafeArea()
+                LedgerPageBackground()
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 16) {
+                    LazyVStack(alignment: .leading, spacing: 20) {
                         StatisticsSectionPicker(selection: $state.section)
                         StatisticsRangePicker(state: $state)
                         dashboardContent
@@ -50,7 +50,7 @@ struct ReportsView: View {
                     .padding(.bottom, RootEntryLayout.scrollContentClearance)
                 }
             }
-            .navigationTitle("统计")
+            .navigationTitle("报表")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -86,7 +86,6 @@ struct ReportsView: View {
         if isLoading && snapshot == nil {
             ProgressView("正在统计…")
                 .frame(maxWidth: .infinity, minHeight: 300)
-                .ledgerGlassCard(cornerRadius: 28, tint: HomePalette.accent)
         } else if let snapshot {
             StatisticsChartPanel(
                 snapshot: snapshot,
@@ -99,10 +98,9 @@ struct ReportsView: View {
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(LedgerPalette.mutedInk)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .ledgerGlassCard(cornerRadius: 20, tint: .orange)
+                .padding(.vertical, 10)
             }
         } else {
             ContentUnavailableView(
@@ -111,7 +109,6 @@ struct ReportsView: View {
                 description: Text(errorMessage ?? AppLocalization.string("请选择账本后重试"))
             )
             .frame(maxWidth: .infinity, minHeight: 300)
-            .ledgerGlassCard(cornerRadius: 28, tint: HomePalette.accent)
         }
     }
 
@@ -173,8 +170,7 @@ private struct StatisticsSectionPicker: View {
             }
         }
         .pickerStyle(.segmented)
-        .padding(8)
-        .ledgerGlassCard(cornerRadius: 20, tint: HomePalette.accent)
+        .padding(.vertical, 4)
         .accessibilityLabel("统计内容")
     }
 }
@@ -222,8 +218,7 @@ private struct StatisticsRangePicker: View {
                 }
             }
         }
-        .padding(14)
-        .ledgerGlassCard(cornerRadius: 24, tint: HomePalette.accent)
+        .padding(.vertical, 4)
     }
 
     private var rangeTitle: String {
@@ -253,15 +248,22 @@ private struct StatisticsChartPanel: View {
                     .frame(maxWidth: .infinity, minHeight: 230)
             } else {
                 Chart(snapshot.buckets) { bucket in
-                    BarMark(
+                    LineMark(
                         x: .value("节点", bucket.title),
                         y: .value("金额", NSDecimalNumber(decimal: bucket.value).doubleValue)
                     )
-                    .foregroundStyle(bucket.value < 0 ? Color.orange : HomePalette.accent)
-                    .cornerRadius(6)
+                    .foregroundStyle(HomePalette.accent)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .opacity(selectedBucketKey == nil || selectedBucketKey == bucket.key ? 1 : 0.42)
                     .accessibilityLabel(bucket.title)
                     .accessibilityValue(MoneyFormatter.string(bucket.value, currencyCode: currencyCode))
+
+                    PointMark(
+                        x: .value("节点", bucket.title),
+                        y: .value("金额", NSDecimalNumber(decimal: bucket.value).doubleValue)
+                    )
+                    .foregroundStyle(HomePalette.accent)
+                    .symbolSize(18)
 
                     if selectedBucketKey == bucket.key {
                         RuleMark(x: .value("选中节点", bucket.title))
@@ -307,8 +309,9 @@ private struct StatisticsChartPanel: View {
             }
             .font(.subheadline)
         }
-        .padding(20)
-        .ledgerGlassCard(cornerRadius: 30, tint: HomePalette.accent)
+        .padding(.vertical, 12)
+        .overlay(alignment: .top) { Divider() }
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     private var bucketTitleSelection: Binding<String?> {

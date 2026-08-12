@@ -12,27 +12,33 @@ struct EntryContextTagVisual: Equatable {
     ) -> EntryContextTagVisual {
         switch kind {
         case .account:
-            EntryContextTagVisual(
+            return EntryContextTagVisual(
                 title: sourceWallet?.account?.name ?? "银行卡",
                 isSelected: sourceWallet != nil
             )
         case .aa:
-            EntryContextTagVisual(
+            return EntryContextTagVisual(
                 title: aaTitle(state: state, sourceWallet: sourceWallet),
                 isSelected: state.aaSplitDraft != nil
             )
         case .splitPayment:
-            EntryContextTagVisual(
+            return EntryContextTagVisual(
                 title: splitPaymentTitle(state: state, wallets: wallets),
                 isSelected: state.usesSplitPayment
             )
         case .discount:
-            EntryContextTagVisual(
+            return EntryContextTagVisual(
                 title: discountTitle(state: state, sourceWallet: sourceWallet),
                 isSelected: DecimalParser.parse(state.discountAmountText).map { $0 > 0 } == true
             )
-        case .fee, .foreignExpense:
-            EntryContextTagVisual(title: kind.rawValue, isSelected: false)
+        case .fee:
+            let amount = DecimalParser.parse(state.feeText)
+            let title = amount.map {
+                "手续费 \(MoneyFormatter.plain($0, currencyCode: sourceWallet?.currencyCode ?? "CNY"))"
+            } ?? "手续费"
+            return EntryContextTagVisual(title: title, isSelected: state.includesFee)
+        case .foreignExpense:
+            return EntryContextTagVisual(title: kind.rawValue, isSelected: false)
         }
     }
 
@@ -105,7 +111,10 @@ struct EntryContextTagLabel: View {
         .padding(.leading, 13)
         .padding(.trailing, 12)
         .frame(height: 27)
-        .background(Color.primary.opacity(0.055), in: EntryContextTagShape())
+        .background(
+            LedgerPalette.selectionFill.opacity(0.65),
+            in: EntryContextTagShape()
+        )
         .overlay {
             EntryContextTagShape().stroke(
                 visual.isSelected
@@ -127,6 +136,7 @@ struct EntryContextControls: View {
     let editSplitPayment: () -> Void
     let editAA: () -> Void
     let editDiscount: () -> Void
+    let editFee: () -> Void
     let editForeignCurrency: () -> Void
     let hiddenKind: EntryContextOverlayKind?
     let hiddenKindOpacity: Double
@@ -165,6 +175,11 @@ struct EntryContextControls: View {
                         }
                     }
                     if state.kind == .expense || state.kind == .income {
+                        tag(
+                            kind: .fee,
+                            visual: contextVisual(.fee),
+                            action: editFee
+                        )
                         tag(
                             kind: .splitPayment,
                             visual: contextVisual(.splitPayment),
@@ -272,6 +287,7 @@ struct EntryContextTagShape: Shape {
 /// entry screen and uses the app keypad for amount entry rather than invoking
 /// the system keyboard.
 struct LegacyEntryContextOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
     let kind: EntryContextOverlayKind
     @Binding var state: TransactionFormState
     let wallets: [CurrencyWallet]
@@ -281,6 +297,7 @@ struct LegacyEntryContextOverlay: View {
     @State private var activePaymentPart = 0
     @State private var aaPeople = 2
     @State private var keypadID = UUID()
+    @State private var initialState: TransactionFormState?
 
     private var title: String {
         switch kind {
@@ -314,19 +331,12 @@ struct LegacyEntryContextOverlay: View {
             Color.black.opacity(0.24)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture(perform: dismiss)
+                .onTapGesture(perform: cancelAndDismiss)
 
             VStack(spacing: 12) {
                 HStack {
                     Text(title).font(.headline)
                     Spacer()
-                    Button(action: dismiss) {
-                        Image(systemName: "xmark")
-                            .font(.subheadline.weight(.bold))
-                            .frame(width: 30, height: 30)
-                            .background(Color.primary.opacity(0.07), in: Circle())
-                    }
-                    .buttonStyle(LedgerGlassPressStyle())
                 }
 
                 content
@@ -343,21 +353,26 @@ struct LegacyEntryContextOverlay: View {
                         nextEntry: {},
                         complete: commitAndDismiss
                     )
-                } else {
-                    Button("完成", action: commitAndDismiss)
-                        .buttonStyle(.borderedProminent)
-                        .tint(LedgerPalette.accent)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
+
+                EntryContextPanelActionRow(
+                    canConfirm: true,
+                    cancel: cancelAndDismiss,
+                    confirm: commitAndDismiss
+                )
             }
             .padding(16)
             .frame(maxWidth: 480)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .background(
+                EntryFloatingCardAppearance.surface(for: colorScheme),
+                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            )
             .overlay { RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(.white.opacity(0.55), lineWidth: 0.8) }
             .padding(.horizontal, 18)
             .padding(.vertical, 28)
         }
         .onAppear {
+            initialState = state
             aaPeople = (state.aaSplitDraft?.otherPeopleCount ?? 1) + 1
             if kind == .splitPayment, !state.usesSplitPayment {
                 state.setSplitPaymentEnabled(true, wallets: wallets)
@@ -512,7 +527,6 @@ struct LegacyEntryContextOverlay: View {
     private func accountRow(name: String, wallet: CurrencyWallet?) -> some View {
         Button {
             state.sourceWalletID = wallet?.id
-            dismiss()
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: wallet?.account?.type.symbolName ?? "circle")
@@ -612,6 +626,13 @@ struct LegacyEntryContextOverlay: View {
         if kind == .discount, state.kind == .transfer,
            DecimalParser.parse(state.discountAmountText).map({ $0 > 0 }) != true {
             state.discountWalletID = nil
+        }
+        dismiss()
+    }
+
+    private func cancelAndDismiss() {
+        if let initialState {
+            state = initialState
         }
         dismiss()
     }

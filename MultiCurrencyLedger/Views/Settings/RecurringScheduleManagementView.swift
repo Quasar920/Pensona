@@ -44,7 +44,7 @@ struct RecurringScheduleManagementView: View {
                 }
             }
             if let resultMessage {
-                Section { Label(resultMessage, systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                Section { Label(resultMessage, systemImage: "checkmark.circle.fill").foregroundStyle(LedgerPalette.ink) }
             }
         }
         .navigationTitle("周期账单")
@@ -82,7 +82,7 @@ struct RecurringScheduleManagementView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if schedule.isPaused { Text("已暂停").font(.caption).foregroundStyle(.orange) }
+                if schedule.isPaused { Text("已暂停").font(.caption).foregroundStyle(LedgerPalette.mutedInk) }
             }
             HStack {
                 Button("补生成到今天") { generate(schedule) }

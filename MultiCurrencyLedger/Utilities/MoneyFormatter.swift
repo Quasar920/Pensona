@@ -27,6 +27,9 @@ enum MoneyFormatter {
         locale: Locale = .current
     ) -> String {
         let normalizedCode = normalizedCurrencyCode(currencyCode)
+        if let symbol = SupportedCurrency.symbol(for: normalizedCode) {
+            return symbol
+        }
         let formatter = formatter(
             style: .currency,
             currencyCode: normalizedCode,
@@ -144,6 +147,9 @@ enum MoneyFormatter {
         case .currency:
             formatter.numberStyle = .currency
             formatter.currencyCode = currencyCode
+            if let symbol = SupportedCurrency.symbol(for: currencyCode) {
+                formatter.currencySymbol = symbol
+            }
         case .decimal:
             formatter.numberStyle = .decimal
         }

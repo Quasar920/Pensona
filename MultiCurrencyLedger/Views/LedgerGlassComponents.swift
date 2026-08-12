@@ -25,20 +25,75 @@ enum LedgerMotion {
 }
 
 enum LedgerTypography {
-    static let amount = Font.system(.title2, design: .rounded, weight: .semibold).monospacedDigit()
-    static let largeAmount = Font.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit()
+    static let amount = Font.custom("Ioskeley Mono Semibold", size: 20, relativeTo: .title3)
+    static let largeAmount = Font.custom("Ioskeley Mono Semibold", size: 34, relativeTo: .title2)
+    static let receiptDate = Font.custom("Ioskeley Mono", size: 30, relativeTo: .title2)
+    static let receiptMeta = Font.custom("Ioskeley Mono", size: 12, relativeTo: .caption)
 }
 
 enum LedgerPalette {
-    static let accent = Color(red: 22 / 255, green: 134 / 255, blue: 232 / 255)
-    static let background = Color(uiColor: UIColor { traits in
+    /// Structural color is deliberately monochrome. Financial meaning still
+    /// comes from signs, labels, and semantic system roles rather than a brand
+    /// hue competing with the ledger content.
+    static let ink = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.045, green: 0.055, blue: 0.070, alpha: 1)
-            : UIColor(red: 0.955, green: 0.965, blue: 0.975, alpha: 1)
+            ? UIColor(white: 0.96, alpha: 1)
+            : UIColor(white: 0.055, alpha: 1)
+    })
+    static let invertedInk = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.055, alpha: 1)
+            : UIColor(white: 0.98, alpha: 1)
+    })
+    static let mutedInk = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.72, alpha: 1)
+            : UIColor(white: 0.38, alpha: 1)
+    })
+    static let accent = ink
+    static let environment = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.045, alpha: 1)
+            : UIColor(red: 246 / 255, green: 246 / 255, blue: 244 / 255, alpha: 1)
+    })
+    static let environmentLift = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.105, alpha: 1)
+            : UIColor(red: 231 / 255, green: 231 / 255, blue: 228 / 255, alpha: 1)
+    })
+    static let background = environment
+    static let surface = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.105, alpha: 0.96)
+            : UIColor(red: 250 / 255, green: 250 / 255, blue: 248 / 255, alpha: 0.96)
+    })
+    static let raisedSurface = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.14, alpha: 1)
+            : UIColor(white: 1, alpha: 1)
+    })
+    static let selectionFill = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.22, alpha: 1)
+            : UIColor(red: 224 / 255, green: 224 / 255, blue: 220 / 255, alpha: 1)
+    })
+    static let hairline = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.18)
+            : UIColor(white: 0, alpha: 0.16)
     })
     static let primaryText = Color.primary
     static let secondaryText = Color.secondary
-    static let separator = Color(uiColor: .separator).opacity(0.24)
+    static let separator = hairline
+}
+
+enum EntryFloatingCardAppearance {
+    static let backgroundOpacity = 0.95
+
+    static func surface(for colorScheme: ColorScheme) -> Color {
+        (colorScheme == .dark ? Color(white: 0.10) : .white)
+            .opacity(backgroundOpacity)
+    }
 }
 
 private struct LedgerForceSimplifiedGlassKey: EnvironmentKey {
@@ -54,21 +109,11 @@ extension EnvironmentValues {
 
 struct LedgerPageBackground: View {
     var body: some View {
-        ZStack {
-            LedgerPalette.background
-            GeometryReader { proxy in
-                Circle()
-                    .fill(LedgerPalette.accent.opacity(0.08))
-                    .frame(width: proxy.size.width * 0.9)
-                    .blur(radius: 70)
-                    .offset(x: proxy.size.width * 0.42, y: -proxy.size.height * 0.30)
-                Circle()
-                    .fill(Color.cyan.opacity(0.045))
-                    .frame(width: proxy.size.width * 0.75)
-                    .blur(radius: 80)
-                    .offset(x: -proxy.size.width * 0.30, y: proxy.size.height * 0.52)
-            }
-        }
+        LinearGradient(
+            colors: [LedgerPalette.environment, LedgerPalette.environmentLift],
+            startPoint: .top,
+            endPoint: .bottom
+        )
         .ignoresSafeArea()
         .accessibilityHidden(true)
     }
@@ -91,12 +136,16 @@ struct LedgerGlassPressStyle: ButtonStyle {
 enum LedgerSurfaceRole {
     case functional
     case summary
+    case canvas
+    case floatingControl
     case centeredActionPanel
     case sheetChrome
 
     var defaultCornerRadius: CGFloat {
         switch self {
         case .functional: LedgerLayout.cornerMedium
+        case .canvas: 40
+        case .floatingControl: LedgerLayout.cornerMedium
         case .summary, .centeredActionPanel: LedgerLayout.cornerLarge
         case .sheetChrome: LedgerLayout.cornerMedium
         }
@@ -120,38 +169,34 @@ private struct LedgerSurfaceModifier: ViewModifier {
             reduceTransparency: reduceTransparency,
             forceSimplified: forceSimplified
         )
-        if quality == .simplified {
-            content
-                .background(shape.fill(Color(uiColor: .secondarySystemBackground)))
-                .overlay(shape.stroke(LedgerPalette.separator, lineWidth: 0.75))
-        } else {
-            content
-                .background(shape.fill(material))
-                .overlay(shape.stroke(.white.opacity(borderOpacity), lineWidth: 0.75))
-                .shadow(color: tint.opacity(shadowOpacity), radius: shadowRadius, y: 4)
+        content
+            .background(shape.fill(quality == .simplified ? LedgerPalette.raisedSurface : surfaceColor))
+            .overlay(shape.stroke(LedgerPalette.hairline, lineWidth: borderWidth))
+            .shadow(color: tint.opacity(shadowOpacity), radius: shadowRadius, y: 3)
+    }
+
+    private var surfaceColor: Color {
+        switch role {
+        case .functional, .canvas, .floatingControl, .sheetChrome:
+            LedgerPalette.surface
+        case .summary, .centeredActionPanel:
+            LedgerPalette.raisedSurface
         }
     }
 
-    private var material: Material {
+    private var borderWidth: CGFloat {
         switch role {
-        case .functional, .sheetChrome: .regular
-        case .summary, .centeredActionPanel: .thick
-        }
-    }
-
-    private var borderOpacity: Double {
-        switch role {
-        case .functional, .sheetChrome: 0.30
-        case .summary, .centeredActionPanel: 0.40
+        case .canvas, .summary, .centeredActionPanel: 1
+        case .functional, .floatingControl, .sheetChrome: 0.75
         }
     }
 
     private var shadowOpacity: Double {
-        role == .functional ? 0.05 : 0.08
+        role == .functional || role == .floatingControl ? 0.025 : 0.04
     }
 
     private var shadowRadius: CGFloat {
-        role == .functional ? 10 : 16
+        role == .functional || role == .floatingControl ? 5 : 9
     }
 }
 
@@ -200,7 +245,13 @@ extension Color {
             blue = Double(number & 0xFF) / 255
             alpha = 1
         }
-        return Color(red: red, green: green, blue: blue, opacity: alpha)
+        let luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+        return Color(uiColor: UIColor { traits in
+            let white = traits.userInterfaceStyle == .dark
+                ? 0.52 + luminance * 0.38
+                : 0.20 + luminance * 0.46
+            return UIColor(white: white, alpha: alpha)
+        })
     }
 }
 

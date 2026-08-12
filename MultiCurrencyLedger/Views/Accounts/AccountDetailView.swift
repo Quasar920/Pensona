@@ -134,13 +134,13 @@ struct AccountDetailView: View {
         if let result = try? reconciliation(for: wallet) {
             if result.isBalanced {
                 Label("流水一致", systemImage: "checkmark.circle.fill")
-                    .font(.caption).foregroundStyle(.green)
+                    .font(.caption).foregroundStyle(LedgerPalette.ink)
             } else {
                 Label(
                     "差异 \(MoneyFormatter.plain(result.difference, currencyCode: wallet.currencyCode))",
                     systemImage: "exclamationmark.triangle.fill"
                 )
-                .font(.caption).foregroundStyle(.orange)
+                .font(.caption).foregroundStyle(LedgerPalette.mutedInk)
             }
         }
     }
@@ -238,7 +238,7 @@ struct AccountEditView: View {
                 if account.type == .other, type == .other {
                     Text("旧“其他”账户需要选择批准的六类之一后才能保存。")
                         .font(.footnote)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(LedgerPalette.mutedInk)
                 }
                 if type.supportsCardLastFour {
                     Section {
@@ -347,7 +347,7 @@ struct TransactionCompactRow: View {
     let transaction: LedgerTransaction
 
     var body: some View {
-        HStack {
+        HStack(alignment: .top) {
             if let category = transaction.category {
                 CategoryIconImage(category: category, size: 28)
             } else {
@@ -355,13 +355,27 @@ struct TransactionCompactRow: View {
                     .foregroundStyle(transaction.type.color)
                     .frame(width: 28)
             }
-            VStack(alignment: .leading) {
-                Text(transaction.category?.name ?? transaction.type.title)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(transaction.receiptTitle)
                 if let note = transaction.displayNote {
                     Text(note)
                         .font(.caption)
                         .foregroundStyle(.primary.opacity(0.78))
-                        .lineLimit(1)
+                }
+                if let funding = transaction.receiptFundingText {
+                    Text(funding)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let offerText = transaction.receiptOfferText(currencyCode: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? "CNY") {
+                    Text(offerText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let tagText = transaction.receiptTagText {
+                    Text(tagText)
+                        .font(.caption2)
+                        .foregroundStyle(LedgerPalette.accent)
                 }
                 Text(transaction.date, format: .dateTime.month().day().hour().minute())
                     .font(.caption).foregroundStyle(.secondary)
@@ -370,6 +384,8 @@ struct TransactionCompactRow: View {
             Text(transaction.summaryAmount)
                 .monospacedDigit()
                 .foregroundStyle(transaction.type.color)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

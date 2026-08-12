@@ -25,39 +25,26 @@ struct AssetDashboardScreen: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: LedgerLayout.sectionSpacing) {
-                VStack(spacing: 6) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("总资产")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text(hidden(snapshot.totalAssets))
                         .font(LedgerTypography.largeAmount)
-                        .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.68)
+                    HStack(spacing: 16) {
+                        statementMetric("账户", amount: accountAssets)
+                        statementMetric("负债", amount: creditLiabilities)
+                        statementMetric("净资产", amount: snapshot.totalAssets)
+                    }
+                    .padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
-                .ledgerSurface(.summary)
+                .padding(.vertical, 22)
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(snapshot.modules) { module in
-                        Button { openModule(module.kind) } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Label(module.kind.title, systemImage: module.kind.symbolName)
-                                    .font(.subheadline.weight(.semibold))
-                                Text(module.missingCodes.isEmpty ? hidden(module.amount) : "--")
-                                    .font(LedgerTypography.amount)
-                                    .monospacedDigit()
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-                            .ledgerSurface(.functional)
-                        }
-                        .buttonStyle(LedgerGlassPressStyle())
-                    }
-                }
+                Divider()
 
                 ForEach(snapshot.groups) { group in
                     VStack(spacing: 0) {
@@ -66,12 +53,12 @@ struct AssetDashboardScreen: View {
                                 .font(.headline)
                             Spacer()
                             Text(hidden(group.subtotal))
-                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .font(LedgerTypography.receiptMeta.weight(.semibold))
                         }
-                        .padding(.horizontal, 18)
-                        .frame(minHeight: 52)
+                        .padding(.top, 24)
+                        .padding(.bottom, 10)
 
-                        Divider().padding(.leading, 18)
+                        Divider()
 
                         ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                             Button { selectAccount(row.account) } label: {
@@ -90,11 +77,34 @@ struct AssetDashboardScreen: View {
                             }
                             .accessibilityAction(named: "编辑账户") { editAccount(row.account) }
                             if index < group.rows.count - 1 {
-                                Divider().padding(.leading, 70)
+                                Divider().padding(.leading, 52)
                             }
                         }
                     }
-                    .ledgerSurface(.functional)
+                }
+
+                if !snapshot.modules.isEmpty {
+                    Text("其他资产")
+                        .font(.headline)
+                        .padding(.top, 28)
+                        .padding(.bottom, 10)
+                    Divider()
+                    ForEach(snapshot.modules) { module in
+                        Button { openModule(module.kind) } label: {
+                            HStack {
+                                Label(module.kind.title, systemImage: module.kind.symbolName)
+                                Spacer()
+                                Text(module.missingCodes.isEmpty ? hidden(module.amount) : "--")
+                                    .font(LedgerTypography.receiptMeta.weight(.semibold))
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .frame(minHeight: 52)
+                        }
+                        .buttonStyle(.plain)
+                        Divider()
+                    }
                 }
             }
             .padding(.horizontal, LedgerLayout.pagePadding)
@@ -106,6 +116,24 @@ struct AssetDashboardScreen: View {
     private func hidden(_ amount: Decimal) -> String {
         isBalanceHidden ? "••••" : MoneyFormatter.string(amount, currencyCode: currencyCode)
     }
+
+    private var accountAssets: Decimal {
+        snapshot.groups.filter { $0.group != .credit }.reduce(0) { $0 + $1.subtotal }
+    }
+
+    private var creditLiabilities: Decimal {
+        abs(snapshot.groups.first(where: { $0.group == .credit })?.subtotal ?? 0)
+    }
+
+    private func statementMetric(_ title: String, amount: Decimal) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(hidden(amount))
+                .font(LedgerTypography.receiptMeta.weight(.semibold))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
 private struct AssetDashboardAccountRow: View {
@@ -116,10 +144,9 @@ private struct AssetDashboardAccountRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: row.account.type.symbolName)
-                .font(.headline)
+                .font(.subheadline)
                 .foregroundStyle(HomePalette.accent)
-                .frame(width: 40, height: 40)
-                .background(HomePalette.accent.opacity(0.1), in: Circle())
+                .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.account.name)
                     .font(.subheadline.weight(.semibold))
@@ -134,8 +161,8 @@ private struct AssetDashboardAccountRow: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 70)
+        .padding(.horizontal, 2)
+        .frame(minHeight: 64)
         .contentShape(Rectangle())
     }
 

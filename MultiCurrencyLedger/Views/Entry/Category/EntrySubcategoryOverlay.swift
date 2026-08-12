@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EntrySubcategoryOverlay: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     let parent: LedgerCategory
@@ -16,22 +17,20 @@ struct EntrySubcategoryOverlay: View {
     private var columnCount: Int { dynamicTypeSize.isAccessibilitySize ? 2 : 4 }
 
     var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(EntryCategoryAppearance.overlay)
-                .onTapGesture(perform: close)
+        VStack(spacing: 14) {
+            HStack {
+                Text(parent.localizedName(locale: locale))
+                    .font(.headline)
+                    .foregroundStyle(EntryCategoryAppearance.ink)
+                Spacer()
+                Button(action: close) { Image(systemName: "xmark") }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.circle)
+                    .tint(EntryCategoryAppearance.ink)
+            }
 
+            ScrollView {
             VStack(spacing: 14) {
-                HStack {
-                    Text(parent.localizedName(locale: locale))
-                        .font(.headline)
-                        .foregroundStyle(EntryCategoryAppearance.ink)
-                    Spacer()
-                    Button(action: close) { Image(systemName: "xmark") }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.circle)
-                        .tint(EntryCategoryAppearance.ink)
-                }
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.fixed(dynamicTypeSize.isAccessibilitySize ? 104 : 76)), count: columnCount),
                     spacing: 12
@@ -50,19 +49,28 @@ struct EntrySubcategoryOverlay: View {
                                 .foregroundStyle(EntryCategoryAppearance.ink)
                         }
                         .frame(width: dynamicTypeSize.isAccessibilitySize ? 104 : 76, height: 64)
-                        .background(EntryCategoryAppearance.card, in: RoundedRectangle(cornerRadius: 16))
+                        .background(
+                            EntryCategoryAppearance.card.opacity(EntryFloatingCardAppearance.backgroundOpacity),
+                            in: RoundedRectangle(cornerRadius: 16)
+                        )
                     }
                     .buttonStyle(LedgerGlassPressStyle())
                 }
                 .frame(maxWidth: .infinity)
             }
-            .padding(16)
+            }
+            .scrollIndicators(.hidden)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(18)
+        .background(panelSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.black.opacity(0.12), lineWidth: 0.8)
         }
+    }
+
+    private var panelSurface: Color {
+        EntryFloatingCardAppearance.surface(for: colorScheme)
     }
 
     private func tile(_ child: LedgerCategory) -> some View {
@@ -77,7 +85,7 @@ struct EntrySubcategoryOverlay: View {
             .foregroundStyle(selectedID == child.id ? LedgerPalette.accent : EntryCategoryAppearance.ink)
             .frame(width: dynamicTypeSize.isAccessibilitySize ? 104 : 76, height: 64)
             .background(
-                EntryCategoryAppearance.card,
+                EntryCategoryAppearance.card.opacity(EntryFloatingCardAppearance.backgroundOpacity),
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous)
             )
             .overlay {

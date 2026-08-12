@@ -8,7 +8,6 @@ struct EntryExpansionContainer: View {
     @State private var contentVisible = false
     @State private var dragOffset: CGFloat = 0
     @State private var hasUnsavedChanges = false
-    @State private var showingDiscardConfirmation = false
 
     init(presentation: RootPresentationState, onEntrySaved: @escaping () -> Void = {}) {
         self.presentation = presentation
@@ -26,14 +25,6 @@ struct EntryExpansionContainer: View {
                     shell(route: route, in: proxy)
                 }
                 .task(id: route.id) { await expand() }
-                .confirmationDialog(
-                    "放弃这笔未保存的记账？",
-                    isPresented: $showingDiscardConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("放弃", role: .destructive) { collapse() }
-                    Button("继续编辑", role: .cancel) {}
-                }
             }
         }
         .ignoresSafeArea(.container, edges: .all)
@@ -45,7 +36,7 @@ struct EntryExpansionContainer: View {
         let expandedWidth = proxy.size.width
         let expandedHeight = proxy.size.height
         ZStack(alignment: .top) {
-            Color(uiColor: .systemBackground).opacity(contentVisible ? 1 : 0)
+            LedgerPageBackground().opacity(contentVisible ? 1 : 0)
             if contentVisible {
                 entryContent(route)
                     .modifier(EntryPreviewDynamicTypeModifier())
@@ -68,7 +59,13 @@ struct EntryExpansionContainer: View {
             cornerRadius: shellExpanded ? LedgerLayout.cornerLarge : compact / 2,
             style: .continuous
         ))
-        .ledgerSurface(.sheetChrome, cornerRadius: shellExpanded ? LedgerLayout.cornerLarge : compact / 2)
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: shellExpanded ? LedgerLayout.cornerLarge : compact / 2,
+                style: .continuous
+            )
+            .stroke(.white.opacity(shellExpanded ? 0.22 : 0.46), lineWidth: 0.75)
+        }
         .offset(y: shellExpanded ? max(0, dragOffset) : -12)
         .padding(.bottom, shellExpanded ? 0 : 6)
         .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical, value: shellExpanded)
@@ -126,12 +123,7 @@ struct EntryExpansionContainer: View {
     }
 
     private func requestClose() {
-        if hasUnsavedChanges {
-            withAnimation(LedgerMotion.responsive) { dragOffset = 0 }
-            showingDiscardConfirmation = true
-        } else {
-            collapse()
-        }
+        collapse()
     }
 
     private func collapse(saved: Bool = false) {

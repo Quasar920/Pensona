@@ -41,7 +41,7 @@ struct SavingsGoalListView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                HomePalette.background.ignoresSafeArea()
+                LedgerPageBackground()
 
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 14) {
@@ -115,6 +115,7 @@ struct SavingsGoalListView: View {
                 CenteredGenieCardHost(
                     presentation: $newPlanGenie,
                     maximumWidth: 360,
+                    transitionStyle: .floatingCard,
                     onDismissed: presentPendingNewPlan
                 ) {
                     SavingsNewPlanCard(
@@ -354,17 +355,21 @@ private struct PlanSavingsGoalCard: View {
 
             ProgressView(value: min(max(progress.fraction, 0), 1)).tint(tint)
 
-            Button(action: allocate) {
-                Label("存入", systemImage: "plus.circle.fill")
-                    .font(.subheadline.bold())
-                    .frame(maxWidth: .infinity, minHeight: 44)
+            HStack {
+                Spacer()
+                Button(action: allocate) {
+                    Label("存入", systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 40)
+                }
+                .buttonStyle(.glass)
+                .tint(tint)
+                .disabled(goal.status == .completed || goal.status == .paused)
             }
-            .buttonStyle(.glassProminent)
-            .tint(tint)
-            .disabled(goal.status == .completed || goal.status == .paused)
         }
-        .padding(18)
-        .ledgerGlassCard(cornerRadius: 26, tint: tint)
+        .padding(.vertical, 16)
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     private var targetDateText: String {
@@ -393,7 +398,7 @@ private struct RepaymentReminderCard: View {
                         Text(accountName).font(.headline).foregroundStyle(.primary)
                         if reminder.isCompleted {
                             Text("已完成")
-                                .font(.caption2.bold()).foregroundStyle(.green)
+                                .font(.caption2.bold()).foregroundStyle(LedgerPalette.ink)
                         }
                     }
                     Text("待还 \(MoneyFormatter.string(reminder.outstandingAmount, currencyCode: reminder.currencyCode))")
@@ -415,15 +420,15 @@ private struct RepaymentReminderCard: View {
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.glass)
-            .tint(reminder.isCompleted ? .green : HomePalette.accent)
+            .tint(reminder.isCompleted ? LedgerPalette.mutedInk : HomePalette.accent)
             .accessibilityLabel(
                 reminder.isCompleted
                     ? AppLocalization.string("恢复未完成")
                     : AppLocalization.string("标记为已完成")
             )
         }
-        .padding(18)
-        .ledgerGlassCard(cornerRadius: 26, tint: reminder.isCompleted ? .green : HomePalette.accent)
+        .padding(.vertical, 16)
+        .overlay(alignment: .bottom) { Divider() }
         .opacity(reminder.isCompleted ? 0.72 : 1)
     }
 
@@ -463,8 +468,8 @@ private struct PlanEmptyCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .ledgerGlassCard(cornerRadius: 22, tint: HomePalette.accent)
+        .padding(.vertical, 20)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -875,15 +880,15 @@ private struct SavingsGoalCard: View {
     private var statusColor: Color {
         switch goal.status {
         case .active: goalColor
-        case .paused: .orange
-        case .completed: .green
+        case .paused: LedgerPalette.mutedInk
+        case .completed: LedgerPalette.ink
         case .archived: .secondary
         }
     }
 }
 
 private enum SavingsPagePalette {
-    static let warning = Color(red: 0.58, green: 0.27, blue: 0.03)
+    static let warning = LedgerPalette.mutedInk
 }
 
 private struct SavingsGoalDetailView: View {

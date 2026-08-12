@@ -85,6 +85,8 @@ struct CategoryIconImage: View {
             }
         }
         .frame(width: size, height: size)
+        .saturation(0)
+        .contrast(1.05)
         .task(id: category.userIconRelativePath) {
             guard category.iconSource == .userUploaded,
                   let path = category.userIconRelativePath else {

@@ -3,6 +3,94 @@ import XCTest
 
 @MainActor
 final class TransactionFormStateTests: XCTestCase {
+    func testIncomePercentageFeeStoresNetIncomeWithoutFeeWalletImpact() throws {
+        let account = Account(name: "闲鱼收款", type: .bankCard)
+        let wallet = CurrencyWallet(currency: .CNY, account: account)
+        var state = TransactionFormState(kind: .income)
+        state.sourceWalletID = wallet.id
+        state.amountText = "1000"
+
+        XCTAssertTrue(state.applyFee(
+            inputText: "0.38",
+            mode: .percentage,
+            currencyCode: "CNY",
+            templateName: "闲鱼手续费"
+        ))
+        XCTAssertEqual(state.amountText, "996.2")
+        XCTAssertEqual(state.feeText, "3.8")
+
+        let draft = try state.makeDraft(wallets: [wallet], categories: [])
+        XCTAssertEqual(draft.amount, Decimal(string: "996.2"))
+        XCTAssertEqual(draft.originalAmount, 1000)
+        XCTAssertEqual(draft.feeAmount, Decimal(string: "3.8"))
+        XCTAssertNil(draft.feeWallet)
+        XCTAssertEqual(
+            try TransactionImpactCalculator().deltas(for: draft),
+            [WalletDelta(wallet: wallet, amount: Decimal(string: "996.2")!)]
+        )
+    }
+
+    func testExpenseFeeKeepsPrincipalButAddsToWalletOutflow() throws {
+        let account = Account(name: "付款卡", type: .bankCard)
+        let wallet = CurrencyWallet(currency: .CNY, account: account)
+        var state = TransactionFormState(kind: .expense)
+        state.sourceWalletID = wallet.id
+        state.amountText = "100"
+
+        XCTAssertTrue(state.applyFee(
+            inputText: "2",
+            mode: .fixedAmount,
+            currencyCode: "CNY"
+        ))
+        XCTAssertEqual(state.amountText, "100")
+
+        let draft = try state.makeDraft(wallets: [wallet], categories: [])
+        XCTAssertEqual(draft.amount, 100)
+        XCTAssertEqual(draft.feeAmount, 2)
+        XCTAssertEqual(
+            try TransactionImpactCalculator().deltas(for: draft),
+            [WalletDelta(wallet: wallet, amount: -102)]
+        )
+    }
+
+    func testFeeCalculatorRoundsToCurrencyPrecision() {
+        XCTAssertEqual(
+            FeeCalculator.fee(
+                baseAmount: 1000,
+                input: Decimal(string: "0.38")!,
+                mode: .percentage,
+                currencyCode: "CNY"
+            ),
+            Decimal(string: "3.8")
+        )
+        XCTAssertEqual(
+            FeeCalculator.fee(
+                baseAmount: 1002,
+                input: Decimal(string: "0.38")!,
+                mode: .percentage,
+                currencyCode: "CNY"
+            ),
+            Decimal(string: "3.81")
+        )
+    }
+
+    func testChangingKindAfterIncomeFeeRestoresEnteredAmount() {
+        var state = TransactionFormState(kind: .income)
+        state.amountText = "1000"
+        XCTAssertTrue(state.applyFee(
+            inputText: "0.38",
+            mode: .percentage,
+            currencyCode: "CNY"
+        ))
+
+        state.kind = .expense
+        state.prepareForKindChange()
+
+        XCTAssertEqual(state.amountText, "1000")
+        XCTAssertFalse(state.includesFee)
+        XCTAssertTrue(state.feeText.isEmpty)
+    }
+
     func testExchangeDraftUsesIndependentFeeWalletAndCanonicalFields() throws {
         let sourceAccount = Account(name: "港币", type: .bankCard)
         let destinationAccount = Account(name: "美元", type: .bankCard)

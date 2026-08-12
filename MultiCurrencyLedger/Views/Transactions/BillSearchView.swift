@@ -428,8 +428,12 @@ struct BillSearchView: View {
     @ViewBuilder
     private func searchFilterOverlay(in proxy: GeometryProxy) -> some View {
         if let panel = filterPresentation.panel {
-            let targetFrame = filterPanelTargetFrame(for: panel, canvasSize: proxy.size)
             let sourceFrame = filterPresentation.sourceFrame
+            let targetFrame = filterPanelTargetFrame(
+                for: panel,
+                canvasSize: proxy.size,
+                sourceFrame: sourceFrame
+            )
             ZStack(alignment: .topLeading) {
                 if filterPresentation.phase == .presented {
                     SearchFilterPanelSurface(content: filterSheet(panel))
@@ -495,8 +499,12 @@ struct BillSearchView: View {
         }
     }
 
-    private func filterPanelTargetFrame(for panel: SearchFilterPanel, canvasSize: CGSize) -> CGRect {
-        let horizontalInset: CGFloat = 12
+    private func filterPanelTargetFrame(
+        for panel: SearchFilterPanel,
+        canvasSize: CGSize,
+        sourceFrame: CGRect
+    ) -> CGRect {
+        let horizontalInset: CGFloat = 16
         let outerPadding: CGFloat = 16
         let headerHeight: CGFloat = 48
         let rowHeight: CGFloat = 50
@@ -521,10 +529,19 @@ struct BillSearchView: View {
                 + rowHeight * CGFloat(BillSearchSortMode.allCases.count)
         }
         let height = min(preferredHeight, max(230, canvasSize.height - 92))
+        let width = min(320, max(280, canvasSize.width * 0.78))
+        let x = min(
+            max(horizontalInset, sourceFrame.minX),
+            canvasSize.width - width - horizontalInset
+        )
+        let y = min(
+            max(8, sourceFrame.maxY + 10),
+            max(8, canvasSize.height - height - 8)
+        )
         return CGRect(
-            x: horizontalInset,
-            y: max(8, (canvasSize.height - height) * 0.5),
-            width: canvasSize.width - horizontalInset * 2,
+            x: x,
+            y: y,
+            width: width,
             height: height
         )
     }
@@ -561,9 +578,12 @@ struct BillSearchView: View {
     }
 
     private var filterTransitionAnimation: Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.20)
-            : .timingCurve(0.22, 0.72, 0.18, 1, duration: 0.62)
+        if reduceMotion {
+            return .easeOut(duration: 0.20)
+        }
+        return filterPresentation.phase == .opening
+            ? .spring(response: 0.42, dampingFraction: 0.70)
+            : .timingCurve(0.20, 0.72, 0.24, 1, duration: 0.24)
     }
 
     private var availableAccounts: [Account] {
@@ -829,10 +849,8 @@ private struct SearchFilterPanelSurface<Content: View>: View {
     }
 }
 
-/// The search filter transition needs its own shader because the expanding
-/// panel must keep a rounded silhouette throughout the Genie deformation.
-/// Relying only on `clipShape` is insufficient once SwiftUI rasterizes the
-/// view into the rectangular texture consumed by `layerEffect`.
+/// Search filters use the same compact floating-card motion as other
+/// source-anchored controls, without a full-panel mesh deformation.
 private struct SearchFilterGenieLayerModifier: ViewModifier {
     let progress: Double
     let panelFrame: CGRect
@@ -841,56 +859,16 @@ private struct SearchFilterGenieLayerModifier: ViewModifier {
     let reduceMotion: Bool
 
     func body(content: Content) -> some View {
-        if reduceMotion || panelFrame.isEmpty || tagFrame.isEmpty {
+        if reduceMotion {
             content
-                .scaleEffect(1 - 0.06 * CGFloat(progress), anchor: tagAnchor)
+                .scaleEffect(1 - 0.03 * CGFloat(progress))
                 .opacity(1 - progress)
         } else {
-            let shader = ShaderLibrary.billSearchFilterGenieLayer(
-                .float2(canvasSize),
-                .float4(
-                    panelFrame.minX,
-                    panelFrame.minY,
-                    panelFrame.width,
-                    panelFrame.height
-                ),
-                .float4(
-                    tagFrame.minX,
-                    tagFrame.minY,
-                    tagFrame.width,
-                    tagFrame.height
-                ),
-                .float(progress),
-                .float(28)
-            )
             content
-                .compositingGroup()
-                .layerEffect(shader, maxSampleOffset: maximumSampleOffset)
+                .scaleEffect(1 - 0.06 * CGFloat(progress))
+                .offset(y: 18 * CGFloat(progress))
+                .opacity(1 - progress)
         }
-    }
-
-    private var maximumSampleOffset: CGSize {
-        let horizontalEdgeTravel = max(
-            abs(panelFrame.minX - tagFrame.minX),
-            abs(panelFrame.maxX - tagFrame.maxX)
-        )
-        let bendTravel = abs(tagFrame.midX - panelFrame.midX) * 0.18
-        let verticalEdgeTravel = max(
-            abs(panelFrame.minY - tagFrame.minY),
-            abs(panelFrame.maxY - tagFrame.maxY)
-        )
-        return CGSize(
-            width: min(canvasSize.width, horizontalEdgeTravel + bendTravel + 2),
-            height: min(canvasSize.height, verticalEdgeTravel + 2)
-        )
-    }
-
-    private var tagAnchor: UnitPoint {
-        guard canvasSize.width > 1, canvasSize.height > 1 else { return .center }
-        return UnitPoint(
-            x: min(1, max(0, tagFrame.midX / canvasSize.width)),
-            y: min(1, max(0, tagFrame.midY / canvasSize.height))
-        )
     }
 }
 
@@ -1472,7 +1450,7 @@ private struct SearchFilterActionRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(role == .destructive ? Color.red : Color.primary)
+        .foregroundStyle(role == .destructive ? LedgerPalette.ink : Color.primary)
         .overlay(alignment: .bottom) { Divider().padding(.leading, 16) }
     }
 }

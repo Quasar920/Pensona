@@ -71,7 +71,8 @@ struct AssetChangeExplanationService {
             case .transfer:
                 break
             }
-            if let fee = transaction.feeAmount,
+            if transaction.type != .income,
+               let fee = transaction.feeAmount,
                let value = converted(
                 fee,
                 code: transaction.feeCurrencyCode ?? code,

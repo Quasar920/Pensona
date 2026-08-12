@@ -7,37 +7,39 @@ struct BillTopControls: View {
     let openSettings: () -> Void
 
     var body: some View {
-        GlassEffectContainer(spacing: 10) {
-            HStack(spacing: 10) {
-                Button(action: openBook) {
-                    Label(bookName, systemImage: "book.closed.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: LedgerLayout.minimumHitSize)
-                }
-                .buttonStyle(.glass)
-                .accessibilityHint("切换账本")
-                .accessibilityIdentifier("home-book-switcher")
-                .centeredGenieSourceFrame(id: "home-book-switcher")
+        HStack(spacing: 10) {
+            Button(action: openBook) {
+                Label(bookName, systemImage: "book.closed.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: LedgerLayout.minimumHitSize)
+                    .ledgerSurface(.floatingControl, cornerRadius: 25)
+            }
+            .buttonStyle(LedgerGlassPressStyle())
+            .accessibilityHint("切换账本")
+            .accessibilityIdentifier("home-book-switcher")
+            .centeredGenieSourceFrame(id: "home-book-switcher")
 
-                Spacer(minLength: 0)
+            Spacer(minLength: 0)
 
-                Button(action: openSearch) {
-                    Image(systemName: "magnifyingglass")
-                        .frame(width: LedgerLayout.minimumHitSize, height: LedgerLayout.minimumHitSize)
-                }
-                .buttonStyle(.glass)
+            circleButton("magnifyingglass", action: openSearch)
                 .accessibilityLabel("搜索账单")
 
-                Button(action: openSettings) {
-                    Image(systemName: "gearshape")
-                        .frame(width: LedgerLayout.minimumHitSize, height: LedgerLayout.minimumHitSize)
-                }
-                .buttonStyle(.glass)
+            circleButton("gearshape", action: openSettings)
                 .accessibilityLabel("设置")
-            }
         }
+    }
+
+    private func circleButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .foregroundStyle(.primary)
+                .frame(width: LedgerLayout.minimumHitSize, height: LedgerLayout.minimumHitSize)
+                .ledgerSurface(.floatingControl, cornerRadius: LedgerLayout.minimumHitSize / 2)
+        }
+        .buttonStyle(LedgerGlassPressStyle())
     }
 }
 
@@ -420,7 +422,7 @@ private struct BillTransactionRow: View {
     let transaction: LedgerTransaction
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             if let category = transaction.category {
                 CategoryIconImage(category: category, size: 40)
             } else {
@@ -434,24 +436,32 @@ private struct BillTransactionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(transaction.homeCategoryTitle)
                     .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let note = transaction.displayNote {
                     Text(note)
                         .font(.caption)
                         .foregroundStyle(.primary.opacity(0.78))
-                        .lineLimit(1)
                 }
-                Text("\(transaction.homeAccountName) · \(transaction.date.formatted(date: .omitted, time: .shortened))")
+                Text("\(transaction.receiptFundingText ?? transaction.homeAccountName) · \(transaction.date.formatted(date: .omitted, time: .shortened))")
                     .font(transaction.displayNote == nil ? .caption : .caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if let offerText = transaction.receiptOfferText(currencyCode: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? "CNY") {
+                    Text(offerText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let tagText = transaction.receiptTagText {
+                    Text(tagText)
+                        .font(.caption2)
+                        .foregroundStyle(LedgerPalette.accent)
+                }
             }
             Spacer(minLength: 8)
             Text(transaction.summaryAmount)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
                 .foregroundStyle(amountColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 70)

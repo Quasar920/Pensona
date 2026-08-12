@@ -28,7 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		A10000000000000000000001 /* MultiCurrencyLedger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MultiCurrencyLedger.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000001 /* OneTsu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OneTsu.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000011 /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		B10000000000000000000001 /* MultiCurrencyLedgerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MultiCurrencyLedgerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C10000000000000000000001 /* MultiCurrencyLedgerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MultiCurrencyLedgerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -104,7 +104,7 @@
 		A10000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A10000000000000000000001 /* MultiCurrencyLedger.app */,
+				A10000000000000000000001 /* OneTsu.app */,
 				B10000000000000000000001 /* MultiCurrencyLedgerTests.xctest */,
 				C10000000000000000000001 /* MultiCurrencyLedgerUITests.xctest */,
 			);
@@ -132,8 +132,8 @@
 			name = MultiCurrencyLedger;
 			packageProductDependencies = (
 			);
-			productName = MultiCurrencyLedger;
-			productReference = A10000000000000000000001 /* MultiCurrencyLedger.app */;
+			productName = OneTsu;
+			productReference = A10000000000000000000001 /* OneTsu.app */;
 			productType = "com.apple.product-type.application";
 		};
 		B10000000000000000000006 /* MultiCurrencyLedgerTests */ = {
@@ -396,7 +396,7 @@
 				DEVELOPMENT_TEAM = 97AV3SYW6Y;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MultiCurrencyLedger/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Pensona;
+				INFOPLIST_KEY_CFBundleDisplayName = OneTsu;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -405,7 +405,8 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ian.MultiCurrencyLedger;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = MultiCurrencyLedger;
+				PRODUCT_NAME = OneTsu;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -423,7 +424,7 @@
 				DEVELOPMENT_TEAM = 97AV3SYW6Y;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MultiCurrencyLedger/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Pensona;
+				INFOPLIST_KEY_CFBundleDisplayName = OneTsu;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -432,7 +433,8 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ian.MultiCurrencyLedger;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = MultiCurrencyLedger;
+				PRODUCT_NAME = OneTsu;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -454,7 +456,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MultiCurrencyLedger.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MultiCurrencyLedger";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OneTsu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OneTsu";
 			};
 			name = Debug;
 		};
@@ -471,7 +473,7 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MultiCurrencyLedger.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MultiCurrencyLedger";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OneTsu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OneTsu";
 			};
 			name = Release;
 		};

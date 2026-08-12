@@ -14,7 +14,7 @@ enum URLDraftError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedRoute: AppLocalization.string( "这不是多币种账本支持的记账链接")
+        case .unsupportedRoute: AppLocalization.string("brand.error.unsupportedURL")
         case let .unknownParameter(name): AppLocalization.string( "链接包含不支持的参数：\(name)")
         case let .duplicateParameter(name): AppLocalization.string( "链接参数重复：\(name)")
         case let .missingParameter(name): AppLocalization.string( "链接缺少必填参数：\(name)")

@@ -13,9 +13,13 @@ struct AmountSemanticStyle {
         case .neutral:
             return .primary
         case .expense:
-            return convention == .expenseRedIncomeGreen ? .red : .green
+            return convention == .expenseRedIncomeGreen
+                ? LedgerPalette.ink
+                : LedgerPalette.mutedInk
         case .income:
-            return convention == .expenseRedIncomeGreen ? .green : .red
+            return convention == .expenseRedIncomeGreen
+                ? LedgerPalette.mutedInk
+                : LedgerPalette.ink
         }
     }
 

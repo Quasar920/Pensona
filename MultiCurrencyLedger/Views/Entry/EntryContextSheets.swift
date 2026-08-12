@@ -111,12 +111,13 @@ struct EntryDateTimeSheet: View {
                         .padding(10)
                         .ledgerSurface(.sheetChrome, cornerRadius: 22)
                 } else {
-                    DatePicker("时间", selection: $draftDate, displayedComponents: [.hourAndMinute])
+                    DatePicker("选择日期与时间", selection: $draftDate)
                         .datePickerStyle(.wheel)
                         .labelsHidden()
                         .frame(maxWidth: .infinity)
                         .padding(18)
                         .ledgerSurface(.sheetChrome, cornerRadius: 22)
+                        .accessibilityIdentifier("entry-date-time-wheel")
                 }
                 Button("回到现在") { draftDate = .now }
                     .buttonStyle(.bordered)
@@ -285,7 +286,7 @@ struct EntryCreditCardRepaymentSheet: View {
                                 systemImage: "exclamationmark.triangle.fill"
                             )
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.red)
+                            .foregroundStyle(LedgerPalette.ink)
                         }
                     } else {
                         Text("本次为同币种还款，转出金额将直接冲减信用卡欠款。")

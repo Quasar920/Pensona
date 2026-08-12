@@ -43,7 +43,7 @@ struct InstallmentPlanManagementView: View {
                 ForEach(scopedPlans) { plan in planRow(plan) }
             }
             if let resultMessage {
-                Section { Label(resultMessage, systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                Section { Label(resultMessage, systemImage: "checkmark.circle.fill").foregroundStyle(LedgerPalette.ink) }
             }
         }
         .navigationTitle("分期管理")
@@ -93,8 +93,8 @@ struct InstallmentPlanManagementView: View {
                     }
                 }
                 Spacer()
-                if plan.isCompleted { Text("已结束").font(.caption).foregroundStyle(.green) }
-                else if plan.isPaused { Text("已暂停").font(.caption).foregroundStyle(.orange) }
+                if plan.isCompleted { Text("已结束").font(.caption).foregroundStyle(LedgerPalette.ink) }
+                else if plan.isPaused { Text("已暂停").font(.caption).foregroundStyle(LedgerPalette.mutedInk) }
             }
             HStack {
                 if !plan.isCompleted {

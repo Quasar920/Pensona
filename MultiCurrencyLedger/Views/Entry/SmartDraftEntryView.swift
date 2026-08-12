@@ -63,7 +63,7 @@ struct SmartDraftEntryView: View {
                     LabeledContent("账户", value: result.draft.sourceWallet?.account?.name ?? "-")
                     if let category = result.draft.category { LabeledContent("分类", value: category.name) }
                     ForEach(result.warnings, id: \.self) {
-                        Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                        Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(LedgerPalette.mutedInk)
                     }
                     Button("打开统一确认页") { pendingRoute = SmartDraftRoute(result: result) }
                 }

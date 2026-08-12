@@ -1,6 +1,6 @@
-# Pensona
+# OneTsu
 
-Pensona is a local-first personal finance app for iOS. It supports multiple books, accounts, currencies, budgets, assets, bills, savings goals, reporting, and automated bookkeeping workflows.
+OneTsu is a local-first personal finance app for iOS. It supports multiple books, accounts, currencies, budgets, assets, bills, savings goals, reporting, and automated bookkeeping workflows.
 
 Built with SwiftUI and SwiftData, the app uses a Liquid Glass visual style and is designed for iOS 26 and later.
 
@@ -14,7 +14,7 @@ Built with SwiftUI and SwiftData, the app uses a Liquid Glass visual style and i
 - Asset overview, savings goals, and statistics dashboards
 - CSV/spreadsheet import and export, plus local backup and restore
 - Screenshot recognition, Shortcuts, and URL-based quick-entry flows
-- Local app lock, CloudKit sync, and multilingual interface support
+- Local app lock and multilingual interface support
 - Unit tests, UI smoke tests, and performance tests
 
 ## Requirements
@@ -22,7 +22,7 @@ Built with SwiftUI and SwiftData, the app uses a Liquid Glass visual style and i
 - macOS
 - Xcode Beta (the project currently uses the iOS 26 SDK)
 - An iOS 26 or newer simulator or physical device
-- An Apple Developer account for device deployment or optional iCloud/CloudKit capabilities
+- An Apple Developer account only when device signing or distribution is needed
 
 ## Getting started
 
@@ -49,7 +49,7 @@ On first launch, the app creates its default categories and required local data 
 
 ## Demo data
 
-Pensona includes Debug-only sample data for UI review and functional testing.
+OneTsu includes Debug-only sample data for UI review and functional testing.
 
 In Xcode, open `Product → Scheme → Edit Scheme… → Run → Arguments`, then add the environment variable:
 
@@ -61,7 +61,7 @@ Run the app with an empty local database. This creates sample books, accounts, t
 
 ## Test accounts
 
-No test account is required. Pensona is local-first and does not include an application sign-in flow. Use a local account you create in the app, or enable the demo data described above.
+No test account is required. OneTsu is local-first and does not include an application sign-in flow. Use a local account you create in the app, or enable the demo data described above.
 
 ## Testing
 
@@ -82,16 +82,16 @@ xcodebuild \
 
 ## Data and privacy
 
-Pensona stores its core financial data locally by default.
+OneTsu stores its core financial data locally.
 
-- When CloudKit sync is enabled, data syncs through the user's own iCloud account.
+- Cloud sync and sharing are not exposed in the current build.
 - Import, export, and backup are initiated by the user.
 - Screenshot recognition and shortcut-entry features should only be used with content you are authorized to process.
 - Never commit real financial records, identity documents, card numbers, access tokens, or private keys to the repository.
 
 ## Developing with Codex and GPT-5.6
 
-Codex with GPT-5.6 can assist with requirements analysis, implementation, testing, code review, and GitHub publishing for this project. The model is a development aid rather than a runtime dependency: Pensona does not require an OpenAI API key to run.
+Codex with GPT-5.6 can assist with requirements analysis, implementation, testing, code review, and GitHub publishing for this project. The model is a development aid rather than a runtime dependency: OneTsu does not require an OpenAI API key to run.
 
 Recommended workflow:
 

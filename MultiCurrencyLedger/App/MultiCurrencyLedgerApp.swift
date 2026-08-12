@@ -3,83 +3,138 @@ import SwiftUI
 
 @main
 struct MultiCurrencyLedgerApp: App {
-    private let modelContainer: ModelContainer
     @State private var preferences = AppPreferences()
-    @State private var bootstrapState: BootstrapState = .loading
-
-    private enum BootstrapState: Equatable {
-        case loading
-        case ready
-        case failed
-    }
-
-    private var isUITesting: Bool {
-        ProcessInfo.processInfo.environment["UI_TEST_MODE"] == "1"
-    }
-
-    init() {
-        do {
-            modelContainer = try AppModelContainer.make()
-        } catch {
-            fatalError("无法创建本地数据库：\(error.localizedDescription)")
-        }
-    }
+    @State private var launchCoordinator = AppLaunchCoordinator()
 
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                RootTabView()
-                    .environment(preferences)
+            AppLaunchRootView(coordinator: launchCoordinator)
+                .environment(preferences)
+                .task { launchCoordinator.startIfNeeded() }
+                .onOpenURL(perform: launchCoordinator.enqueueExternalURL)
+        }
+    }
+}
 
-                if isUITesting, bootstrapState != .loading {
-                    Text(bootstrapState == .failed ? "seed failed" : "seed ready")
-                        .accessibilityIdentifier(bootstrapState == .failed ? "app-data-seed-failed" : "app-data-ready")
-                        .frame(width: 1, height: 1)
-                        .opacity(0.01)
-                        .allowsHitTesting(false)
+private struct AppLaunchRootView: View {
+    let coordinator: AppLaunchCoordinator
+
+    var body: some View {
+        ZStack {
+            switch coordinator.state {
+            case .initializing:
+                AppLaunchLoadingView()
+
+            case .needsOnboarding, .ready:
+                if let container = coordinator.modelContainer {
+                    RootTabView()
+                        .modelContainer(container)
+                } else {
+                    AppLaunchLoadingView()
                 }
+
+            case let .recoverableFailure(failure):
+                AppLaunchRecoveryView(
+                    failure: failure,
+                    retry: coordinator.retry,
+                    restore: coordinator.retryUsing
+                )
             }
-            .task {
-                do {
-                    try LegacyTagRemovalService.removeAll(context: modelContainer.mainContext)
-                    try InitialDataService.seedIfNeeded(context: modelContainer.mainContext)
-                    try PreviewDataService.seedIfRequested(context: modelContainer.mainContext)
-                    if isUITesting {
-                        let books = try modelContainer.mainContext.fetch(
-                            FetchDescriptor<LedgerBook>(
-                                sortBy: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)]
-                            )
-                        )
-                        UserDefaults.standard.set(
-                            books.first(where: { !$0.isArchived })?.id.uuidString ?? "",
-                            forKey: "selectedBookID"
-                        )
-                    }
-                    _ = AutomationDueService(context: modelContainer.mainContext).generateAllDue()
-                    bootstrapState = .ready
-                } catch {
-                    bootstrapState = .failed
-                    assertionFailure("默认分类初始化失败：\(error.localizedDescription)")
-                }
-                #if !PERFORMANCE_TESTING
-                if UserDefaults.standard.bool(forKey: CloudSyncService.enabledKey) {
-                    do {
-                        let baseCurrencyCode = UserDefaults.standard.string(forKey: "baseCurrencyCode")
-                            ?? SupportedCurrency.CNY.rawValue
-                        _ = try await CloudSyncService().synchronize(
-                            context: modelContainer.mainContext,
-                            baseCurrencyCode: baseCurrencyCode
-                        )
-                    } catch {
-                        UserDefaults.standard.set(
-                            error.localizedDescription,
-                            forKey: CloudSyncService.lastErrorKey
-                        )
-                    }
-                }
-                #endif
+
+            if coordinator.isUITesting, coordinator.state != .initializing {
+                let failed: Bool = {
+                    if case .recoverableFailure = coordinator.state { return true }
+                    return false
+                }()
+                Text(failed ? "seed failed" : "seed ready")
+                    .accessibilityIdentifier(failed ? "app-data-seed-failed" : "app-data-ready")
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
+                    .allowsHitTesting(false)
             }
         }
-        .modelContainer(modelContainer)
+    }
+}
+
+private struct AppLaunchLoadingView: View {
+    var body: some View {
+        ZStack {
+            LedgerPageBackground()
+            VStack(spacing: 14) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("launch.preparing.title")
+                    .font(.headline)
+                Text("launch.preparing.message")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct AppLaunchRecoveryView: View {
+    let failure: AppLaunchFailure
+    let retry: () -> Void
+    let restore: (MigrationStoreSnapshot) -> Void
+
+    var body: some View {
+        ZStack {
+            LedgerPageBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Image(systemName: "externaldrive.badge.exclamationmark")
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    Text("launch.failure.title")
+                        .font(.title2.weight(.semibold))
+
+                    Text(failure.message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+
+                    Button("launch.failure.retry", action: retry)
+                        .buttonStyle(.borderedProminent)
+
+                    if failure.stage == .openingDatabase, !failure.snapshots.isEmpty {
+                        Divider()
+                        Text("launch.failure.snapshotHeader")
+                            .font(.headline)
+                        Text("launch.failure.snapshotMessage")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(failure.snapshots) { snapshot in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(snapshot.title)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(snapshot.directoryURL.lastPathComponent)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                HStack {
+                                    Button("launch.failure.restore") {
+                                        restore(snapshot)
+                                    }
+                                    .buttonStyle(.bordered)
+
+                                    ShareLink(item: snapshot.directoryURL) {
+                                        Label("导出", systemImage: "square.and.arrow.up")
+                                    }
+                                }
+                            }
+                            .padding(14)
+                            .ledgerSurface(.functional, cornerRadius: 18)
+                        }
+                    }
+                }
+                .frame(maxWidth: 560, alignment: .leading)
+                .padding(24)
+            }
+        }
     }
 }

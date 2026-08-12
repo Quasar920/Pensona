@@ -4,6 +4,7 @@ import Observation
 
 struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
     @Environment(AppPreferences.self) private var preferences
     @StateObject private var appLock = AppLockManager()
     @State private var selection: LedgerTab = .ledger
@@ -21,10 +22,13 @@ struct RootTabView: View {
     @Query(sort: \LedgerBook.createdAt) private var books: [LedgerBook]
     @Query(sort: \Account.createdAt) private var accounts: [Account]
     @Query(sort: \LedgerCategory.sortOrder) private var categories: [LedgerCategory]
+    @Query(sort: \TransactionTemplate.updatedAt, order: .reverse)
+    private var templates: [TransactionTemplate]
     @Query(sort: \RecognitionImportRecord.createdAt, order: .reverse)
     private var recognitionRecords: [RecognitionImportRecord]
     @State private var pendingRecognitionRecord: RecognitionImportRecord?
     @State private var externalRouteError: String?
+    @State private var tapLogError: String?
     @State private var entrySavedToastID: UUID?
 
     var body: some View {
@@ -33,6 +37,7 @@ struct RootTabView: View {
             case .ledger:
                 HomeView(
                     addTransaction: presentation.presentNewEntry,
+                    openReports: { selection = .statistics },
                     isDetailPresented: $isLedgerDetailPresented
                 )
                 .rootEntryVisibility(.visible, for: .ledger)
@@ -52,7 +57,12 @@ struct RootTabView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isRootEntryVisible {
-                LedgerBottomBar(selection: $selection, addEntry: presentation.presentNewEntry)
+                VStack(alignment: .trailing, spacing: 6) {
+                    TapLogMenu(templates: scopedTapLogTemplates, record: recordTapLogTemplate)
+                        .padding(.trailing, LedgerLayout.pagePadding)
+
+                    LedgerBottomBar(selection: $selection, addEntry: presentation.presentNewEntry)
+                }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -75,6 +85,7 @@ struct RootTabView: View {
         }
         .sheet(item: $pendingRecognitionRecord, onDismiss: {
             pendingRecognitionRecordID = ""
+            DispatchQueue.main.async { consumePendingEntrancesIfNeeded() }
         }) { record in
             if let book = books.first(where: { $0.id == record.bookID }) {
                 RecognitionConfirmationView(record: record, book: book)
@@ -87,26 +98,30 @@ struct RootTabView: View {
         }
         .onAppear {
             applyPreviewScreenIfNeeded()
-            presentPendingRecognitionIfNeeded()
-            presentPendingExternalURLIfNeeded()
-            if !appLock.isLocked {
-                presentQuickLaunchIfNeeded()
-            }
+            consumePendingEntrancesIfNeeded()
         }
-        .onOpenURL(perform: handleExternalURL)
         .onChange(of: books.count) { _, _ in
-            presentPendingExternalURLIfNeeded()
-            presentQuickLaunchIfNeeded()
+            consumePendingEntrancesIfNeeded()
+        }
+        .onChange(of: pendingRecognitionRecordID) { _, _ in
+            consumePendingEntrancesIfNeeded()
+        }
+        .onChange(of: pendingExternalURL) { _, _ in
+            consumePendingEntrancesIfNeeded()
+        }
+        .onChange(of: presentation.isPresentingEntry) { _, isPresenting in
+            if !isPresenting { consumePendingEntrancesIfNeeded() }
         }
         .onChange(of: scenePhase) { _, phase in handleScenePhase(phase) }
         .onChange(of: appLock.isLocked) { _, locked in
             if !locked, scenePhase == .active {
-                presentQuickLaunchIfNeeded()
+                consumePendingEntrancesIfNeeded()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .appLockConfigurationChanged)) { _ in
             appLock.refreshConfiguration()
         }
+        .tint(LedgerPalette.accent)
         .preferredColorScheme(preferences.appearance.colorScheme)
         .environment(\.locale, preferences.locale)
         .id(preferences.language.rawValue)
@@ -121,6 +136,26 @@ struct RootTabView: View {
             get: { externalRouteError != nil },
             set: { if !$0 { externalRouteError = nil } }
         )) { Button("好") {} } message: { Text(externalRouteError ?? AppLocalization.string("未知错误")) }
+        .alert("TapLog 记账失败", isPresented: Binding(
+            get: { tapLogError != nil },
+            set: { if !$0 { tapLogError = nil } }
+        )) { Button("好") {} } message: {
+            Text(tapLogError ?? AppLocalization.string("未知错误"))
+        }
+    }
+
+    private var selectedBook: LedgerBook? {
+        books.first { $0.id.uuidString == selectedBookID }
+            ?? books.first { !$0.isArchived }
+    }
+
+    private var scopedTapLogTemplates: [TransactionTemplate] {
+        guard let bookID = selectedBook?.id else { return [] }
+        return templates.filter { $0.bookID == bookID && !$0.isArchived }
+    }
+
+    private var availableWallets: [CurrencyWallet] {
+        accounts.filter { !$0.isArchived }.flatMap(\.enabledWallets)
     }
 
     private var isRootEntryVisible: Bool {
@@ -166,17 +201,43 @@ struct RootTabView: View {
         #endif
     }
 
-    private func presentPendingRecognitionIfNeeded() {
-        guard let id = UUID(uuidString: pendingRecognitionRecordID) else { return }
-        pendingRecognitionRecord = recognitionRecords.first { $0.id == id && $0.status == .pendingConfirmation }
+    private func consumePendingEntrancesIfNeeded() {
+        guard !appLock.isLocked else { return }
+        if presentPendingRecognitionIfNeeded() { return }
+        if presentPendingExternalURLIfNeeded() { return }
+        presentQuickLaunchIfNeeded()
     }
 
-    private func presentPendingExternalURLIfNeeded() {
-        guard !pendingExternalURL.isEmpty,
-              let url = URL(string: pendingExternalURL),
-              !books.isEmpty else { return }
+    @discardableResult
+    private func presentPendingRecognitionIfNeeded() -> Bool {
+        if pendingRecognitionRecord != nil { return true }
+        guard !presentation.isPresentingEntry,
+              let id = UUID(uuidString: pendingRecognitionRecordID) else { return false }
+        guard let record = recognitionRecords.first(where: {
+            $0.id == id && $0.status == .pendingConfirmation
+        }) else {
+            pendingRecognitionRecordID = ""
+            return false
+        }
+        pendingRecognitionRecord = record
+        return true
+    }
+
+    @discardableResult
+    private func presentPendingExternalURLIfNeeded() -> Bool {
+        guard pendingRecognitionRecord == nil,
+              pendingRecognitionRecordID.isEmpty,
+              !presentation.isPresentingEntry,
+              !pendingExternalURL.isEmpty,
+              !books.isEmpty else { return false }
+        guard let url = URL(string: pendingExternalURL) else {
+            pendingExternalURL = ""
+            externalRouteError = AppLocalization.string("brand.error.unsupportedURL")
+            return true
+        }
         pendingExternalURL = ""
         handleExternalURL(url)
+        return true
     }
 
     private func handleExternalURL(_ url: URL) {
@@ -209,7 +270,7 @@ struct RootTabView: View {
         switch phase {
         case .active:
             if !appLock.isLocked {
-                presentQuickLaunchIfNeeded()
+                consumePendingEntrancesIfNeeded()
             }
         case .inactive, .background:
             appLock.lockForPrivacyIfNeeded()
@@ -226,6 +287,57 @@ struct RootTabView: View {
             guard entrySavedToastID == id else { return }
             withAnimation(LedgerMotion.reduced) { entrySavedToastID = nil }
         }
+    }
+
+    private func recordTapLogTemplate(_ template: TransactionTemplate) {
+        do {
+            let draft = try TransactionTemplateService(context: modelContext).resolve(
+                template,
+                wallets: availableWallets,
+                categories: categories.filter { !$0.isArchived },
+                date: .now
+            )
+            try LedgerService(context: modelContext).create(draft, bookID: template.bookID)
+            HapticFeedbackService().notification(.success)
+            showEntrySavedToast()
+        } catch {
+            HapticFeedbackService().notification(.error)
+            tapLogError = error.localizedDescription
+        }
+    }
+}
+
+private struct TapLogMenu: View {
+    let templates: [TransactionTemplate]
+    let record: (TransactionTemplate) -> Void
+
+    var body: some View {
+        Menu {
+            if templates.isEmpty {
+                Text("暂无可用模板")
+            } else {
+                ForEach(templates) { template in
+                    Button {
+                        record(template)
+                    } label: {
+                        Label(template.name, systemImage: template.type.symbolName)
+                    }
+                }
+            }
+        } label: {
+            Label("TapLog", systemImage: "bolt.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(LedgerPalette.ink)
+                .padding(.horizontal, 13)
+                .frame(minHeight: 36)
+                .background(LedgerPalette.surface, in: Capsule())
+                .overlay(Capsule().stroke(LedgerPalette.hairline, lineWidth: 1))
+                .shadow(color: LedgerPalette.ink.opacity(0.05), radius: 6, y: 2)
+        }
+        .buttonStyle(LedgerGlassPressStyle())
+        .accessibilityLabel("TapLog 快捷记账")
+        .accessibilityHint("选择模板后直接记账")
+        .accessibilityIdentifier("taplog-button")
     }
 }
 
@@ -383,6 +495,15 @@ enum LedgerTab: String, CaseIterable, Identifiable {
         case .assets: "creditcard"
         case .savings: "target"
         case .statistics: "chart.bar.xaxis"
+        }
+    }
+
+    var selectedSymbolName: String {
+        switch self {
+        case .ledger: "list.bullet.rectangle.fill"
+        case .assets: "creditcard.fill"
+        case .savings: "target"
+        case .statistics: "chart.bar.fill"
         }
     }
 

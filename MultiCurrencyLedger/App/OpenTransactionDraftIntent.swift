@@ -16,7 +16,7 @@ enum ShortcutDraftType: String, AppEnum {
 
 struct OpenTransactionDraftIntent: AppIntent {
     static let title: LocalizedStringResource = "打开待确认记账"
-    static let description = IntentDescription("使用多币种账本自己的参数创建草稿，并在 App 中确认后入账。")
+    static let description = IntentDescription("brand.intent.createDraft")
     static let openAppWhenRun = true
 
     @Parameter(title: "类型") var type: ShortcutDraftType

@@ -11,9 +11,9 @@ enum EntryContextOverlayKind: String, CaseIterable, Hashable {
 
     var usesGeniePresentation: Bool {
         switch self {
-        case .account, .aa, .splitPayment, .discount:
+        case .account, .aa, .splitPayment, .discount, .fee:
             true
-        case .fee, .foreignExpense:
+        case .foreignExpense:
             false
         }
     }
@@ -37,6 +37,7 @@ enum EntryContextInputTarget: Equatable {
     case aaPeople
     case splitPayment(index: Int)
     case discount
+    case fee
 }
 
 struct EntryContextDraft: Equatable {
@@ -46,6 +47,10 @@ struct EntryContextDraft: Equatable {
     var aaNote: String?
     var paymentParts: [PaymentPartFormState]
     var discountAmountText: String
+    var feeInputMode: FeeInputMode
+    var feeInputText: String
+    var feeTemplateName: String?
+    var feeCurrencyCode: String
 
     init(
         kind: EntryContextOverlayKind,
@@ -57,6 +62,15 @@ struct EntryContextDraft: Equatable {
         aaPeopleText = String(aaPeople)
         aaNote = state.aaSplitDraft?.note
         discountAmountText = state.discountAmountText
+        feeInputMode = state.includesFee && state.feeRatePercentage == nil
+            ? .fixedAmount
+            : .percentage
+        feeInputText = state.feeRatePercentage.map {
+            NSDecimalNumber(decimal: $0).stringValue
+        } ?? state.feeText
+        feeTemplateName = state.feeTemplateName
+        feeCurrencyCode = wallets.first(where: { $0.id == state.sourceWalletID })?.currencyCode
+            ?? SupportedCurrency.CNY.rawValue
 
         if kind == .splitPayment, (!state.usesSplitPayment || state.paymentParts.count < 2) {
             var stagedState = state
@@ -74,6 +88,10 @@ struct EntryContextDraft: Equatable {
 
     var hasValidAAPeople: Bool {
         validatedAAPeople != nil
+    }
+
+    var hasValidFeeInput: Bool {
+        DecimalParser.parse(feeInputText).map { $0 > 0 } == true
     }
 
     mutating func setAAPeople(_ value: Int) {
@@ -110,7 +128,14 @@ struct EntryContextDraft: Equatable {
             state.paymentParts = paymentParts
         case .discount:
             state.discountAmountText = discountAmountText
-        case .fee, .foreignExpense:
+        case .fee:
+            _ = state.applyFee(
+                inputText: feeInputText,
+                mode: feeInputMode,
+                currencyCode: feeCurrencyCode,
+                templateName: feeTemplateName
+            )
+        case .foreignExpense:
             break
         }
     }
@@ -165,6 +190,8 @@ struct EntryContextPresentationState: Equatable {
             .splitPayment(index: activePaymentPart)
         case .discount:
             .discount
+        case .fee:
+            .fee
         default:
             .mainAmount
         }
@@ -245,8 +272,13 @@ struct EntryContextPresentationState: Equatable {
     }
 
     mutating func synchronizePendingInput() -> Bool {
-        guard kind == .aa else { return true }
-        return draft?.synchronizeAAPeopleInput() == true
+        if kind == .aa {
+            return draft?.synchronizeAAPeopleInput() == true
+        }
+        if kind == .fee {
+            return draft?.hasValidFeeInput == true
+        }
+        return true
     }
 
     private mutating func reset() {

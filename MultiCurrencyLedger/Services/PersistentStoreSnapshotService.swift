@@ -1,6 +1,6 @@
 import Foundation
 
-struct MigrationStoreSnapshot: Identifiable {
+struct MigrationStoreSnapshot: Identifiable, Equatable {
     let directoryURL: URL
     let createdAt: Date
     var id: String { directoryURL.path }

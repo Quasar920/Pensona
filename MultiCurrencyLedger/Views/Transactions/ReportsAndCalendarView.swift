@@ -718,21 +718,21 @@ private enum ReportPalette {
     // 文字墨色使用语义色，保证深色模式与增强对比度下可读（交接文档 §10.2）
     static let ink = Color.primary
     static let secondaryInk = Color.secondary
-    static let expense = Color(red: 218 / 255, green: 82 / 255, blue: 91 / 255)
-    static let income = Color(red: 35 / 255, green: 157 / 255, blue: 112 / 255)
-    static let negativeBar = Color(red: 232 / 255, green: 118 / 255, blue: 104 / 255)
-    static let violet = Color(red: 111 / 255, green: 92 / 255, blue: 205 / 255)
-    static let warning = Color(red: 222 / 255, green: 133 / 255, blue: 42 / 255)
-    static let grid = Color(red: 111 / 255, green: 118 / 255, blue: 132 / 255).opacity(0.2)
+    static let expense = LedgerPalette.ink
+    static let income = LedgerPalette.mutedInk
+    static let negativeBar = LedgerPalette.ink.opacity(0.72)
+    static let violet = LedgerPalette.ink.opacity(0.58)
+    static let warning = LedgerPalette.mutedInk
+    static let grid = LedgerPalette.ink.opacity(0.16)
     static let sectorColors: [Color] = [
-        HomePalette.accent,
-        Color(red: 111 / 255, green: 92 / 255, blue: 205 / 255),
-        Color(red: 35 / 255, green: 157 / 255, blue: 112 / 255),
-        Color(red: 232 / 255, green: 118 / 255, blue: 104 / 255),
-        Color(red: 237 / 255, green: 170 / 255, blue: 67 / 255),
-        Color(red: 57 / 255, green: 171 / 255, blue: 190 / 255),
-        Color(red: 208 / 255, green: 91 / 255, blue: 149 / 255),
-        Color(red: 109 / 255, green: 126 / 255, blue: 151 / 255)
+        LedgerPalette.ink,
+        LedgerPalette.ink.opacity(0.84),
+        LedgerPalette.ink.opacity(0.70),
+        LedgerPalette.ink.opacity(0.58),
+        LedgerPalette.ink.opacity(0.46),
+        LedgerPalette.ink.opacity(0.36),
+        LedgerPalette.ink.opacity(0.28),
+        LedgerPalette.ink.opacity(0.20)
     ]
 }
 

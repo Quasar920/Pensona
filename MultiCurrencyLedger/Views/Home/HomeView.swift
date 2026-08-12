@@ -10,8 +10,11 @@ struct HomeView: View {
 
     @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
     private var books: [LedgerBook]
+    @Query(sort: \TransactionAttachment.createdAt, order: .reverse)
+    private var attachments: [TransactionAttachment]
 
     let addTransaction: () -> Void
+    let openReports: () -> Void
     @Binding private var isDetailPresented: Bool
 
     @State private var billState = BillPageState(selectedMonth: Calendar.current.date(
@@ -33,9 +36,11 @@ struct HomeView: View {
 
     init(
         addTransaction: @escaping () -> Void = {},
+        openReports: @escaping () -> Void = {},
         isDetailPresented: Binding<Bool> = .constant(false)
     ) {
         self.addTransaction = addTransaction
+        self.openReports = openReports
         _isDetailPresented = isDetailPresented
     }
 
@@ -80,80 +85,17 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack(path: $detailPath) {
-            ZStack {
-                HomePalette.background.ignoresSafeArea()
+            AnyView(
+                ZStack {
+                    LedgerPageBackground()
 
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: LedgerLayout.sectionSpacing) {
-                        BillTopControls(
-                            bookName: selectedBook?.name ?? AppLocalization.string("选择账本"),
-                            openBook: presentBookSwitcher,
-                            openSearch: { isBillSearchPresented = true },
-                            openSettings: { presentation.present(.settings) }
-                        )
-
-                        BillMonthHeader(
-                            selectedMonth: billState.selectedMonth,
-                            openPicker: { presentation.present(.monthPicker) },
-                            changeMonth: changeMonth
-                        )
-
-                        if let snapshot {
-                            BillMonthlySummaryPanel(
-                                summary: snapshot.summary,
-                                currencyCode: baseCurrencyCode,
-                                openBudget: openBudgetEditor
-                            )
-
-                            if snapshot.dayGroups.isEmpty {
-                                EmptyRecordsView(
-                                    title: billState.searchText.isEmpty
-                                        ? emptyState.title
-                                        : AppLocalization.string("没有匹配的账单"),
-                                    message: billState.searchText.isEmpty
-                                        ? emptyState.message
-                                        : AppLocalization.string("试试其他关键词"),
-                                    addTransaction: billState.searchText.isEmpty ? addTransaction : nil
-                                )
-                                .ledgerSurface(.functional)
-                            } else {
-                                ForEach(snapshot.dayGroups) { group in
-                                    BillDailyGroup(
-                                        group: group,
-                                        expandedTransactionID: $expandedTransactionID,
-                                        open: openTransaction,
-                                        edit: edit,
-                                        delete: requestDelete
-                                    )
-                                }
-                            }
-                        } else {
-                            ProgressView("正在加载账单")
-                                .frame(maxWidth: .infinity, minHeight: 180)
-                                .ledgerSurface(.functional)
-                        }
+                    ScrollView(showsIndicators: false) {
+                        scrollContent
                     }
-                    .padding(.horizontal, LedgerLayout.pagePadding)
-                    .padding(.top, 12)
-                    .padding(.bottom, RootEntryLayout.scrollContentClearance)
                 }
-            }
+            )
             .overlay {
-                CenteredGenieCardHost(
-                    presentation: $bookSwitcherGenie,
-                    maximumWidth: 390,
-                    onDismissed: presentPendingBookSheet
-                ) {
-                    HomeBookSwitcherCard(
-                        books: activeBooks,
-                        selectedBookID: $selectedBookID,
-                        dismiss: { bookSwitcherGenie.requestDismissal() },
-                        manageBooks: {
-                            pendingBookSheet = .bookManagement
-                            bookSwitcherGenie.requestDismissal()
-                        }
-                    )
-                }
+                bookSwitcherOverlay
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: LedgerTransaction.self) {
@@ -183,37 +125,24 @@ struct HomeView: View {
             } message: {
                 Text("删除后，相关账户余额会同步回滚。")
             }
-            .alert("操作失败", isPresented: Binding(
-                get: { transactionActionError != nil },
-                set: { if !$0 { transactionActionError = nil } }
-            )) { Button("好") {} } message: {
-                Text(transactionActionError ?? AppLocalization.string("未知错误"))
-            }
+            .modifier(HomeErrorAlertModifier(
+                transactionActionError: $transactionActionError,
+                loadError: $loadError
+            ))
             .onAppear {
                 ensureSelectedBook()
                 applyPreviewStateIfNeeded()
             }
             .onChange(of: books.count) { _, _ in ensureSelectedBook() }
-            .onPreferenceChange(CenteredGenieSourceFramePreferenceKey.self) { frames in
-                if let frame = frames["home-book-switcher"], !frame.isEmpty {
-                    bookSwitcherSourceFrame = frame
-                }
-            }
+            .onPreferenceChange(
+                CenteredGenieSourceFramePreferenceKey.self,
+                perform: updateBookSwitcherSourceFrame
+            )
             .task(id: loadKey) {
-                if !billState.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    try? await Task.sleep(for: .milliseconds(250))
-                    guard !Task.isCancelled else { return }
-                }
-                loadSnapshot()
+                await refreshSnapshotForCurrentQuery()
             }
             .onReceive(NotificationCenter.default.publisher(for: .ledgerTransactionsDidChange)) { _ in
                 refreshGeneration += 1
-            }
-            .alert("账单加载失败", isPresented: Binding(
-                get: { loadError != nil },
-                set: { if !$0 { loadError = nil } }
-            )) { Button("好") {} } message: {
-                Text(loadError ?? AppLocalization.string("未知错误"))
             }
         }
         .coordinateSpace(name: CenteredGenieCoordinateSpace.name)
@@ -232,6 +161,69 @@ struct HomeView: View {
         if !activeBooks.contains(where: { $0.id.uuidString == selectedBookID }) {
             selectedBookID = first.id.uuidString
         }
+    }
+
+    private var topControls: some View {
+        BillTopControls(
+            bookName: selectedBook?.name ?? AppLocalization.string("选择账本"),
+            openBook: presentBookSwitcher,
+            openSearch: { isBillSearchPresented = true },
+            openSettings: { presentation.present(.settings) }
+        )
+    }
+
+    private var scrollContent: some View {
+        LazyVStack(spacing: 24) {
+            topControls
+            monthHeader
+            receiptLedger
+        }
+        .padding(.horizontal, LedgerLayout.pagePadding)
+        .padding(.top, 10)
+        .padding(.bottom, RootEntryLayout.scrollContentClearance)
+    }
+
+    private var bookSwitcherOverlay: some View {
+        CenteredGenieCardHost(
+            presentation: $bookSwitcherGenie,
+            maximumWidth: 390,
+            transitionStyle: .floatingCard,
+            onDismissed: presentPendingBookSheet
+        ) {
+            HomeBookSwitcherCard(
+                books: activeBooks,
+                selectedBookID: $selectedBookID,
+                dismiss: { bookSwitcherGenie.requestDismissal() },
+                manageBooks: {
+                    pendingBookSheet = .bookManagement
+                    bookSwitcherGenie.requestDismissal()
+                }
+            )
+        }
+    }
+
+    private var monthHeader: some View {
+        OneTsuMonthHeader(
+            selectedMonth: billState.selectedMonth,
+            openPicker: { presentation.present(.monthPicker) },
+            changeMonth: changeMonth
+        )
+    }
+
+    private var receiptLedger: some View {
+        OneTsuReceiptLedger(
+            snapshot: snapshot,
+            currencyCode: baseCurrencyCode,
+            emptyState: emptyState,
+            loadError: loadError,
+            openBudget: openBudgetEditor,
+            openTransaction: openTransaction,
+            editTransaction: edit,
+            deleteTransaction: requestDelete,
+            addTransaction: addTransaction,
+            attachmentTransactionIDs: Set(attachments.map(\.transactionID)),
+            retry: { refreshGeneration += 1 }
+        )
     }
 
     private func presentBookSwitcher() {
@@ -340,6 +332,53 @@ struct HomeView: View {
         } catch {
             loadError = error.localizedDescription
         }
+    }
+
+    private func refreshSnapshotForCurrentQuery() async {
+        if !billState.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+        }
+        loadSnapshot()
+    }
+
+    private func updateBookSwitcherSourceFrame(_ frames: [String: CGRect]) {
+        if let frame = frames["home-book-switcher"], !frame.isEmpty {
+            bookSwitcherSourceFrame = frame
+        }
+    }
+}
+
+private struct HomeErrorAlertModifier: ViewModifier {
+    @Binding var transactionActionError: String?
+    @Binding var loadError: String?
+
+    func body(content: Content) -> some View {
+        content
+            .alert("操作失败", isPresented: transactionActionErrorPresented) {
+                Button("好") {}
+            } message: {
+                Text(transactionActionError ?? AppLocalization.string("未知错误"))
+            }
+            .alert("账单加载失败", isPresented: loadErrorPresented) {
+                Button("好") {}
+            } message: {
+                Text(loadError ?? AppLocalization.string("未知错误"))
+            }
+    }
+
+    private var transactionActionErrorPresented: Binding<Bool> {
+        Binding(
+            get: { transactionActionError != nil },
+            set: { if !$0 { transactionActionError = nil } }
+        )
+    }
+
+    private var loadErrorPresented: Binding<Bool> {
+        Binding(
+            get: { loadError != nil },
+            set: { if !$0 { loadError = nil } }
+        )
     }
 }
 
@@ -531,37 +570,17 @@ private struct HomeSheetPresenter: View {
 }
 
 enum HomePalette {
-    static let accent = Color(red: 22 / 255, green: 134 / 255, blue: 232 / 255)
+    static let accent = LedgerPalette.ink
 
-    static let background = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.045, green: 0.059, blue: 0.078, alpha: 1)
-            : UIColor(white: 0.965, alpha: 1)
-    })
+    static let background = LedgerPalette.background
 
-    static let expense = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 1.0, green: 0.50, blue: 0.47, alpha: 1)
-            : UIColor(red: 0.76, green: 0.24, blue: 0.22, alpha: 1)
-    })
+    static let expense = LedgerPalette.ink
 
-    static let glassBorder = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(white: 1, alpha: 0.12)
-            : UIColor(white: 1, alpha: 0.52)
-    })
+    static let glassBorder = LedgerPalette.hairline
 
-    static let gaugeTrack = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(white: 1, alpha: 0.14)
-            : UIColor(white: 1, alpha: 0.88)
-    })
+    static let gaugeTrack = LedgerPalette.selectionFill
 
-    static let gaugeProgress = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(white: 0.90, alpha: 1)
-            : UIColor(white: 0.26, alpha: 1)
-    })
+    static let gaugeProgress = LedgerPalette.ink
 
     static let glassHighlightShadow = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
@@ -848,7 +867,7 @@ struct HomeTransactionRow: View {
     let transaction: LedgerTransaction
 
     var body: some View {
-        HStack(spacing: 13) {
+        HStack(alignment: .top, spacing: 13) {
             if let category = transaction.category {
                 CategoryIconImage(category: category, size: 40)
             } else {
@@ -859,15 +878,15 @@ struct HomeTransactionRow: View {
             }
 
             VStack(alignment: .leading, spacing: 7) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(transaction.homeCategoryTitle)
+                HStack(alignment: .top, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(transaction.homeCategoryTitle)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text("/ \(transaction.figmaHomeTimestamp)")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        Text(transaction.figmaHomeTimestamp)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(.secondary)
+                    }
 
                     Spacer(minLength: 6)
 
@@ -875,24 +894,27 @@ struct HomeTransactionRow: View {
                         .font(.system(size: 14, weight: .bold))
                         .monospacedDigit()
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.70)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(transaction.homeDetailText)
-                        .lineLimit(1)
-                    Spacer(minLength: 6)
-                    Text(transaction.homeAccountName)
-                        .lineLimit(1)
+                    Text(transaction.receiptFundingText ?? transaction.homeAccountName)
+                    if let offerText = transaction.receiptOfferText(currencyCode: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? "CNY") {
+                        Text(offerText)
+                    }
+                    if let tagText = transaction.receiptTagText {
+                        Text(tagText)
+                    }
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, 18)
+        .padding(18)
         .frame(maxWidth: .infinity)
-        .frame(height: 80)
         .ledgerContentSurface(cornerRadius: 25)
         .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
         .padding(.horizontal, 6)
@@ -1008,6 +1030,68 @@ extension LedgerTransaction {
 
     var homeDetailText: String {
         displayNote ?? type.title
+    }
+
+    /// The receipt timeline treats a transaction as a small human-readable
+    /// record. The ledger book itself is intentionally absent here because the
+    /// page-level book selector already defines the scope.
+    var receiptTitle: String {
+        let merchant = merchantOrCounterparty?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let merchant, !merchant.isEmpty { return merchant }
+        if let displayNote { return displayNote }
+        return homeCategoryTitle
+    }
+
+    var receiptSubtitle: String? {
+        guard receiptTitle != displayNote else { return nil }
+        return displayNote
+    }
+
+    var receiptTagText: String? {
+        let names = tags
+            .map(\.name)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .sorted()
+        return names.isEmpty ? nil : names.map { "#\($0)" }.joined(separator: " ")
+    }
+
+    var receiptFundingText: String? {
+        let parts = paymentParts.sorted { $0.sortOrder < $1.sortOrder }
+        if !parts.isEmpty {
+            let formattedParts = parts.compactMap { part -> String? in
+                guard let wallet = part.wallet else { return nil }
+                let genericBookLikeNames: Set<String> = ["日常账户", "Everyday Account"]
+                let accountName = wallet.account.map { account in
+                    genericBookLikeNames.contains(account.name) ? account.type.title : account.name
+                } ?? wallet.currencyCode
+                return "\(accountName) \(MoneyFormatter.string(part.amount, currencyCode: wallet.currencyCode))"
+            }
+            if !formattedParts.isEmpty {
+                return formattedParts.joined(separator: " + ")
+            }
+        }
+        let account = sourceAccount ?? destinationAccount
+        guard let account else { return nil }
+        let genericBookLikeNames: Set<String> = ["日常账户", "Everyday Account"]
+        let name = genericBookLikeNames.contains(account.name) ? account.type.title : account.name
+        if account.type.supportsCardLastFour,
+           let lastFour = AccountCardIdentityStore().lastFour(for: account.id),
+           !name.contains(lastFour) {
+            return "\(name) · 尾号 \(lastFour)"
+        }
+        return name
+    }
+
+    func receiptOfferText(currencyCode: String) -> String? {
+        var details: [String] = []
+        if let discountAmount, discountAmount > 0 {
+            details.append("优惠 \(MoneyFormatter.compactString(discountAmount, currencyCode: currencyCode))")
+        }
+        if let feeAmount, feeAmount > 0 {
+            details.append("手续费 \(MoneyFormatter.plain(feeAmount, currencyCode: feeCurrencyCode ?? currencyCode))")
+        }
+        return details.isEmpty ? nil : details.joined(separator: " · ")
     }
 
     var homeAccountName: String {

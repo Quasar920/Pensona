@@ -22,6 +22,8 @@ struct TransactionFormState {
     var excludesFromMonthlyExpense: Bool
     var includesFee: Bool
     var feeText: String
+    var feeRatePercentage: Decimal?
+    var feeTemplateName: String?
     var settledAmountText: String
     var referenceExchangeRateText: String
     var foreignSettlementMode: ForeignCurrencySettlementMode?
@@ -73,6 +75,8 @@ struct TransactionFormState {
         excludesFromMonthlyExpense = false
         includesFee = false
         feeText = ""
+        feeRatePercentage = nil
+        feeTemplateName = nil
         settledAmountText = ""
         referenceExchangeRateText = ""
         foreignSettlementMode = nil
@@ -114,6 +118,15 @@ struct TransactionFormState {
         excludesFromMonthlyExpense = draft.excludesFromMonthlyExpense
         includesFee = draft.feeAmount != nil
         feeText = draft.feeAmount.map(Self.string) ?? ""
+        if draft.type == .income,
+           let original = draft.originalAmount,
+           original > 0,
+           let fee = draft.feeAmount {
+            feeRatePercentage = fee * 100 / original
+        } else {
+            feeRatePercentage = nil
+        }
+        feeTemplateName = nil
         settledAmountText = draft.settledAmount.map(Self.string) ?? ""
         referenceExchangeRateText = draft.referenceExchangeRate.map(Self.string) ?? ""
         foreignSettlementMode = draft.foreignSettlementMode
@@ -133,6 +146,9 @@ struct TransactionFormState {
     }
 
     mutating func prepareForKindChange() {
+        if includesFee, let originalAmount {
+            amountText = Self.string(originalAmount)
+        }
         categoryID = nil
         destinationWalletID = nil
         feeWalletID = nil
@@ -141,6 +157,9 @@ struct TransactionFormState {
         exchangeRateText = ""
         includesFee = false
         feeText = ""
+        feeRatePercentage = nil
+        feeTemplateName = nil
+        originalAmount = nil
         settledAmountText = ""
         referenceExchangeRateText = ""
         foreignSettlementMode = nil
@@ -163,6 +182,8 @@ struct TransactionFormState {
         categoryID = nil
         feeText = ""
         includesFee = false
+        feeRatePercentage = nil
+        feeTemplateName = nil
         feeWalletID = sourceWalletID
         discountWalletID = nil
         note = ""
@@ -294,15 +315,24 @@ struct TransactionFormState {
 
         let feeAmount: Decimal?
         let feeWallet: CurrencyWallet?
-        if isMovement, includesFee {
+        if includesFee {
             guard let parsed = DecimalParser.parse(feeText), parsed > 0 else {
                 throw ValidationError("请输入大于 0 的手续费")
             }
-            guard let selectedFeeWallet = wallets.first(where: { $0.id == feeWalletID }) else {
-                throw ValidationError("请选择手续费钱包")
-            }
             feeAmount = parsed
-            feeWallet = selectedFeeWallet
+            switch kind {
+            case .income:
+                feeWallet = nil
+            case .expense:
+                feeWallet = resolvedSourceWallet
+            case .transfer, .exchange:
+                guard let selectedFeeWallet = wallets.first(where: { $0.id == feeWalletID }) else {
+                    throw ValidationError("请选择手续费钱包")
+                }
+                feeWallet = selectedFeeWallet
+            case .adjustment:
+                feeWallet = nil
+            }
         } else {
             feeAmount = nil
             feeWallet = nil
@@ -376,6 +406,61 @@ struct TransactionFormState {
     var discountAmountText: String {
         get { discountAmount.map(Self.string) ?? "" }
         set { discountAmount = DecimalParser.parse(newValue) }
+    }
+
+    var feeCalculationBaseAmount: Decimal? {
+        if kind == .income, let originalAmount, includesFee {
+            return originalAmount
+        }
+        return DecimalParser.parse(amountText)
+    }
+
+    mutating func applyFee(
+        inputText: String,
+        mode: FeeInputMode,
+        currencyCode: String,
+        templateName: String? = nil
+    ) -> Bool {
+        guard let baseAmount = feeCalculationBaseAmount,
+              baseAmount > 0,
+              let input = DecimalParser.parse(inputText),
+              input > 0 else {
+            return false
+        }
+        let fee = FeeCalculator.fee(
+            baseAmount: baseAmount,
+            input: input,
+            mode: mode,
+            currencyCode: currencyCode
+        )
+        guard fee > 0, kind != .income || fee < baseAmount else { return false }
+
+        includesFee = true
+        feeText = Self.string(fee)
+        feeRatePercentage = mode == .percentage ? input : nil
+        feeTemplateName = templateName
+        if kind == .income {
+            originalAmount = baseAmount
+            amountText = Self.string(
+                FeeCalculator.rounded(baseAmount - fee, currencyCode: currencyCode)
+            )
+            feeWalletID = nil
+        } else if feeWalletID == nil {
+            feeWalletID = sourceWalletID
+        }
+        return true
+    }
+
+    mutating func clearFee() {
+        if kind == .income, let originalAmount, includesFee {
+            amountText = Self.string(originalAmount)
+            self.originalAmount = nil
+        }
+        includesFee = false
+        feeText = ""
+        feeRatePercentage = nil
+        feeTemplateName = nil
+        feeWalletID = nil
     }
 
     mutating func setSplitPaymentEnabled(_ enabled: Bool, wallets: [CurrencyWallet]) {

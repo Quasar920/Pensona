@@ -129,7 +129,8 @@ struct MonthlySummaryService {
                 break
             }
 
-            if let fee = transaction.feeAmount, fee != 0 {
+            if transaction.type != .income,
+               let fee = transaction.feeAmount, fee != 0 {
                 add(
                     fee,
                     currencyCode: transaction.feeCurrencyCode ?? principalCode,
