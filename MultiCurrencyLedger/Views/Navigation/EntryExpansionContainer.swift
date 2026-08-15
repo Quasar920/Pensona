@@ -34,7 +34,6 @@ struct EntryExpansionContainer: View {
 
     @ViewBuilder
     private func shell(route: RootEntryPresentation, in proxy: GeometryProxy) -> some View {
-        let compact: CGFloat = 56
         let expandedWidth = proxy.size.width
         // This container ignores the safe area, so use the window inset to
         // locate the Dynamic Island rather than letting the sheet overlap it.
@@ -44,7 +43,7 @@ struct EntryExpansionContainer: View {
         let topClearance = dynamicIslandBottom + 1
         let bottomClearance: CGFloat = 0
         let expandedHeight = max(
-            compact,
+            56,
             proxy.size.height - topClearance - bottomClearance
         )
         ZStack(alignment: .top) {
@@ -69,29 +68,19 @@ struct EntryExpansionContainer: View {
             }
                 .buttonStyle(.plain)
                 .opacity(contentVisible ? 1 : 0)
-                .gesture(topDragGesture(in: proxy))
                 .accessibilityLabel("拖拽关闭记账")
                 .accessibilityIdentifier("receipt-entry-drag-handle")
         }
-        .frame(
-            width: shellExpanded ? expandedWidth : compact,
-            height: shellExpanded ? expandedHeight : compact
-        )
-        .clipShape(RoundedRectangle(
-            cornerRadius: shellExpanded ? 30 : compact / 2,
-            style: .continuous
-        ))
+        .frame(width: expandedWidth, height: expandedHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .overlay {
-            RoundedRectangle(
-                cornerRadius: shellExpanded ? 30 : compact / 2,
-                style: .continuous
-            )
-                .stroke(.white.opacity(shellExpanded ? 0.22 : 0.46), lineWidth: 0.75)
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(.white.opacity(0.22), lineWidth: 0.75)
         }
-        .offset(y: shellExpanded ? dragOffset : -12)
+        .offset(y: shellExpanded ? dragOffset : proxy.size.height + 80)
         .padding(.bottom, bottomClearance)
+        .simultaneousGesture(topDragGesture(in: proxy))
         .accessibilityIdentifier("receipt-entry-sheet")
-        .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical, value: shellExpanded)
     }
 
     @ViewBuilder
@@ -117,7 +106,7 @@ struct EntryExpansionContainer: View {
     }
 
     private func topDragGesture(in proxy: GeometryProxy) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .onChanged { value in
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
@@ -135,16 +124,16 @@ struct EntryExpansionContainer: View {
     }
 
     private func interactiveDragOffset(for translation: CGFloat) -> CGFloat {
-        translation >= 0 ? translation : translation * 0.22
+        translation >= 0 ? translation : translation * 0.14
     }
 
     private func dismissFromDrag(in proxy: GeometryProxy) {
         let dismissalDistance = max(proxy.size.height + 80, dragOffset)
-        withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive) {
+        withAnimation(reduceMotion ? LedgerMotion.reduced : sheetDismissAnimation) {
             dragOffset = dismissalDistance
         }
         Task { @MainActor in
-            if !reduceMotion { try? await Task.sleep(for: .milliseconds(240)) }
+            if !reduceMotion { try? await Task.sleep(for: .milliseconds(300)) }
             contentVisible = false
             shellExpanded = false
             dragOffset = 0
@@ -170,16 +159,11 @@ struct EntryExpansionContainer: View {
         hasUnsavedChanges = false
         dragOffset = 0
         shellExpanded = false
-        contentVisible = false
+        contentVisible = true
         await Task.yield()
-        withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical) {
+        withAnimation(reduceMotion ? LedgerMotion.reduced : sheetPresentationAnimation) {
             shellExpanded = true
         }
-        if !reduceMotion {
-            try? await Task.sleep(for: .milliseconds(190))
-        }
-        guard !Task.isCancelled else { return }
-        withAnimation(LedgerMotion.reduced) { contentVisible = true }
     }
 
     private func requestClose() {
@@ -187,17 +171,33 @@ struct EntryExpansionContainer: View {
     }
 
     private func collapse(saved: Bool = false) {
-        withAnimation(LedgerMotion.reduced) { contentVisible = false }
+        withAnimation(reduceMotion ? LedgerMotion.reduced : sheetDismissAnimation) {
+            dragOffset = dismissalTravelDistance
+        }
         Task { @MainActor in
-            if !reduceMotion { try? await Task.sleep(for: .milliseconds(110)) }
-            withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical) {
-                shellExpanded = false
-                dragOffset = 0
-            }
-            if !reduceMotion { try? await Task.sleep(for: .milliseconds(210)) }
+            if !reduceMotion { try? await Task.sleep(for: .milliseconds(300)) }
+            contentVisible = false
+            shellExpanded = false
+            dragOffset = 0
             presentation.finishDismissal()
             if saved { onEntrySaved() }
         }
+    }
+
+    private var sheetPresentationAnimation: Animation {
+        .spring(response: 0.42, dampingFraction: 0.90)
+    }
+
+    private var sheetDismissAnimation: Animation {
+        .timingCurve(0.20, 0.80, 0.20, 1, duration: 0.30)
+    }
+
+    private var dismissalTravelDistance: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .bounds.height ?? 1_000
     }
 }
 
