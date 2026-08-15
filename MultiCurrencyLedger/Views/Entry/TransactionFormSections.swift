@@ -267,7 +267,8 @@ struct LegacyEntryComposerView: View {
                         type: categoryKind,
                         selectedID: $state.categoryID,
                         isReordering: $categoryReordering,
-                        isPresentingManagementOverlay: $categoryManagementOverlay
+                        isPresentingManagementOverlay: $categoryManagementOverlay,
+                        isCompactCategoryListExpanded: .constant(false)
                     )
                     EntryInlineValidation(message: validation[.category])
                 } else if state.kind == .transfer || state.kind == .exchange {

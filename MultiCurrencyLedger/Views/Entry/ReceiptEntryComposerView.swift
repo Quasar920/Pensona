@@ -359,8 +359,8 @@ private struct ReceiptEntryComposerView: View {
                 selectedID: $state.categoryID,
                 isReordering: $categoryReordering,
                 isPresentingManagementOverlay: $categoryManagementOverlay,
-                usesCompactReceiptLayout: true,
-                compactExpansionChanged: { isCategoryPickerExpanded = $0 }
+                isCompactCategoryListExpanded: $isCategoryPickerExpanded,
+                usesCompactReceiptLayout: true
             )
             EntryInlineValidation(message: validation[.category])
         case .transfer, .exchange:

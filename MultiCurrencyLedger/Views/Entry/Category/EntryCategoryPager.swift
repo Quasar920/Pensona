@@ -11,8 +11,8 @@ struct EntryCategoryPager: View {
     @Binding var selectedID: UUID?
     @Binding var isReordering: Bool
     @Binding var isPresentingManagementOverlay: Bool
+    @Binding var isCompactCategoryListExpanded: Bool
     var usesCompactReceiptLayout = false
-    var compactExpansionChanged: (Bool) -> Void = { _ in }
 
     @State private var expandedRootID: UUID?
     @State private var actionCategory: LedgerCategory?
@@ -26,7 +26,6 @@ struct EntryCategoryPager: View {
     @State private var errorMessage: String?
     @State private var globalFrame: CGRect = .zero
     @State private var gridGlobalFrame: CGRect = .zero
-    @State private var isCompactCategoryListExpanded = false
 
     private var relevant: [LedgerCategory] {
         categories.filter { $0.type == type && !$0.isArchived }
@@ -435,7 +434,6 @@ struct EntryCategoryPager: View {
 
     private func setCompactCategoryListExpanded(_ isExpanded: Bool) {
         isCompactCategoryListExpanded = isExpanded
-        compactExpansionChanged(isExpanded)
     }
 
     private func showActions(_ category: LedgerCategory) {

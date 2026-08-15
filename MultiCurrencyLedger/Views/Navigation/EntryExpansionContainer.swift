@@ -29,6 +29,7 @@ struct EntryExpansionContainer: View {
             }
         }
         .ignoresSafeArea(.container, edges: .all)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     @ViewBuilder
@@ -68,7 +69,7 @@ struct EntryExpansionContainer: View {
             }
                 .buttonStyle(.plain)
                 .opacity(contentVisible ? 1 : 0)
-                .gesture(topDragGesture)
+                .gesture(topDragGesture(in: proxy))
                 .accessibilityLabel("拖拽关闭记账")
                 .accessibilityIdentifier("receipt-entry-drag-handle")
         }
@@ -87,13 +88,10 @@ struct EntryExpansionContainer: View {
             )
                 .stroke(.white.opacity(shellExpanded ? 0.22 : 0.46), lineWidth: 0.75)
         }
-        .offset(y: shellExpanded ? max(0, dragOffset) : -12)
+        .offset(y: shellExpanded ? dragOffset : -12)
         .padding(.bottom, bottomClearance)
         .accessibilityIdentifier("receipt-entry-sheet")
         .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical, value: shellExpanded)
-        .transaction { transaction in
-            if dragOffset > 0 { transaction.animation = nil }
-        }
     }
 
     @ViewBuilder
@@ -118,22 +116,40 @@ struct EntryExpansionContainer: View {
         }
     }
 
-    private var topDragGesture: some Gesture {
+    private func topDragGesture(in proxy: GeometryProxy) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    dragOffset = max(0, value.translation.height)
+                    dragOffset = interactiveDragOffset(for: value.translation.height)
                 }
             }
             .onEnded { value in
                 if value.translation.height > 120 || value.predictedEndTranslation.height > 220 {
-                    requestClose()
+                    dismissFromDrag(in: proxy)
                 } else {
                     withAnimation(LedgerMotion.responsive) { dragOffset = 0 }
                 }
             }
+    }
+
+    private func interactiveDragOffset(for translation: CGFloat) -> CGFloat {
+        translation >= 0 ? translation : translation * 0.22
+    }
+
+    private func dismissFromDrag(in proxy: GeometryProxy) {
+        let dismissalDistance = max(proxy.size.height + 80, dragOffset)
+        withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive) {
+            dragOffset = dismissalDistance
+        }
+        Task { @MainActor in
+            if !reduceMotion { try? await Task.sleep(for: .milliseconds(240)) }
+            contentVisible = false
+            shellExpanded = false
+            dragOffset = 0
+            presentation.finishDismissal()
+        }
     }
 
     private func backdropOpacity(in proxy: GeometryProxy) -> Double {
