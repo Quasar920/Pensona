@@ -1,42 +1,80 @@
 import SwiftUI
 
+/// The root navigation is intentionally a four-item control.  The recording
+/// action lives above it so the navigation keeps a stable, equal-width rhythm.
 struct LedgerBottomBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Binding var selection: LedgerTab
     let addEntry: () -> Void
-    @State private var tabFrames: [LedgerTab: CGRect] = [:]
+    @Namespace private var selectionNamespace
 
     var body: some View {
-        navigationRail
-        .padding(.horizontal, LedgerLayout.pagePadding)
+        HStack(spacing: 0) {
+            tabButton(.ledger)
+            tabButton(.assets)
+            entryButton
+            tabButton(.savings)
+            tabButton(.statistics)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .frame(height: 64)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+            if reduceTransparency {
+                shape.fill(LedgerPalette.surface)
+            } else {
+                shape.fill(.ultraThinMaterial)
+            }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(LedgerPalette.hairline.opacity(0.7), lineWidth: 0.75)
+        }
+        .shadow(color: LedgerPalette.ink.opacity(0.045), radius: 10, y: 3)
+        .padding(.horizontal, 14)
         .padding(.bottom, 7)
+        .accessibilityElement(children: .contain)
     }
 
-    private var navigationRail: some View {
-        HStack(spacing: 4) {
-            HStack(spacing: 2) {
-                tabButton(.ledger)
-                tabButton(.assets)
-            }
-            .frame(maxWidth: .infinity)
+    private func tabButton(_ tab: LedgerTab) -> some View {
+        let isSelected = selection == tab
 
-            entryButton
+        return Button {
+            guard selection != tab else { return }
+            HapticFeedbackService().selection()
+            withAnimation(selectionAnimation) { selection = tab }
+        } label: {
+            VStack(spacing: 3) {
+                ZStack {
+                    if isSelected {
+                        selectionCapsule
+                            .matchedGeometryEffect(id: "root-tab-selection", in: selectionNamespace)
+                    }
 
-            HStack(spacing: 2) {
-                tabButton(.savings)
-                tabButton(.statistics)
+                    Image(systemName: tab.symbolName)
+                        .font(.system(size: 22, weight: .medium))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(isSelected ? LedgerPalette.ink : .secondary)
+                        .scaleEffect(reduceMotion || !isSelected ? 1 : 0.98)
+                }
+                .frame(width: 36, height: 30)
+
+                Text(tab.title)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? LedgerPalette.ink : .secondary)
+                    .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .contentShape(Rectangle())
         }
-        .padding(5)
-        .frame(maxWidth: .infinity, minHeight: 62)
-        .background(LedgerPalette.surface, in: Capsule())
-        .overlay(Capsule().stroke(LedgerPalette.hairline, lineWidth: 1))
-        .shadow(color: LedgerPalette.ink.opacity(0.04), radius: 8, y: 3)
-        .coordinateSpace(name: Self.coordinateSpaceName)
-        .onPreferenceChange(LedgerTabFramePreferenceKey.self) { tabFrames = $0 }
-        .simultaneousGesture(slideGesture)
-        .accessibilityElement(children: .contain)
+        .buttonStyle(.plain)
+        .accessibilityLabel(tab.title)
+        .accessibilityValue(isSelected ? "已选择" : "")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("root-tab-\(tab.rawValue)")
     }
 
     private var entryButton: some View {
@@ -56,71 +94,20 @@ struct LedgerBottomBar: View {
         .accessibilityIdentifier("root-entry-button")
     }
 
-    private func tabButton(_ tab: LedgerTab) -> some View {
-        let isSelected = selection == tab
-        return Button {
-            select(tab)
-        } label: {
-            VStack(spacing: 2) {
-                Image(systemName: isSelected ? tab.selectedSymbolName : tab.symbolName)
-                    .font(.system(size: 17, weight: isSelected ? .semibold : .medium))
-                    .symbolRenderingMode(.monochrome)
-                    .frame(width: 22, height: 22)
-                Text(tab.title)
-                    .font(.caption2.weight(isSelected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-            }
-            .foregroundStyle(LedgerPalette.ink)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(isSelected ? LedgerPalette.selectionFill : .clear, in: Capsule())
-            .contentShape(Capsule())
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: LedgerTabFramePreferenceKey.self,
-                        value: [tab: proxy.frame(in: .named(Self.coordinateSpaceName))]
-                    )
-                }
-            }
-        }
-        .buttonStyle(LedgerGlassPressStyle())
-        .accessibilityLabel(tab.title)
-        .accessibilityValue(isSelected ? "已选择" : "")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityIdentifier("root-tab-\(tab.rawValue)")
-    }
-
-    private var slideGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.coordinateSpaceName))
-            .onChanged { value in
-                let distance = hypot(value.translation.width, value.translation.height)
-                guard distance > 4,
-                      let hovered = tabFrames.first(where: { $0.value.contains(value.location) })?.key else {
-                    return
-                }
-                select(hovered)
-            }
-    }
-
-    private func select(_ tab: LedgerTab) {
-        guard selection != tab else { return }
-        HapticFeedbackService().selection()
-        withAnimation(reduceMotion ? LedgerMotion.reduced : .spring(response: 0.34, dampingFraction: 0.82)) {
-            selection = tab
+    @ViewBuilder
+    private var selectionCapsule: some View {
+        let shape = RoundedRectangle(cornerRadius: 15, style: .continuous)
+        if reduceTransparency {
+            shape.fill(LedgerPalette.selectionFill)
+        } else {
+            shape
+                .fill(.thinMaterial)
+                .overlay(shape.fill(Color.white.opacity(0.12)))
+                .overlay(shape.strokeBorder(Color.white.opacity(0.42), lineWidth: 0.5))
         }
     }
 
-    private static let coordinateSpaceName = "ledger-bottom-navigation"
-}
-
-private struct LedgerTabFramePreferenceKey: PreferenceKey {
-    static let defaultValue: [LedgerTab: CGRect] = [:]
-
-    static func reduce(
-        value: inout [LedgerTab: CGRect],
-        nextValue: () -> [LedgerTab: CGRect]
-    ) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    private var selectionAnimation: Animation {
+        reduceMotion ? LedgerMotion.reduced : .spring(response: 0.34, dampingFraction: 0.82)
     }
 }

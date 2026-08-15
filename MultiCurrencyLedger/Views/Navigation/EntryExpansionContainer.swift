@@ -18,9 +18,10 @@ struct EntryExpansionContainer: View {
         GeometryReader { proxy in
             if let route = presentation.entry {
                 ZStack(alignment: .bottom) {
-                    Color.black.opacity(shellExpanded ? 0.16 : 0)
+                    Color.black.opacity(shellExpanded ? backdropOpacity(in: proxy) : 0)
                         .ignoresSafeArea()
                         .onTapGesture(perform: requestClose)
+                        .accessibilityIdentifier("receipt-entry-backdrop")
 
                     shell(route: route, in: proxy)
                 }
@@ -34,42 +35,65 @@ struct EntryExpansionContainer: View {
     private func shell(route: RootEntryPresentation, in proxy: GeometryProxy) -> some View {
         let compact: CGFloat = 56
         let expandedWidth = proxy.size.width
-        let expandedHeight = proxy.size.height
+        // This container ignores the safe area, so use the window inset to
+        // locate the Dynamic Island rather than letting the sheet overlap it.
+        // One point is three physical pixels on the connected iPhone.
+        let safeAreaTop = max(proxy.safeAreaInsets.top, activeWindowSafeAreaTop)
+        let dynamicIslandBottom = max(48, safeAreaTop - 10)
+        let topClearance = dynamicIslandBottom + 1
+        let bottomClearance: CGFloat = 0
+        let expandedHeight = max(
+            compact,
+            proxy.size.height - topClearance - bottomClearance
+        )
         ZStack(alignment: .top) {
-            LedgerPageBackground().opacity(contentVisible ? 1 : 0)
+            Rectangle()
+                .fill(Color(red: 247 / 255, green: 245 / 255, blue: 239 / 255))
+                .opacity(contentVisible ? 1 : 0)
             if contentVisible {
                 entryContent(route)
+                    // The kind selector now occupies the sheet cap directly
+                    // below the drag handle instead of leaving it empty.
+                    .padding(.top, 10)
                     .modifier(EntryPreviewDynamicTypeModifier())
                     .transition(.opacity)
             }
-            Capsule()
-                .fill(.secondary.opacity(0.35))
-                .frame(width: 38, height: 5)
-                .padding(.top, proxy.safeAreaInsets.top + 10)
+            Button(action: {}) {
+                Capsule()
+                    .fill(.secondary.opacity(0.35))
+                    .frame(width: 38, height: 5)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .top)
+                    .padding(.top, 11)
+                    .contentShape(Rectangle())
+            }
+                .buttonStyle(.plain)
                 .opacity(contentVisible ? 1 : 0)
-                .frame(maxWidth: .infinity, minHeight: 64, alignment: .top)
-                .contentShape(Rectangle())
                 .gesture(topDragGesture)
+                .accessibilityLabel("拖拽关闭记账")
+                .accessibilityIdentifier("receipt-entry-drag-handle")
         }
         .frame(
             width: shellExpanded ? expandedWidth : compact,
             height: shellExpanded ? expandedHeight : compact
         )
         .clipShape(RoundedRectangle(
-            cornerRadius: shellExpanded ? LedgerLayout.cornerLarge : compact / 2,
+            cornerRadius: shellExpanded ? 30 : compact / 2,
             style: .continuous
         ))
         .overlay {
             RoundedRectangle(
-                cornerRadius: shellExpanded ? LedgerLayout.cornerLarge : compact / 2,
+                cornerRadius: shellExpanded ? 30 : compact / 2,
                 style: .continuous
             )
-            .stroke(.white.opacity(shellExpanded ? 0.22 : 0.46), lineWidth: 0.75)
+                .stroke(.white.opacity(shellExpanded ? 0.22 : 0.46), lineWidth: 0.75)
         }
         .offset(y: shellExpanded ? max(0, dragOffset) : -12)
-        .padding(.bottom, shellExpanded ? 0 : 6)
+        .padding(.bottom, bottomClearance)
+        .accessibilityIdentifier("receipt-entry-sheet")
         .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical, value: shellExpanded)
-        .animation(LedgerMotion.responsive, value: dragOffset)
+        .transaction { transaction in
+            if dragOffset > 0 { transaction.animation = nil }
+        }
     }
 
     @ViewBuilder
@@ -95,8 +119,14 @@ struct EntryExpansionContainer: View {
     }
 
     private var topDragGesture: some Gesture {
-        DragGesture(minimumDistance: 4)
-            .onChanged { value in dragOffset = max(0, value.translation.height) }
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { value in
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    dragOffset = max(0, value.translation.height)
+                }
+            }
             .onEnded { value in
                 if value.translation.height > 120 || value.predictedEndTranslation.height > 220 {
                     requestClose()
@@ -104,6 +134,20 @@ struct EntryExpansionContainer: View {
                     withAnimation(LedgerMotion.responsive) { dragOffset = 0 }
                 }
             }
+    }
+
+    private func backdropOpacity(in proxy: GeometryProxy) -> Double {
+        guard proxy.size.height > 0 else { return 0.30 }
+        let progress = min(1, max(0, dragOffset / (proxy.size.height * 0.55)))
+        return 0.30 * (1 - progress)
+    }
+
+    private var activeWindowSafeAreaTop: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .safeAreaInsets.top ?? 0
     }
 
     private func expand() async {

@@ -1,10 +1,5 @@
 import SwiftUI
 
-enum EntryDateTimePickerMode {
-    case date
-    case time
-}
-
 struct EntryAccountSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String
@@ -88,52 +83,49 @@ struct EntryAccountSheet: View {
     }
 }
 
-struct EntryDateTimeSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var date: Date
-    @State private var draftDate: Date
-    let mode: EntryDateTimePickerMode
+struct EntryDateTimePickerPopover: View {
+    @State var date = Date()
+    let cancel: () -> Void
+    let complete: (Date) -> Void
 
-    init(date: Binding<Date>, mode: EntryDateTimePickerMode) {
-        _date = date
-        _draftDate = State(initialValue: date.wrappedValue)
-        self.mode = mode
+    init(date: Date, cancel: @escaping () -> Void, complete: @escaping (Date) -> Void) {
+        _date = State(initialValue: date)
+        self.cancel = cancel
+        self.complete = complete
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                if mode == .date {
-                    DatePicker("日期", selection: $draftDate, displayedComponents: [.date])
-                        .datePickerStyle(.graphical)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
-                        .padding(10)
-                        .ledgerSurface(.sheetChrome, cornerRadius: 22)
-                } else {
-                    DatePicker("选择日期与时间", selection: $draftDate)
-                        .datePickerStyle(.wheel)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
-                        .padding(18)
-                        .ledgerSurface(.sheetChrome, cornerRadius: 22)
-                        .accessibilityIdentifier("entry-date-time-wheel")
-                }
-                Button("回到现在") { draftDate = .now }
-                    .buttonStyle(.bordered)
-                Spacer()
+        VStack(spacing: 0) {
+            DatePicker("Select Date", selection: $date)
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .accessibilityIdentifier("entry-date-time-wheel")
+
+            Divider()
+
+            Button("现在") { date = .now }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("entry-date-time-now")
+
+            Divider()
+
+            HStack(spacing: 0) {
+                Button("取消", action: cancel)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+
+                Divider()
+                    .frame(height: 28)
+
+                Button("完成") { complete(date) }
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity, minHeight: 48)
             }
-            .padding(18)
-            .ledgerPageBackground()
-            .navigationTitle(mode == .date ? "选择日期" : "选择时间")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { date = draftDate; dismiss() }
-                }
-            }
+            .buttonStyle(.plain)
         }
+        .frame(width: 330)
+        .background(Color(uiColor: .systemBackground).opacity(0.95))
     }
 }
 

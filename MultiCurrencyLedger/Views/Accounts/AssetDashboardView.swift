@@ -56,28 +56,11 @@ struct AssetDashboardScreen: View {
                                 .font(LedgerTypography.receiptMeta.weight(.semibold))
                         }
                         .padding(.top, 24)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 14)
 
-                        Divider()
-
-                        ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
-                            Button { selectAccount(row.account) } label: {
-                                AssetDashboardAccountRow(
-                                    row: row,
-                                    currencyCode: currencyCode,
-                                    isBalanceHidden: isBalanceHidden
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("asset-account-\(row.account.id.uuidString)")
-                            .contextMenu {
-                                Button { editAccount(row.account) } label: {
-                                    Label("编辑账户", systemImage: "pencil")
-                                }
-                            }
-                            .accessibilityAction(named: "编辑账户") { editAccount(row.account) }
-                            if index < group.rows.count - 1 {
-                                Divider().padding(.leading, 52)
+                        VStack(spacing: 14) {
+                            ForEach(group.rows) { row in
+                                accountButton(for: row, presentation: .capsule)
                             }
                         }
                     }
@@ -125,6 +108,29 @@ struct AssetDashboardScreen: View {
         abs(snapshot.groups.first(where: { $0.group == .credit })?.subtotal ?? 0)
     }
 
+    private func accountButton(
+        for row: AssetAccountRowSnapshot,
+        presentation: AssetDashboardAccountRow.Presentation
+    ) -> some View {
+        Button { selectAccount(row.account) } label: {
+            AssetDashboardAccountRow(
+                row: row,
+                currencyCode: currencyCode,
+                isBalanceHidden: isBalanceHidden,
+                presentation: presentation
+            )
+        }
+        .buttonStyle(AssetDashboardAccountButtonStyle(isCapsule: presentation == .capsule))
+        .modifier(AssetDashboardAccountContainer(isCapsule: presentation == .capsule))
+        .accessibilityIdentifier("asset-account-\(row.account.id.uuidString)")
+        .contextMenu {
+            Button { editAccount(row.account) } label: {
+                Label("编辑账户", systemImage: "pencil")
+            }
+        }
+        .accessibilityAction(named: "编辑账户") { editAccount(row.account) }
+    }
+
     private func statementMetric(_ title: String, amount: Decimal) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
@@ -137,11 +143,52 @@ struct AssetDashboardScreen: View {
 }
 
 private struct AssetDashboardAccountRow: View {
+    enum Presentation {
+        case flat
+        case capsule
+    }
+
     let row: AssetAccountRowSnapshot
     let currencyCode: String
     let isBalanceHidden: Bool
+    let presentation: Presentation
 
+    @ViewBuilder
     var body: some View {
+        if presentation == .capsule {
+            capsuleBody
+        } else {
+            flatBody
+        }
+    }
+
+    private var capsuleBody: some View {
+        HStack(spacing: 12) {
+            Image(systemName: row.account.type.symbolName)
+                .font(.subheadline)
+                .foregroundStyle(HomePalette.accent)
+                .frame(width: 28, height: 28)
+            Text(row.account.name)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            if let capsuleDetailText {
+                Text(capsuleDetailText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(amountText)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 18)
+        .frame(minHeight: 52)
+        .contentShape(Rectangle())
+    }
+
+    private var flatBody: some View {
         HStack(spacing: 12) {
             Image(systemName: row.account.type.symbolName)
                 .font(.subheadline)
@@ -164,6 +211,17 @@ private struct AssetDashboardAccountRow: View {
         .padding(.horizontal, 2)
         .frame(minHeight: 64)
         .contentShape(Rectangle())
+    }
+
+    private var capsuleDetailText: String? {
+        switch row.account.type {
+        case .bankCard, .savings:
+            return AccountCardIdentityStore().lastFour(for: row.account.id)
+                .map { AppLocalization.string("尾号 \($0)") }
+        default:
+            let text = detailText
+            return text.isEmpty ? nil : text
+        }
     }
 
     private var amountText: String {
@@ -191,6 +249,34 @@ private struct AssetDashboardAccountRow: View {
         default:
             return row.account.allWallets.map(\.currencyCode).joined(separator: " · ")
         }
+    }
+}
+
+private struct AssetDashboardAccountContainer: ViewModifier {
+    let isCapsule: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isCapsule {
+            content.ledgerSurface(.functional, cornerRadius: 26)
+        } else {
+            content
+        }
+    }
+}
+
+private struct AssetDashboardAccountButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isCapsule: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(isCapsule && !reduceMotion && configuration.isPressed ? 0.985 : 1)
+            .opacity(configuration.isPressed ? 0.86 : 1)
+            .animation(
+                reduceMotion ? LedgerMotion.reduced : LedgerMotion.press(isPressed: configuration.isPressed),
+                value: configuration.isPressed
+            )
     }
 }
 

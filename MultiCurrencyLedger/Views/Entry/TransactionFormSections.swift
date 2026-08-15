@@ -106,7 +106,7 @@ struct TransactionFormSections: View {
     }
 }
 
-struct EntryComposerView: View {
+struct LegacyEntryComposerView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -124,8 +124,7 @@ struct EntryComposerView: View {
     @State private var showingSourceWallets = false
     @State private var showingDestinationWallets = false
     @State private var showingCreditCardRepayment = false
-    @State private var showingDatePicker = false
-    @State private var datePickerMode: EntryDateTimePickerMode = .date
+    @State private var showingDateTimePicker = false
     @State private var legacyContextOverlay: EntryContextOverlayKind?
     @State private var contextPresentation = EntryContextPresentationState()
     @State private var contextTagFrames: [EntryContextOverlayKind: CGRect] = [:]
@@ -256,9 +255,12 @@ struct EntryComposerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
+            ScrollView {
+                VStack(spacing: 8) {
                 EntryKindGlassControl(selection: $state.kind, validationReset: {})
                 EntryInlineValidation(message: validation.generalMessage)
+                receiptMetadata
+                ReceiptDashedDivider()
                 if state.kind == .expense || state.kind == .income {
                     EntryCategoryPager(
                         categories: categories,
@@ -284,6 +286,7 @@ struct EntryComposerView: View {
                 }
 
                 if !categoryReordering && !categoryManagementOverlay {
+                    ReceiptDashedDivider()
                     EntryAmountPanel(
                         state: $state,
                         activeTarget: $activeAmount,
@@ -293,21 +296,14 @@ struct EntryComposerView: View {
                         validation: validation
                     )
                     if state.kind != .transfer && state.kind != .exchange {
-                        EntryContextControls(
+                        ReceiptEntrySettings(
                             state: $state,
                             sourceWallet: sourceWallet,
                             wallets: wallets,
-                            validation: validation,
-                            selectAccount: { presentContext(.account) },
                             editSplitPayment: { presentContext(.splitPayment) },
                             editAA: { presentContext(.aa) },
                             editDiscount: { presentContext(.discount) },
-                            editFee: { presentContext(.fee) },
-                            editForeignCurrency: { legacyContextOverlay = .foreignExpense },
-                            hiddenKind: contextPresentation.hiddenTagKind,
-                            // Preserve the original layout slot. A frozen,
-                            // readable copy is rendered above the blur layer.
-                            hiddenKindOpacity: contextPresentation.isActive ? 0 : 1
+                            editFee: { presentContext(.fee) }
                         )
                     } else {
                         EntryMovementContextTags(
@@ -327,10 +323,9 @@ struct EntryComposerView: View {
             // The centered date/time controls live in the navigation bar
             // with the close button. Movement pages need a 30-point smaller
             // inset to match the established expense/income top position.
-            .padding(
-                .top,
-                state.kind == .transfer || state.kind == .exchange ? 12 : 42
-            )
+            // The real torn edge is the shell's clipped top boundary.  This
+            // inset reserves the space directly below it for the drag handle.
+            .padding(.top, 58)
             .padding(.bottom, 0)
             // Keep the original content unavailable while a tag card owns the
             // interaction. The backdrop is applied afterwards so it can serve
@@ -345,7 +340,9 @@ struct EntryComposerView: View {
                     )
                 }
             }
-            .accessibilityHidden(contextPresentation.isActive)
+                .accessibilityHidden(contextPresentation.isActive)
+            }
+            .scrollIndicators(.hidden)
 
             if !categoryReordering && !categoryManagementOverlay {
                 EntryGlassKeypad(
@@ -371,21 +368,10 @@ struct EntryComposerView: View {
                         }
                     }
                 )
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                .padding(.bottom, 10)
                 .frame(maxWidth: .infinity)
-                .background {
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 28,
-                        bottomLeadingRadius: 0,
-                        bottomTrailingRadius: 0,
-                        topTrailingRadius: 28,
-                        style: .continuous
-                    )
-                    .fill(Color.primary.opacity(0.055))
-                    .ignoresSafeArea(edges: .bottom)
-                }
-                .padding(.top, 5)
                 .allowsHitTesting(!contextPresentation.isTransitioning)
             }
         }
@@ -447,11 +433,6 @@ struct EntryComposerView: View {
                 .presentationDragIndicator(.visible)
             }
         }
-        .sheet(isPresented: $showingDatePicker) {
-            EntryDateTimeSheet(date: $state.date, mode: datePickerMode)
-                .presentationDetents([datePickerMode == .date ? .large : .medium])
-                .presentationDragIndicator(.visible)
-        }
         .sheet(isPresented: $showingFeeTemplateManager) {
             FeeTemplateManagementView(store: feeTemplateStore, kind: state.kind)
         }
@@ -480,11 +461,48 @@ struct EntryComposerView: View {
             contextPresentation.settleInterruptedTransition(state: &state)
             keypadResetID = UUID()
         }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                dateTimeControls
+    }
+
+    private var receiptMetadata: some View {
+        VStack(spacing: 0) {
+            Button { showingDateTimePicker = true } label: {
+                receiptInfoRow("时间", value: state.date.formatted(.dateTime.year().month().day().hour().minute()), symbol: "pencil")
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("entry-date-time-button")
+            .popover(isPresented: $showingDateTimePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                EntryDateTimePickerPopover(date: state.date, cancel: { showingDateTimePicker = false }) {
+                    state.date = $0
+                    showingDateTimePicker = false
+                }
+                .presentationCompactAdaptation(.popover)
+            }
+
+            Button { showingSourceWallets = true } label: {
+                receiptInfoRow("账户", value: sourceWallet?.account?.name ?? "请选择账户", symbol: "chevron.right")
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 12) {
+                Text("备注").font(.subheadline.weight(.medium))
+                TextField("可选，直接输入备注", text: $state.note)
+                    .font(.subheadline)
+                    .multilineTextAlignment(.trailing)
+                Image(systemName: "pencil").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .frame(minHeight: 44)
         }
+    }
+
+    private func receiptInfoRow(_ label: String, value: String, symbol: String) -> some View {
+        HStack(spacing: 12) {
+            Text(label).font(.subheadline.weight(.medium))
+            Spacer(minLength: 12)
+            Text(value).font(.subheadline).foregroundStyle(.primary).lineLimit(1)
+            Image(systemName: symbol).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder
@@ -731,39 +749,46 @@ struct EntryComposerView: View {
     }
 
     private var dateTimeControls: some View {
-        HStack(spacing: 8) {
-            Button {
-                datePickerMode = .date
-                showingDatePicker = true
-            } label: {
+        Button {
+            showingDateTimePicker = true
+        } label: {
+            HStack(spacing: 16) {
                 Text(state.date.formatted(.dateTime.year().month().day()))
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                    .padding(.horizontal, 11)
-                    .frame(minHeight: 32)
-            }
-            .buttonStyle(LedgerGlassPressStyle())
-            .background(.white.opacity(0.72), in: Capsule())
-            .overlay { Capsule().stroke(Color.primary.opacity(0.14), lineWidth: 0.8) }
-            .accessibilityLabel("选择日期")
 
-            Button {
-                datePickerMode = .time
-                showingDatePicker = true
-            } label: {
                 Text(state.date.formatted(.dateTime.hour().minute()))
                     .font(.caption.weight(.semibold))
                     .monospacedDigit()
                     .lineLimit(1)
-                    .padding(.horizontal, 11)
-                    .frame(minHeight: 32)
             }
-            .buttonStyle(LedgerGlassPressStyle())
-            .background(.white.opacity(0.72), in: Capsule())
-            .overlay { Capsule().stroke(Color.primary.opacity(0.14), lineWidth: 0.8) }
-            .accessibilityLabel("选择时间")
+            .padding(.horizontal, 14)
+            .frame(minHeight: 32)
         }
+        .buttonStyle(LedgerGlassPressStyle())
+        .background(.white.opacity(0.72), in: Capsule())
+        .overlay { Capsule().stroke(Color.primary.opacity(0.14), lineWidth: 0.8) }
+        .accessibilityLabel("选择日期和时间")
+        .accessibilityIdentifier("entry-date-time-button")
         .disabled(contextPresentation.isActive || legacyContextOverlay != nil)
+        .popover(
+            isPresented: $showingDateTimePicker,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .top
+        ) {
+            EntryDateTimePickerPopover(
+                date: state.date,
+                cancel: { showingDateTimePicker = false },
+                complete: {
+                    state.date = $0
+                    showingDateTimePicker = false
+                }
+            )
+            .presentationCompactAdaptation(.popover)
+            .presentationBackground(
+                Color(uiColor: .systemBackground).opacity(0.95)
+            )
+        }
     }
 
     private func categoryPath(_ category: LedgerCategory) -> String {
@@ -793,5 +818,85 @@ private struct EntryComposerHeightModifier: ViewModifier {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+    }
+}
+
+private struct ReceiptDashedDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(height: 1)
+            .overlay(alignment: .center) {
+                GeometryReader { proxy in
+                    Path { path in
+                        path.move(to: CGPoint(x: 0, y: 0.5))
+                        path.addLine(to: CGPoint(x: proxy.size.width, y: 0.5))
+                    }
+                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    .foregroundStyle(Color.black.opacity(0.48))
+                }
+            }
+            .padding(.vertical, 4)
+    }
+}
+
+private struct ReceiptEntrySettings: View {
+    @Binding var state: TransactionFormState
+    let sourceWallet: CurrencyWallet?
+    let wallets: [CurrencyWallet]
+    let editSplitPayment: () -> Void
+    let editAA: () -> Void
+    let editDiscount: () -> Void
+    let editFee: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ReceiptDashedDivider()
+            toggleRow("报销", isOn: Binding(
+                get: { state.reimbursementStatus == .pending },
+                set: { state.reimbursementStatus = $0 ? .pending : .none }
+            ))
+            actionRow("AA", value: state.aaSplitDraft == nil ? "不参与 AA" : "已设置", identifier: "entry-context-tag-aa", action: editAA)
+            actionRow("优惠", value: hasDiscount ? "已设置优惠" : "无优惠", identifier: "entry-context-tag-discount", action: editDiscount)
+            actionRow("组合支付", value: state.usesSplitPayment ? "已设置" : "单独支付", identifier: "entry-context-tag-split-payment", action: editSplitPayment)
+            actionRow("手续费", value: state.includesFee ? "已设置手续费" : "不收取手续费", identifier: "entry-context-tag-fee", action: editFee)
+            toggleRow("不计支出", isOn: $state.excludesFromMonthlyExpense)
+            ReceiptDashedDivider()
+        }
+        .font(.subheadline)
+    }
+
+    private var hasDiscount: Bool {
+        DecimalParser.parse(state.discountAmountText).map { $0 > 0 } == true
+    }
+
+    private func actionRow(_ title: String, value: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(title).foregroundStyle(.primary)
+                Spacer()
+                Text(value).foregroundStyle(.primary)
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .frame(minHeight: 38)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func toggleRow(_ title: String, isOn: Binding<Bool>) -> some View {
+        Button { isOn.wrappedValue.toggle() } label: {
+            HStack {
+                Text(title).foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: isOn.wrappedValue ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isOn.wrappedValue ? Color.black : .secondary)
+            }
+            .frame(minHeight: 38)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -9,31 +9,25 @@ struct EntryKindGlassControl: View {
     }
 
     var body: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 8) {
+        HStack(spacing: 0) {
                 ForEach(primaryKinds) { kind in
                     Button {
                         validationReset()
                         selection = kind
                     } label: {
                         Text(kind.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(selection == kind ? LedgerPalette.accent : .secondary)
-                            .frame(maxWidth: .infinity, minHeight: 42)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(selection == kind ? .white : .primary)
+                            .frame(maxWidth: .infinity, minHeight: 44)
                             .background(
-                                selection == kind ? LedgerPalette.accent.opacity(0.10) : .clear,
-                                in: Capsule()
+                                selection == kind ? Color.black : .clear
                             )
-                            .overlay(Capsule().stroke(
-                                selection == kind ? LedgerPalette.accent.opacity(0.64) : .clear
-                            ))
                     }
-                    .buttonStyle(LedgerGlassPressStyle())
-                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .buttonStyle(.plain)
                     .accessibilityAddTraits(selection == kind ? .isSelected : [])
                 }
-            }
         }
-        .padding(.vertical, 1)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.black.opacity(0.22), lineWidth: 1) }
     }
 }

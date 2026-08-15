@@ -1,3 +1,169 @@
+# Receipt Entry Sheet Rebuild — Design QA
+
+- Date: 2026-08-14
+- Source visual truth: `/Users/ian/Downloads/ChatGPT Image 2026年8月14日 00_05_25.png`
+- Product constraints: `/Users/ian/Downloads/小票风记账编辑器 Sheet UI 改造方案.md`
+- Final single-Sheet light implementation: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-receipt-entry-v2/receipt-single-light.png`
+- Final single-Sheet dark implementation: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-receipt-entry-v2/receipt-single-dark.png`
+- Source/implementation comparison: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-receipt-entry/reference-vs-implementation.png`
+- Viewport: iPhone 17 Pro Simulator, 402 x 874 points, 1206 x 2622 pixels at 3x, Simplified Chinese, light appearance.
+- State: expense, takeaway selected, CNY 0, populated sample account and full expense category set.
+
+## Findings
+
+No actionable P0, P1, or P2 mismatch remains in the rebuilt entry-sheet scope.
+
+The final comparison preserves the reference hierarchy in one 92%-height Sheet: a separately rendered warm-white receipt, a continuous full-width 13 x 11-point torn edge below the drag handle, a four-way black selected segment, three metadata rows, five fixed category columns, centered category/amount, six expense settings, the cash-register keypad, and equal-width actions. All content metrics are reduced together so the entire receipt remains visible without scrolling.
+
+## Required Fidelity Surfaces
+
+- Geometry: outer shell and torn paper are separate surfaces. The shell keeps a 30-point continuous radius and the paper alone owns the repeated triangular top edge.
+- Typography and copy: all field and setting labels are Chinese. `CNY` remains as the currency code. The removed editor title, decorative English, type label, extra labels, and duplicate account entrance do not appear.
+- Categories: normal-size layout is exactly five columns with 7-point gaps and approximately square 64-point cells. Icons remain above labels. The selected takeaway tile uses a 2-point black outline and top-right check without a black fill.
+- Color and separators: the receipt and category tiles use `#F7F5EF`; dividers use low-contrast 3/3 dashed strokes; outlines stay light except for active selection and the primary completion action.
+- Keypad: the left grid is four columns by four rows; zero spans two columns; the right delete key spans all four rows and retains long-press clear; the final action row is split equally and the completion half is black.
+- Assets: existing category artwork is preserved. No placeholder art or replacement emoji was introduced.
+
+## Interaction Verification
+
+- Existing `TransactionFormState`, `EntrySessionState`, validation, continuous-entry, transfer/exchange, foreign-currency, credit-card repayment and save callbacks remain behind the new view contract.
+- Category root/child selection, expansion, creation, edit, delete, move, long-press and reorder continue through the existing category pager; only the tile surface changed.
+- AA, discount, split payment and fee rows use the existing `EntryContextPresentationState`, drafts, panels, fee templates and shared keypad input.
+- Simulator Debug build passed.
+- Focused state/model tests passed: `TransactionFormStateTests`, `EntrySessionStateTests`, `EntryCalculationTests`, and `EntryContextPresentationStateTests`.
+- Light and dark simulator captures confirm that the receipt itself uses one appearance-invariant warm-white UI; only the original page and status area behind the Sheet follow system appearance.
+- Drag tracking now applies raw translation without per-frame spring interpolation, and the backdrop fades from the same live drag progress.
+
+## Comparison History
+
+1. The rejected implementation treated the outer Sheet itself as torn paper and retained an unrelated glass editor hierarchy. That presentation layer was removed.
+2. The first rebuilt capture had visibly gray category fills. Category cards were corrected to the same warm-white paper token, leaving borders to carry structure and selection.
+3. The first secondary-panel bridge reused a reduced legacy overlay. It was replaced before handoff with the current `EntryContextPresentationState` panels so AA, split payment, discount, fee validation and fee templates remain intact.
+4. The second correction removed the receipt scroll view, compacted all content as one density system, removed the hidden NavigationStack background that flattened the tear, and verified the complete single-frame result in both appearances.
+
+## Follow-up Polish
+
+No P3 visual follow-up is required for the requested rebuild. Secondary panel styling remains intentionally unchanged, per scope.
+
+final result: passed
+
+---
+
+# Asset Bank-Card Capsule Rows — Design QA
+
+- Date: 2026-08-13
+- Source visual truth: `/var/folders/76/x90l9tx10xqgf2tk6n65w8_c0000gn/T/codex-clipboard-b1070c0c-52f8-4676-bdf4-1359438fd4cf.png`
+- Final light implementation: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-asset-capsules/assets-light-final.png`
+- Final dark implementation: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-asset-capsules/assets-dark-final.png`
+- Focused bank-card crop: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-asset-capsules/assets-dark-bank-final.png`
+- Focused source/implementation comparison: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-asset-capsules/reference-vs-implementation-final.png`
+- Viewport: iPhone 17 Pro Simulator, 402 x 874 points, 1206 x 2622 pixels at 3x, Simplified Chinese; verified in light and dark appearance.
+- Density normalization: source is 1000 x 400 pixels with no declared device density; it was normalized to 1206 x 482 for the focused comparison. The implementation remained at native 3x density; its 1206 x 850 focused crop was compared at equal width. CSS size is not applicable to this native SwiftUI screen.
+- State: populated asset dashboard with two bank-card accounts; balances visible.
+
+## Findings
+
+No actionable P0, P1, or P2 visual mismatch remains in the requested scope.
+
+The reference's independent dark capsules, full-width rounded geometry, subtle outline, left identity, right-aligned value, and separated vertical rhythm are preserved. The implementation intentionally uses a 52-point minimum height instead of copying the thinner web row because this is a native iOS control with a full-row tap target. The requested looser rhythm is represented by a 14-point inter-card gap. Product copy, account icons, and balances remain app-owned content rather than copied task-row content.
+
+## Required Fidelity Surfaces
+
+- Fonts and typography: existing OneTsu account and amount styles are preserved. Account names remain semibold system text; balances remain semibold monospaced digits with single-line scaling. No wrapping or truncation is visible at the verified viewport.
+- Spacing and layout rhythm: cards use the existing 16-point page margin, 18-point internal horizontal padding, 52-point minimum height, 26-point continuous corner radius, and 14-point vertical gap. Both cards align to the same full width and keep a larger gap than the reference.
+- Colors and visual tokens: cards reuse `LedgerPalette.surface`, adaptive hairline borders, and the existing restrained elevation. Light and dark captures preserve readable contrast without introducing a new accent color.
+- Image quality and asset fidelity: the reference contains only standard UI icons and no raster imagery. The implementation uses the app's existing SF Symbols; no placeholder, handcrafted SVG, CSS art, or generated asset was introduced.
+- Copy and content: account names, balances, group subtotal, and optional last-four information remain sourced from the app. Reference-specific supplier/task copy was not imported.
+
+## Interaction Verification
+
+- Tapping a capsule opens the existing account detail view.
+- Long-press context-menu editing and the named accessibility edit action remain attached to each account button.
+- Press feedback scales only capsule cards and respects Reduce Motion.
+- `MultiCurrencyLedgerSmokeUITests.testBillSwipeAndAssetDetail()` passed after exercising the root tab, the capsule tap, and the account-detail navigation.
+- `AssetDashboardServiceTests` passed all 3 tests, including account and optional-book transaction scoping.
+- The simulator build succeeded. Browser-console checks are not applicable to this native SwiftUI implementation; the initial interaction run exposed a SwiftData SQLite predicate abort, which was removed and then reverified by the passing UI test.
+
+## Full-View And Focused Evidence
+
+- Full-view evidence: the final light and dark implementation screenshots show the capsules in the complete asset-page hierarchy and confirm that neighboring asset groups remain unchanged.
+- Focused evidence: the combined comparison places the exact source component above the final dark bank-card region at equal width. The capsule silhouette, surface separation, left/right alignment, and intentionally looser card spacing are directly visible, so no additional micro-crop was required.
+
+## Comparison History
+
+1. Initial implementation used 64-point two-line cards. The first focused comparison showed the cards were materially taller than the reference and diluted the capsule silhouette (P2).
+2. The cards were revised to a 52-point single-line layout, with optional card-tail information inline only when present. Post-fix light/dark captures show the intended capsule ratio while retaining a native tap target.
+3. The first account-tap run reached the capsule but exposed an existing SwiftData abort in a nested relationship predicate. The account transaction query was changed to database-side date sorting plus equivalent in-memory account/book filtering. All service tests and the repeated UI navigation test passed afterward.
+
+## Follow-up Polish
+
+No P3 follow-up is required for the requested capsule treatment.
+
+final result: passed
+
+---
+
+# Bottom Navigation Motion-Only Correction — Physical Device Gate
+
+- Date: 2026-08-13
+- Source visual truth: `/Users/ian/Downloads/ScreenRecording_08-13-2026 10-51-10_1.mov`
+- Source motion contact sheet: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-bottom-bar-video-reference/reference-contact-sheet.png`
+- Source resting frame: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-bottom-bar-video-reference/reference-resting-ledger.png`
+- User-reported failure screenshot: `/var/folders/76/x90l9tx10xqgf2tk6n65w8_c0000gn/T/codex-clipboard-dd7e5f8d-99ff-45ce-962f-7bd7625b85b4.png`
+- Corrected physical-device screenshot: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-bottom-bar-device-fix/device-fixed-height.png`
+- Focused physical-device crop: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-bottom-bar-device-fix/device-bottom-bar.png`
+- Latest fixed-position label capture: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-bottom-bar-label-below/device-selected-assets.png`
+- Latest focused navigation crop: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-bottom-bar-label-below/device-selected-assets-bottom.png`
+- Full-view failure/fix evidence: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-bottom-bar-device-fix/device-failure-vs-fixed.png`
+- Focused source/device evidence: `/Users/ian/.codex/worktrees/6c28/记账Vibe Coding/.build/qa-bottom-bar-device-fix/reference-vs-device.png`
+- Viewport: physical iPhone 17 Pro (`L-points1`), 402 x 874 points, 1206 x 2622 pixels at 3x, light appearance, Simplified Chinese.
+- State: ledger selected at rest; automated gesture starts on ledger, crosses the centered add button, and releases on reports.
+
+## Findings
+
+No actionable P0, P1, or P2 issue remains in the corrected scope.
+
+The source video is used only as motion/material reference. Its trailing add-button geometry and always-visible labels were explicitly excluded. The existing OneTsu layout is restored: two destinations on each side of the fixed 52-point centered add button.
+
+The navigation rail now has an explicit 62-point height. The selected lens is one persistent, strictly bounded 84 x 50-point material view. Its center tracks the finger directly across gaps and across the center action, so selection does not disappear and a new bubble is not recreated at each destination. The page selection commits only when the gesture ends.
+
+## Required Fidelity Surfaces
+
+- Layout: existing page padding, 62-point capsule rail, centered 52-point black add button, and two-by-two destination grouping are preserved. The corrected physical-device capture shows the rail anchored at the bottom without obscuring ledger content.
+- Typography: every destination keeps a fixed 52-point slot. Inactive titles are visually hidden while preserving layout; the active title fades and scales into the reserved line directly below its icon. No icon or neighboring control shifts when selection changes.
+- Material: the persistent selected lens uses a bounded system material with restrained neutral overlays and adaptive strokes. Its content sits in a higher compositing layer so the selected blue icon and title remain crisp.
+- Icons and copy: existing SF Symbols and localized OneTsu destination names are unchanged.
+
+## Interaction Verification
+
+- Direct tracking disables interpolation for the lens center during the drag, giving 1:1 finger movement.
+- Nearest-midpoint hover changes animate only the active icon/title expansion; they do not change the page.
+- Releasing commits the destination and springs the lens from the release point into the destination's final frame.
+- A drag must start inside a destination hit region, so the center add action remains independent.
+- No navigation haptic call remains in the component.
+- Reduce Motion falls back to the existing reduced animation.
+- UI test passed: `MultiCurrencyLedgerSmokeUITests.testBottomNavigationKeepsCenteredEntryAndSupportsContinuousDrag()`. It now asserts that the center action remains in the lower quarter of the display and shares the tab-row vertical center, preventing recurrence of the full-height rail.
+- The same UI test also records all four tab centers plus the add-button center before dragging, then verifies every coordinate is unchanged after selecting reports.
+- Build passed for both the iPhone 17 Pro Simulator and physical `L-points1`; the corrected build was installed, launched, and captured from the physical device.
+
+## Comparison History
+
+1. The first pass incorrectly copied the source layout, moving the add action to the trailing edge and exposing every title. That was rejected and fully removed.
+2. The next pass introduced a P0 physical-device regression: the flexible navigation ZStack accepted the safe-area inset's full-height proposal, so the rail capsule expanded over almost the entire screen. Simulator-only review failed to catch the problem before handoff.
+3. The rail was changed from a minimum height to an explicit 62-point height, and the selected lens was changed to a strictly bounded system-material surface. The physical-device screenshot now shows normal ledger content with the rail confined to the bottom edge.
+4. The automated test gained vertical-position assertions and again passed the ledger-to-reports drag, center alignment, bottom anchoring, and release-time destination checks.
+5. Active labels were moved from the icon's trailing edge to a permanently reserved line below the icon. Fixed-width tab slots and coordinate assertions remove selection-dependent horizontal movement; the latest physical-device capture confirms the assets label below the unchanged asset icon position.
+
+## Follow-up Polish
+
+No P3 follow-up is required for the requested effect.
+
+final result: passed
+
+---
+
+# Historical Design QA Archive
+
 # Home Interaction Optimization — Design QA
 
 - Source visual truth: `/Users/ian/长期需要/记账Vibe Coding/.build/qa/home-populated-passed-2.png` plus the user's round-two interaction specification

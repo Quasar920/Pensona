@@ -48,30 +48,19 @@ struct AssetDashboardService {
     }
 
     func transactions(accountID: UUID, bookID: UUID? = nil) throws -> [LedgerTransaction] {
-        let descriptor: FetchDescriptor<LedgerTransaction>
-        if let bookID {
-            descriptor = FetchDescriptor(
-                predicate: #Predicate { transaction in
-                    (transaction.sourceAccount?.id == accountID
-                        || transaction.destinationAccount?.id == accountID
-                        || transaction.feeWallet?.account?.id == accountID
-                        || transaction.discountWallet?.account?.id == accountID)
-                        && transaction.bookID == bookID
-                },
-                sortBy: [SortDescriptor(\LedgerTransaction.date, order: .reverse)]
-            )
-        } else {
-            descriptor = FetchDescriptor(
-                predicate: #Predicate { transaction in
-                    transaction.sourceAccount?.id == accountID
-                        || transaction.destinationAccount?.id == accountID
-                        || transaction.feeWallet?.account?.id == accountID
-                        || transaction.discountWallet?.account?.id == accountID
-                },
-                sortBy: [SortDescriptor(\LedgerTransaction.date, order: .reverse)]
-            )
+        // SwiftData's SQLite translator aborts on the nested optional relationship
+        // chain used by feeWallet/discountWallet. Keep the database-side sort, then
+        // apply the account and optional-book scope in memory for a stable detail view.
+        let transactions = try context.fetch(FetchDescriptor<LedgerTransaction>(
+            sortBy: [SortDescriptor(\LedgerTransaction.date, order: .reverse)]
+        ))
+        return transactions.filter { transaction in
+            guard bookID == nil || transaction.bookID == bookID else { return false }
+            return transaction.sourceAccount?.id == accountID
+                || transaction.destinationAccount?.id == accountID
+                || transaction.feeWallet?.account?.id == accountID
+                || transaction.discountWallet?.account?.id == accountID
         }
-        return try context.fetch(descriptor)
     }
 
     private func modules(

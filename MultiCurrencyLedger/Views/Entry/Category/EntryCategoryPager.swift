@@ -11,6 +11,8 @@ struct EntryCategoryPager: View {
     @Binding var selectedID: UUID?
     @Binding var isReordering: Bool
     @Binding var isPresentingManagementOverlay: Bool
+    var usesCompactReceiptLayout = false
+    var compactExpansionChanged: (Bool) -> Void = { _ in }
 
     @State private var expandedRootID: UUID?
     @State private var actionCategory: LedgerCategory?
@@ -24,6 +26,7 @@ struct EntryCategoryPager: View {
     @State private var errorMessage: String?
     @State private var globalFrame: CGRect = .zero
     @State private var gridGlobalFrame: CGRect = .zero
+    @State private var isCompactCategoryListExpanded = false
 
     private var relevant: [LedgerCategory] {
         categories.filter { $0.type == type && !$0.isArchived }
@@ -40,6 +43,15 @@ struct EntryCategoryPager: View {
         guard let expandedRootID else { return [] }
         return relevant.filter { $0.parentID == expandedRootID }.sorted(by: categorySort)
     }
+    private var selectedCategory: LedgerCategory? {
+        relevant.first { $0.id == selectedID }
+    }
+    private var showsCompactCategorySelector: Bool {
+        usesCompactReceiptLayout
+            && !isCompactCategoryListExpanded
+            && !isReordering
+            && expandedRootID == nil
+    }
     private var overlayBounds: CGRect {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -51,37 +63,26 @@ struct EntryCategoryPager: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            HStack {
-                Text(type == .expense ? "支出分类" : "收入分类")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                if isReordering {
+            if isReordering {
+                HStack {
+                    Spacer()
                     Button("完成") {
                         isReordering = false
                         expandedRootID = nil
                     }
                     .font(.caption.weight(.semibold))
-                } else if let selected = relevant.first(where: { $0.id == selectedID }) {
-                    Text(selected.localizedName(locale: locale)).font(.caption).foregroundStyle(LedgerPalette.ink)
                 }
             }
 
-        ZStack {
-            pageGrid(gridValues)
-                .accessibilityIdentifier("entry-category-pager")
-        }
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: CategoryGridFramePreferenceKey.self,
-                    value: proxy.frame(in: .global)
-                )
+            if usesCompactReceiptLayout {
+                compactCategorySelector
+                    .accessibilityIdentifier("entry-category-collapsed-selector")
+                if !showsCompactCategorySelector {
+                    categoryGridContainer
+                }
+            } else {
+                categoryGridContainer
             }
-        }
-        // Four compact rows keep every expense category above the amount
-        // panel and leave room for the iPhone home indicator.
-            .frame(height: dynamicTypeSize.isAccessibilitySize ? 360 : 264)
-            .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive, value: expandedRootID)
         }
         .background {
             GeometryReader { proxy in
@@ -102,7 +103,7 @@ struct EntryCategoryPager: View {
                     ZStack {
                         Color.black.opacity(0.42)
                             .contentShape(Rectangle())
-                            .onTapGesture { expandedRootID = nil }
+                            .onTapGesture(perform: closeSubcategory)
 
                         EntrySubcategoryOverlay(
                             parent: expandedRoot,
@@ -113,7 +114,7 @@ struct EntryCategoryPager: View {
                             add: { beginCreate(parent: expandedRoot) },
                             longPress: showActions,
                             reorder: reorderChild,
-                            close: { expandedRootID = nil }
+                            close: closeSubcategory
                         )
                         .frame(width: min(360, overlayBounds.width - 36))
                         .frame(height: subcategoryPanelHeight(maximum: availableHeight))
@@ -204,11 +205,18 @@ struct EntryCategoryPager: View {
         )) { Button("好") {} } message: { Text(errorMessage ?? AppLocalization.string("未知错误")) }
         .onChange(of: type) { _, _ in
             expandedRootID = nil
+            setCompactCategoryListExpanded(false)
             isReordering = false
             isPresentingManagementOverlay = false
         }
         .onAppear {
             #if DEBUG
+            if let previewName = ProcessInfo.processInfo.environment["ENTRY_PREVIEW_CATEGORY_NAME"],
+               let previewCategory = roots.first(where: {
+                   $0.localizedName(locale: locale) == previewName
+               }) {
+                selectedID = previewCategory.id
+            }
             if ProcessInfo.processInfo.environment["ENTRY_PREVIEW_SUBCATEGORY"] == "1" {
                 expandedRootID = roots.first?.id
             }
@@ -226,6 +234,51 @@ struct EntryCategoryPager: View {
 
     private var service: CategoryService { CategoryService(context: context) }
 
+    private var compactCategorySelector: some View {
+        Button {
+            withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive) {
+                setCompactCategoryListExpanded(!isCompactCategoryListExpanded)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Text("分类")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(EntryCategoryAppearance.ink)
+                Spacer(minLength: 12)
+                Text(selectedCategory?.localizedName(locale: locale) ?? "选择分类")
+                    .font(.subheadline)
+                    .foregroundStyle(selectedCategory == nil ? Color.secondary : EntryCategoryAppearance.ink)
+                    .lineLimit(1)
+                Image(systemName: isCompactCategoryListExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(minHeight: 40)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("分类，\(selectedCategory?.localizedName(locale: locale) ?? "未选择")")
+    }
+
+    private var categoryGridContainer: some View {
+        ZStack {
+            pageGrid(gridValues)
+                .accessibilityIdentifier("entry-category-pager")
+        }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: CategoryGridFramePreferenceKey.self,
+                    value: proxy.frame(in: .global)
+                )
+            }
+        }
+        .frame(height: dynamicTypeSize.isAccessibilitySize
+            ? 360
+            : (usesCompactReceiptLayout ? 229 : 272))
+        .animation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.responsive, value: expandedRootID)
+    }
+
     @ViewBuilder
     private func pageGrid(_ values: [GridItemValue]) -> some View {
         if dynamicTypeSize.isAccessibilitySize {
@@ -241,8 +294,8 @@ struct EntryCategoryPager: View {
 
     private func categoryGrid(_ values: [GridItemValue]) -> some View {
         LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: columns),
-            spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 4
+            columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: columns),
+            spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 7
         ) {
             ForEach(values) { value in
                 switch value {
@@ -260,7 +313,12 @@ struct EntryCategoryPager: View {
         let selectedRootID = relevant.first(where: { $0.id == selectedID })?.parentID ?? selectedID
         return Button { selectRoot(category) } label: {
             VStack(spacing: 4) {
-                CategoryIconImage(category: category, size: dynamicTypeSize.isAccessibilitySize ? 48 : 36)
+                CategoryIconImage(
+                    category: category,
+                    size: dynamicTypeSize.isAccessibilitySize
+                        ? 48
+                        : (usesCompactReceiptLayout ? 27 : 36)
+                )
                 Text(category.localizedName(locale: locale))
                     .font(.caption2.weight(.semibold))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
@@ -268,15 +326,28 @@ struct EntryCategoryPager: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
-            .foregroundStyle(selectedRootID == category.id ? LedgerPalette.accent : EntryCategoryAppearance.ink)
-            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 88 : 62)
+            .foregroundStyle(EntryCategoryAppearance.ink)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: dynamicTypeSize.isAccessibilitySize
+                    ? 88
+                    : (usesCompactReceiptLayout ? 52 : 64)
+            )
             .background(
                 EntryCategoryAppearance.card,
-                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(selectedRootID == category.id ? LedgerPalette.ink.opacity(0.75) : .clear, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(selectedRootID == category.id ? Color.black : Color.black.opacity(0.14), lineWidth: selectedRootID == category.id ? 2 : 1)
+            }
+            .overlay(alignment: .topTrailing) {
+                if selectedRootID == category.id {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.black)
+                        .padding(5)
+                }
             }
             .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
@@ -301,15 +372,25 @@ struct EntryCategoryPager: View {
         Button { beginCreate(parent: nil) } label: {
             VStack(spacing: 4) {
                 Image(systemName: "plus")
-                    .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 30 : 32, weight: .medium))
+                    .font(.system(
+                        size: dynamicTypeSize.isAccessibilitySize
+                            ? 30
+                            : (usesCompactReceiptLayout ? 24 : 32),
+                        weight: .medium
+                    ))
                     .foregroundStyle(LedgerPalette.accent)
                 Text("新分类").font(.caption2.weight(.semibold))
             }
             .foregroundStyle(EntryCategoryAppearance.ink)
-            .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 88 : 62)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: dynamicTypeSize.isAccessibilitySize
+                    ? 88
+                    : (usesCompactReceiptLayout ? 52 : 64)
+            )
             .background(
                 EntryCategoryAppearance.card,
-                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
@@ -333,6 +414,8 @@ struct EntryCategoryPager: View {
         selectedID = category.id
         if relevant.contains(where: { $0.parentID == category.id }) {
             expandedRootID = category.id
+        } else {
+            setCompactCategoryListExpanded(false)
         }
     }
 
@@ -340,6 +423,19 @@ struct EntryCategoryPager: View {
         guard !isReordering else { return }
         selectedID = category.id
         expandedRootID = nil
+        setCompactCategoryListExpanded(false)
+    }
+
+    private func closeSubcategory() {
+        expandedRootID = nil
+        if usesCompactReceiptLayout {
+            setCompactCategoryListExpanded(false)
+        }
+    }
+
+    private func setCompactCategoryListExpanded(_ isExpanded: Bool) {
+        isCompactCategoryListExpanded = isExpanded
+        compactExpansionChanged(isExpanded)
     }
 
     private func showActions(_ category: LedgerCategory) {
@@ -545,11 +641,10 @@ struct EntryCategoryPager: View {
 }
 
 enum EntryCategoryAppearance {
-    /// Keep the sampled light card grey while using the requested dark preview.
     static let card = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 65 / 255, green: 65 / 255, blue: 66 / 255, alpha: 1)
-            : UIColor(red: 227 / 255, green: 227 / 255, blue: 227 / 255, alpha: 1)
+            : UIColor(red: 247 / 255, green: 245 / 255, blue: 239 / 255, alpha: 1)
     })
     static let overlay = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark

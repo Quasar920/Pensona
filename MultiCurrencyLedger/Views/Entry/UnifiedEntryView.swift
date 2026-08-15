@@ -187,9 +187,12 @@ private struct EntryLoadedView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        Group {
             ZStack {
-                LedgerPageBackground()
+                // The receipt owns the editor surface. Keeping the old page
+                // background here filled the torn-edge cutouts and made the
+                // complete zigzag read as a straight, rounded sheet edge.
+                Color.clear
                 if allWallets.isEmpty {
                     ContentUnavailableView {
                         Label("还不能记账", systemImage: "plus.circle")
@@ -209,31 +212,6 @@ private struct EntryLoadedView: View {
                         nextEntry: { validateAndSave(.next) },
                         complete: { validateAndSave(.complete) }
                     )
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { requestDismiss?() ?? dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.subheadline.weight(.bold))
-                            .frame(width: 36, height: 36)
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(LedgerGlassPressStyle())
-                    .accessibilityLabel(AppLocalization.string("关闭"))
-                        .accessibilityIdentifier("entry-close-button")
-                }
-                if seed == nil, editingTransaction == nil, !scopedTemplates.isEmpty {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
-                            ForEach(scopedTemplates) { template in
-                                Button(template.name) { applyTemplate(template) }
-                            }
-                        } label: {
-                            Label("模板", systemImage: "square.on.square")
-                        }
-                    }
                 }
             }
             .onAppear(perform: initializeSelections)

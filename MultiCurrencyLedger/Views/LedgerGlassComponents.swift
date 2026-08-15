@@ -54,12 +54,12 @@ enum LedgerPalette {
     static let environment = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(white: 0.045, alpha: 1)
-            : UIColor(red: 246 / 255, green: 246 / 255, blue: 244 / 255, alpha: 1)
+            : UIColor(red: 236 / 255, green: 234 / 255, blue: 227 / 255, alpha: 1)
     })
     static let environmentLift = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(white: 0.105, alpha: 1)
-            : UIColor(red: 231 / 255, green: 231 / 255, blue: 228 / 255, alpha: 1)
+            : UIColor(red: 236 / 255, green: 234 / 255, blue: 227 / 255, alpha: 1)
     })
     static let background = environment
     static let surface = Color(uiColor: UIColor { traits in

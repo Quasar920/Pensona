@@ -152,21 +152,9 @@ struct EntryAmountPanel: View {
                 }
             }
 
-            Divider().opacity(0.32)
-            HStack(alignment: .center, spacing: 8) {
-                Text("备注")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                TextField("可选，直接输入", text: $state.note)
-                    .font(.subheadline)
-                    .textFieldStyle(.plain)
-                    .frame(height: 20)
-            }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 10)
         .padding(.horizontal, 14)
-        .overlay(alignment: .top) { Divider().opacity(0.58) }
-        .overlay(alignment: .bottom) { Divider().opacity(0.58) }
         .frame(maxWidth: .infinity)
         .onChange(of: state.amountText) { _, _ in updateExchange(driver: .sourceAmount) }
         .onChange(of: state.amountText) { _, _ in updateRepaymentRate() }

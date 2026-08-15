@@ -482,28 +482,28 @@ enum LedgerTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .ledger: AppLocalization.string( "tab.ledger")
-        case .assets: AppLocalization.string( "tab.assets")
-        case .savings: AppLocalization.string( "tab.plans")
-        case .statistics: AppLocalization.string( "tab.reports")
+        case .ledger: "账"
+        case .assets: "业"
+        case .savings: "策"
+        case .statistics: "衡"
         }
     }
 
     var symbolName: String {
         switch self {
-        case .ledger: "list.bullet.rectangle"
-        case .assets: "creditcard"
+        case .ledger: "list.bullet"
+        case .assets: "rectangle.on.rectangle"
         case .savings: "target"
-        case .statistics: "chart.bar.xaxis"
+        case .statistics: "chart.bar"
         }
     }
 
     var selectedSymbolName: String {
         switch self {
-        case .ledger: "list.bullet.rectangle.fill"
-        case .assets: "creditcard.fill"
+        case .ledger: "list.bullet"
+        case .assets: "rectangle.on.rectangle"
         case .savings: "target"
-        case .statistics: "chart.bar.fill"
+        case .statistics: "chart.bar"
         }
     }
 

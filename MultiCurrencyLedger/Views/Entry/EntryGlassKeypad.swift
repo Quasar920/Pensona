@@ -16,7 +16,6 @@ struct EntryGlassKeypad: View {
     let canComplete: Bool
     let nextEntry: () -> Void
     let complete: () -> Void
-
     @State private var calculation = EntryCalculationState()
     @State private var hasEnteredValueSinceReset = false
 
