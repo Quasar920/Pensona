@@ -3,11 +3,21 @@ import UIKit
 
 struct QuickBookkeepingSettingsView: View {
     @AppStorage("recognitionAllowIncomeAutoEntry") private var allowIncomeAutoEntry = false
+    @AppStorage(AppPreferences.autoExpandCategoryOnNewEntryKey)
+    private var autoExpandCategoryOnNewEntry = false
 
     var body: some View {
         Form {
             Section("智能草稿") {
                 NavigationLink("文本或语音生成待确认草稿") { SmartDraftEntryView() }
+            }
+
+            Section {
+                Toggle("进入编辑器时自动展开分类", isOn: $autoExpandCategoryOnNewEntry)
+            } header: {
+                Text("记账编辑器")
+            } footer: {
+                Text("仅在点击“记一笔”新建收支时生效；编辑已有账单和外部待确认草稿不会自动展开。")
             }
 
             Section {

@@ -3,6 +3,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
+    @AppStorage(AppPreferences.autoExpandCategoryOnNewEntryKey)
+    private var autoExpandCategoryOnNewEntry = false
     @State private var errorMessage: String?
     @State private var showingAbout = false
 
@@ -53,6 +55,32 @@ struct SettingsView: View {
                         }
                     } header: {
                         SettingsSectionHeader("外观与金额颜色")
+                    }
+
+                    Section {
+                        Toggle(isOn: $autoExpandCategoryOnNewEntry) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("快捷记账")
+                                    .font(.callout)
+                                Text("点击“记一笔”后自动展开分类")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } header: {
+                        SettingsSectionHeader("快捷记账")
+                    }
+
+                    Section {
+                        SettingsDestinationRow(
+                            title: "智能记账与快捷指令",
+                            subtitle: "文本草稿、截图识别与快捷指令",
+                            symbol: "bolt.fill"
+                        ) {
+                            QuickBookkeepingSettingsView()
+                        }
+                    } header: {
+                        SettingsSectionHeader("智能记账")
                     }
 
                     Section {

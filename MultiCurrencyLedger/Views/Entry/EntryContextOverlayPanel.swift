@@ -190,10 +190,10 @@ struct EntryContextOverlayPanel: View {
             .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
             HStack {
-                Text("其他人合计应还")
+                Text("其他每人应还")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(MoneyFormatter.string(aaOwedAmount, currencyCode: currencyCode))
+                Text(MoneyFormatter.string(aaPerPersonAmount, currencyCode: currencyCode))
                     .font(.headline.monospacedDigit())
             }
 
@@ -222,9 +222,9 @@ struct EntryContextOverlayPanel: View {
         .accessibilityLabel(delta < 0 ? "减少人数" : "增加人数")
     }
 
-    private var aaOwedAmount: Decimal {
+    private var aaPerPersonAmount: Decimal {
         let total = DecimalParser.parse(mainAmountText) ?? 0
-        return total * Decimal(draft.aaPeople - 1) / Decimal(draft.aaPeople)
+        return total / Decimal(draft.aaPeople)
     }
 
     private var splitPaymentOptions: some View {
@@ -501,10 +501,10 @@ struct EntryContextTransitionPanel: View {
                 .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                 HStack {
-                    Text("其他人合计应还")
+                    Text("其他每人应还")
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(MoneyFormatter.string(aaOwedAmount, currencyCode: currencyCode))
+                    Text(MoneyFormatter.string(aaPerPersonAmount, currencyCode: currencyCode))
                         .font(.headline.monospacedDigit())
                 }
 
@@ -604,9 +604,9 @@ struct EntryContextTransitionPanel: View {
         .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var aaOwedAmount: Decimal {
+    private var aaPerPersonAmount: Decimal {
         let total = DecimalParser.parse(mainAmountText) ?? 0
-        return total * Decimal(draft.aaPeople - 1) / Decimal(draft.aaPeople)
+        return total / Decimal(draft.aaPeople)
     }
 
     private func walletName(for id: UUID?) -> String {

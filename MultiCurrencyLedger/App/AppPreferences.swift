@@ -123,6 +123,7 @@ final class AppPreferences {
     static let hapticsKey = "hapticsEnabled"
     static let amountColorKey = "amountColorConvention"
     static let languageKey = "appLanguage"
+    static let autoExpandCategoryOnNewEntryKey = "autoExpandCategoryOnNewEntry"
 
     private let defaults: UserDefaults
 

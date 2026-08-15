@@ -52,9 +52,10 @@ struct EntryExpansionContainer: View {
                 .opacity(contentVisible ? 1 : 0)
             if contentVisible {
                 entryContent(route)
-                    // The kind selector now occupies the sheet cap directly
-                    // below the drag handle instead of leaving it empty.
-                    .padding(.top, 10)
+                    // Keep the transaction-kind selector below the drag
+                    // handle's hit area. Otherwise the handle sits above the
+                    // top row and intercepts taps on 收入 / 转账 / 换汇.
+                    .padding(.top, 44)
                     .modifier(EntryPreviewDynamicTypeModifier())
                     .transition(.opacity)
             }
@@ -62,14 +63,20 @@ struct EntryExpansionContainer: View {
                 Capsule()
                     .fill(.secondary.opacity(0.35))
                     .frame(width: 38, height: 5)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .top)
                     .padding(.top, 11)
+                    // The gesture hit target must end before the editor's
+                    // first row begins.
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .top)
                     .contentShape(Rectangle())
             }
                 .buttonStyle(.plain)
                 .opacity(contentVisible ? 1 : 0)
                 .accessibilityLabel("拖拽关闭记账")
                 .accessibilityIdentifier("receipt-entry-drag-handle")
+                // Limit sheet-dismiss dragging to its handle. Applying this
+                // as a high-priority gesture to the whole sheet swallowed
+                // taps on the transaction-kind selector and option rows.
+                .highPriorityGesture(topDragGesture(in: proxy))
         }
         .frame(width: expandedWidth, height: expandedHeight)
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
@@ -79,7 +86,6 @@ struct EntryExpansionContainer: View {
         }
         .offset(y: shellExpanded ? dragOffset : proxy.size.height + 80)
         .padding(.bottom, bottomClearance)
-        .highPriorityGesture(topDragGesture(in: proxy), including: .all)
         .accessibilityIdentifier("receipt-entry-sheet")
     }
 

@@ -209,6 +209,7 @@ private struct EntryLoadedView: View {
                         successMessage: successMessage,
                         showsNextEntry: seed == nil && editingTransaction == nil,
                         isSaving: entrySession.isSubmitting,
+                        autoExpandCategoryOnAppear: seed == nil && editingTransaction == nil,
                         nextEntry: { validateAndSave(.next) },
                         complete: { validateAndSave(.complete) }
                     )

@@ -100,7 +100,10 @@ struct EntryCategoryPager: View {
                     let availableHeight = max(180, overlayBounds.height - 160)
 
                     ZStack {
-                        Color.black.opacity(0.42)
+                        // Keep the subcategory choice visually lightweight;
+                        // a transparent hit target still lets users dismiss it
+                        // without dimming the surrounding editor.
+                        Color.clear
                             .contentShape(Rectangle())
                             .onTapGesture(perform: closeSubcategory)
 

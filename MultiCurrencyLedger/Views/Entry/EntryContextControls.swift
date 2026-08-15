@@ -556,11 +556,11 @@ struct LegacyEntryContextOverlay: View {
             .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
             let total = DecimalParser.parse(state.amountText) ?? 0
-            let owed = total * Decimal(aaPeople - 1) / Decimal(aaPeople)
+            let perPersonAmount = total / Decimal(aaPeople)
             HStack {
-                Text("其他人合计应还").foregroundStyle(.secondary)
+                Text("其他每人应还").foregroundStyle(.secondary)
                 Spacer()
-                Text(MoneyFormatter.string(owed, currencyCode: currencyCode)).font(.headline.monospacedDigit())
+                Text(MoneyFormatter.string(perPersonAmount, currencyCode: currencyCode)).font(.headline.monospacedDigit())
             }
         }
     }

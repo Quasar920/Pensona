@@ -139,6 +139,38 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
         XCTAssertTrue(aa.label.contains("不参与 AA"))
     }
 
+    func testEntryKindSelectorSwitchesBetweenAllTransactionKinds() {
+        openEntry()
+
+        for kind in ["income", "transfer", "exchange", "expense"] {
+            let selector = app.buttons["receipt-kind-\(kind)"]
+            XCTAssertTrue(selector.waitForExistence(timeout: 2))
+            selector.tap()
+            XCTAssertTrue(selector.isSelected, "\(kind) should become the active transaction kind")
+        }
+    }
+
+    func testDiscountContextAcceptsReceiptKeypadInput() {
+        openEntry()
+
+        let discount = app.buttons["entry-context-tag-discount"]
+        scrollTo(discount)
+        discount.tap()
+
+        let panel = app.descendants(matching: .any)["entry-context-panel-discount"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 2))
+
+        let keypad = app.descendants(matching: .any)["receipt-keypad"]
+        let key = keypad.buttons["2"].firstMatch
+        XCTAssertTrue(key.waitForExistence(timeout: 2))
+        key.tap()
+        XCTAssertTrue(panel.staticTexts["2"].waitForExistence(timeout: 2))
+
+        app.buttons["确认"].firstMatch.tap()
+        XCTAssertTrue(panel.waitForNonExistence(timeout: 2))
+        XCTAssertTrue(discount.label.contains("2"))
+    }
+
     func testIncomeFeeTemplateAppliesImmediately() {
         openEntry()
 

@@ -11,6 +11,7 @@ struct EntryComposerView: View {
     let successMessage: String?
     let showsNextEntry: Bool
     let isSaving: Bool
+    let autoExpandCategoryOnAppear: Bool
     let nextEntry: () -> Void
     let complete: () -> Void
 
@@ -23,6 +24,7 @@ struct EntryComposerView: View {
             successMessage: successMessage,
             showsNextEntry: showsNextEntry,
             isSaving: isSaving,
+            autoExpandCategoryOnAppear: autoExpandCategoryOnAppear,
             nextEntry: nextEntry,
             complete: complete
         )
@@ -38,6 +40,7 @@ private struct ReceiptEntryComposerView: View {
     let successMessage: String?
     let showsNextEntry: Bool
     let isSaving: Bool
+    let autoExpandCategoryOnAppear: Bool
     let nextEntry: () -> Void
     let complete: () -> Void
 
@@ -53,6 +56,9 @@ private struct ReceiptEntryComposerView: View {
     @State private var categoryReordering = false
     @State private var categoryManagementOverlay = false
     @State private var isCategoryPickerExpanded = false
+    @State private var appliedInitialCategoryExpansion = false
+    @AppStorage(AppPreferences.autoExpandCategoryOnNewEntryKey)
+    private var automaticallyExpandCategory = false
 
     private var sourceWallet: CurrencyWallet? {
         wallets.first { $0.id == state.sourceWalletID }
@@ -176,17 +182,15 @@ private struct ReceiptEntryComposerView: View {
                 .fill(ReceiptPalette.paper)
 
             VStack(spacing: 0) {
-                if isCategoryPickerExpanded && (state.kind == .expense || state.kind == .income) {
-                    ScrollView {
-                        receiptFormSections
-                    }
-                    .scrollIndicators(.hidden)
-                    .layoutPriority(1)
-                    keypadSection
-                } else {
+                // The form must always be the flexible region. Keeping the
+                // keypad outside it pins 下一笔 / 完成 to the same bottom
+                // position whether the category list is collapsed or open.
+                ScrollView {
                     receiptFormSections
-                    keypadSection
                 }
+                .scrollIndicators(.hidden)
+                .layoutPriority(1)
+                keypadSection
             }
             .padding(.horizontal, 12)
             // Pull the transaction kinds into the sheet cap so the form
@@ -267,6 +271,14 @@ private struct ReceiptEntryComposerView: View {
                     .first?.id
             }
         }
+        .onAppear {
+            guard !appliedInitialCategoryExpansion else { return }
+            appliedInitialCategoryExpansion = true
+            guard automaticallyExpandCategory,
+                  autoExpandCategoryOnAppear,
+                  state.kind == .expense || state.kind == .income else { return }
+            isCategoryPickerExpanded = true
+        }
         .onChange(of: activeAmount) { _, _ in keypadResetID = UUID() }
         .onChange(of: contextPresentation.inputTarget) { _, _ in keypadResetID = UUID() }
     }
@@ -282,7 +294,7 @@ private struct ReceiptEntryComposerView: View {
             HStack(spacing: 0) {
                 ForEach(TransactionKind.allCases.filter { $0 != .adjustment }) { kind in
                     Button {
-                        state.kind = kind
+                        selectTransactionKind(kind)
                     } label: {
                         Text(kind.title)
                             .font(.subheadline.weight(.medium))
@@ -297,6 +309,19 @@ private struct ReceiptEntryComposerView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(ReceiptPalette.border))
+        }
+    }
+
+    private func selectTransactionKind(_ kind: TransactionKind) {
+        guard state.kind != kind else { return }
+        // Keep the selector's tap target independent from the content below
+        // it, then let the parent reset dependent form fields in one place.
+        isCategoryPickerExpanded = false
+        categoryReordering = false
+        categoryManagementOverlay = false
+        HapticFeedbackService().selection()
+        withAnimation(.easeOut(duration: 0.16)) {
+            state.kind = kind
         }
     }
 
@@ -397,22 +422,7 @@ private struct ReceiptEntryComposerView: View {
         VStack(spacing: 0) {
             switch state.kind {
             case .expense:
-                ReceiptToggleRow(
-                    title: "报销",
-                    isOn: Binding(
-                        get: { state.reimbursementStatus == .pending },
-                        set: { state.reimbursementStatus = $0 ? .pending : .none }
-                    )
-                )
-                ReceiptSettingRow(
-                    title: "AA",
-                    value: state.aaSplitDraft == nil ? "不参与 AA" : "已设置",
-                    symbol: "chevron.down",
-                    action: { presentContext(.aa) }
-                )
-                .accessibilityIdentifier("entry-context-tag-aa")
-                commonMoneyOptions
-                ReceiptToggleRow(title: "不计支出", isOn: $state.excludesFromMonthlyExpense)
+                expenseOptions
             case .income:
                 commonMoneyOptions
                 ReceiptToggleRow(title: "不计收入", isOn: $state.excludesFromMonthlyIncome)
@@ -433,8 +443,42 @@ private struct ReceiptEntryComposerView: View {
         }
     }
 
+    private var expenseOptions: some View {
+        VStack(spacing: 0) {
+            ReceiptToggleRow(
+                title: "报销",
+                isOn: Binding(
+                    get: { state.reimbursementStatus == .pending },
+                    set: { state.reimbursementStatus = $0 ? .pending : .none }
+                )
+            )
+            ReceiptSettingRow(
+                title: "AA",
+                value: state.aaSplitDraft == nil ? "不参与 AA" : "已设置",
+                symbol: "chevron.down",
+                action: { presentContext(.aa) }
+            )
+            .accessibilityIdentifier("entry-context-tag-aa")
+            discountRow
+
+            // Recovery-related settings and payment-related settings are
+            // separate groups in the receipt, as they affect different totals.
+            ReceiptDashDivider()
+
+            splitPaymentRow
+            feeRow
+            ReceiptToggleRow(title: "不计支出", isOn: $state.excludesFromMonthlyExpense)
+        }
+    }
+
     @ViewBuilder
     private var commonMoneyOptions: some View {
+        discountRow
+        splitPaymentRow
+        feeRow
+    }
+
+    private var discountRow: some View {
         ReceiptSettingRow(
             title: "优惠",
             value: hasDiscount ? "已设置优惠" : "无优惠",
@@ -442,6 +486,9 @@ private struct ReceiptEntryComposerView: View {
             action: { presentContext(.discount) }
         )
         .accessibilityIdentifier("entry-context-tag-discount")
+    }
+
+    private var splitPaymentRow: some View {
         ReceiptSettingRow(
             title: "组合支付",
             value: state.usesSplitPayment ? "已设置" : "单独支付",
@@ -449,7 +496,6 @@ private struct ReceiptEntryComposerView: View {
             action: { presentContext(.splitPayment) }
         )
         .accessibilityIdentifier("entry-context-tag-splitPayment")
-        feeRow
     }
 
     private var feeRow: some View {
@@ -500,9 +546,20 @@ private struct ReceiptEntryComposerView: View {
         if let kind = contextPresentation.kind,
            let draftBinding = contextDraftBinding {
             ZStack {
-                Color.black.opacity(0.22)
-                    .contentShape(Rectangle())
-                    .onTapGesture { dismissContext(intent: .cancel) }
+                GeometryReader { proxy in
+                    VStack(spacing: 0) {
+                        Color.black.opacity(0.22)
+                            .contentShape(Rectangle())
+                            .onTapGesture { dismissContext(intent: .cancel) }
+                            // Reserve the bottom of the receipt for its
+                            // keypad. Previously the modal backdrop covered
+                            // it, so discount input could not receive taps.
+                            .frame(height: max(0, proxy.size.height - 286))
+
+                        Color.clear
+                            .allowsHitTesting(false)
+                    }
+                }
 
                 EntryContextOverlayPanel(
                     kind: kind,
