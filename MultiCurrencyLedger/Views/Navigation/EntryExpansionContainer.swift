@@ -79,7 +79,7 @@ struct EntryExpansionContainer: View {
         }
         .offset(y: shellExpanded ? dragOffset : proxy.size.height + 80)
         .padding(.bottom, bottomClearance)
-        .gesture(topDragGesture(in: proxy))
+        .highPriorityGesture(topDragGesture(in: proxy), including: .all)
         .accessibilityIdentifier("receipt-entry-sheet")
     }
 
