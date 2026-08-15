@@ -79,7 +79,7 @@ struct EntryExpansionContainer: View {
         }
         .offset(y: shellExpanded ? dragOffset : proxy.size.height + 80)
         .padding(.bottom, bottomClearance)
-        .simultaneousGesture(topDragGesture(in: proxy))
+        .gesture(topDragGesture(in: proxy))
         .accessibilityIdentifier("receipt-entry-sheet")
     }
 
@@ -106,7 +106,7 @@ struct EntryExpansionContainer: View {
     }
 
     private func topDragGesture(in proxy: GeometryProxy) -> some Gesture {
-        DragGesture(minimumDistance: 6, coordinateSpace: .global)
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
             .onChanged { value in
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
@@ -115,7 +115,7 @@ struct EntryExpansionContainer: View {
                 }
             }
             .onEnded { value in
-                if value.translation.height > 120 || value.predictedEndTranslation.height > 220 {
+                if dragOffset > 170 || value.predictedEndTranslation.height * 0.78 > 320 {
                     dismissFromDrag(in: proxy)
                 } else {
                     withAnimation(LedgerMotion.responsive) { dragOffset = 0 }
@@ -124,7 +124,7 @@ struct EntryExpansionContainer: View {
     }
 
     private func interactiveDragOffset(for translation: CGFloat) -> CGFloat {
-        translation >= 0 ? translation : translation * 0.14
+        translation >= 0 ? translation * 0.78 : translation * 0.10
     }
 
     private func dismissFromDrag(in proxy: GeometryProxy) {
