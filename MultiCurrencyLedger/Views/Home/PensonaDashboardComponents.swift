@@ -62,7 +62,7 @@ struct OneTsuReceiptLedger: View {
     let emptyState: (title: String, message: String)
     let loadError: String?
     let openBudget: () -> Void
-    let openTransaction: (LedgerTransaction) -> Void
+    let openTransaction: (LedgerTransaction, CGRect) -> Void
     let editTransaction: (LedgerTransaction) -> Void
     let deleteTransaction: (LedgerTransaction) -> Void
     let addTransaction: () -> Void
@@ -145,79 +145,71 @@ private struct ReceiptBudgetLine: View {
     }
 }
 
+private struct ReceiptTransactionFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue()) { _, latest in latest }
+    }
+}
+
 private struct ReceiptDaySection: View {
     @Environment(\.locale) private var locale
 
     let group: BillDayGroup
     let currencyCode: String
     let attachmentTransactionIDs: Set<UUID>
-    let openTransaction: (LedgerTransaction) -> Void
+    let openTransaction: (LedgerTransaction, CGRect) -> Void
     let editTransaction: (LedgerTransaction) -> Void
     let deleteTransaction: (LedgerTransaction) -> Void
+    @State private var transactionFrames: [UUID: CGRect] = [:]
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(relativeDay)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(group.date.formatted(.dateTime.day(.twoDigits)))
-                    .font(LedgerTypography.receiptDate)
-                    .foregroundStyle(.primary)
-                Text(group.date.formatted(.dateTime.locale(locale).weekday(.wide)))
-                    .font(.caption)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(group.date.formatted(.dateTime.month().day()))
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Text("\(group.transactions.count)笔")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            .frame(width: 82, alignment: .leading)
-            .padding(.top, 19)
 
-            VStack(spacing: 0) {
-                ForEach(Array(group.transactions.enumerated()), id: \.element.id) { index, transaction in
-                    HStack(alignment: .top, spacing: 10) {
-                        Circle()
-                            .fill(Color.secondary.opacity(0.72))
-                            .frame(width: 9, height: 9)
-                            .padding(.top, 28)
-                            .offset(x: -5)
-
-                        Button { openTransaction(transaction) } label: {
-                            ReceiptTransactionRow(
-                                transaction: transaction,
-                                currencyCode: currencyCode,
-                                hasAttachment: attachmentTransactionIDs.contains(transaction.id)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button("编辑交易", systemImage: "square.and.pencil") { editTransaction(transaction) }
-                            Button("删除交易", systemImage: "trash", role: .destructive) { deleteTransaction(transaction) }
-                        }
-                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                            Button("编辑", systemImage: "square.and.pencil") { editTransaction(transaction) }
-                                .tint(LedgerPalette.accent)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("删除", systemImage: "trash", role: .destructive) { deleteTransaction(transaction) }
-                        }
-                        .accessibilityHint("打开交易详情")
-                    }
-                    .padding(.leading, 5)
-                    if index < group.transactions.count - 1 {
-                        Divider().padding(.leading, 16).opacity(0.60)
+            ForEach(group.transactions) { transaction in
+                Button { openTransaction(transaction, transactionFrames[transaction.id] ?? .zero) } label: {
+                    ReceiptTransactionRow(
+                        transaction: transaction,
+                        currencyCode: currencyCode,
+                        hasAttachment: attachmentTransactionIDs.contains(transaction.id)
+                    )
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("编辑交易", systemImage: "square.and.pencil") { editTransaction(transaction) }
+                    Button("删除交易", systemImage: "trash", role: .destructive) { deleteTransaction(transaction) }
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                    Button("编辑", systemImage: "square.and.pencil") { editTransaction(transaction) }
+                        .tint(LedgerPalette.accent)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button("删除", systemImage: "trash", role: .destructive) { deleteTransaction(transaction) }
+                }
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: ReceiptTransactionFramePreferenceKey.self,
+                            value: [transaction.id: proxy.frame(in: .global)]
+                        )
                     }
                 }
-            }
-            .overlay(alignment: .leading) {
-                Rectangle().fill(LedgerPalette.separator).frame(width: 1)
+                .accessibilityHint("展开查看账单详情")
             }
         }
-        .overlay(alignment: .bottom) { Divider().opacity(0.72) }
-    }
-
-    private var relativeDay: String {
-        if Calendar.current.isDateInToday(group.date) { return "今天" }
-        if Calendar.current.isDateInYesterday(group.date) { return "昨天" }
-        return group.date.formatted(.dateTime.month().day())
+        .onPreferenceChange(ReceiptTransactionFramePreferenceKey.self) { frames in
+            transactionFrames.merge(frames) { _, latest in latest }
+        }
+        .padding(.bottom, 20)
     }
 }
 
@@ -229,12 +221,12 @@ private struct ReceiptTransactionRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             if let category = transaction.category {
-                CategoryIconImage(category: category, size: 30)
+                CategoryIconImage(category: category, size: 36)
             } else {
                 Image(systemName: transaction.type.symbolName)
-                    .font(.subheadline)
+                    .font(.title3)
                     .foregroundStyle(LedgerPalette.accent)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 36, height: 36)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -255,7 +247,7 @@ private struct ReceiptTransactionRow: View {
                         }
                         Text(transaction.summaryAmount)
                             .font(LedgerTypography.amount)
-                            .foregroundStyle(amountColor)
+                            .foregroundStyle(LedgerPalette.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -284,9 +276,14 @@ private struct ReceiptTransactionRow: View {
                 }
             }
         }
-        .padding(.vertical, 16)
-        .padding(.trailing, 2)
-        .contentShape(Rectangle())
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(LedgerPalette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(LedgerPalette.hairline, lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     @ViewBuilder

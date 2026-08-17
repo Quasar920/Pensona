@@ -30,9 +30,8 @@ struct HomeView: View {
     @State private var deletingTransaction: LedgerTransaction?
     @State private var transactionActionError: String?
     @State private var isBillSearchPresented = false
-    @State private var bookSwitcherGenie = CenteredGenieCardPresentation()
-    @State private var bookSwitcherSourceFrame = CGRect.zero
-    @State private var pendingBookSheet: HomeSheetDestination?
+    @State private var receiptDetailTransaction: LedgerTransaction?
+    @State private var receiptSourceFrame = CGRect.zero
 
     init(
         addTransaction: @escaping () -> Void = {},
@@ -92,11 +91,18 @@ struct HomeView: View {
                     ScrollView(showsIndicators: false) {
                         scrollContent
                     }
+
+                    if let receiptDetailTransaction {
+                        ReceiptTransactionDetailView(
+                            transaction: receiptDetailTransaction,
+                            sourceFrame: receiptSourceFrame,
+                            close: dismissReceiptDetail,
+                            edit: { editFromReceiptDetail(receiptDetailTransaction) }
+                        )
+                        .zIndex(2)
+                    }
                 }
             )
-            .overlay {
-                bookSwitcherOverlay
-            }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: LedgerTransaction.self) {
                 TransactionDetailView(transaction: $0)
@@ -134,10 +140,6 @@ struct HomeView: View {
                 applyPreviewStateIfNeeded()
             }
             .onChange(of: books.count) { _, _ in ensureSelectedBook() }
-            .onPreferenceChange(
-                CenteredGenieSourceFramePreferenceKey.self,
-                perform: updateBookSwitcherSourceFrame
-            )
             .task(id: loadKey) {
                 await refreshSnapshotForCurrentQuery()
             }
@@ -146,10 +148,13 @@ struct HomeView: View {
             }
         }
         .coordinateSpace(name: CenteredGenieCoordinateSpace.name)
-        .rootEntryVisibility(detailPath.isEmpty ? .visible : .hidden, for: .ledger)
-        .onAppear { isDetailPresented = !detailPath.isEmpty }
+        .rootEntryVisibility(detailPath.isEmpty && receiptDetailTransaction == nil ? .visible : .hidden, for: .ledger)
+        .onAppear { isDetailPresented = !detailPath.isEmpty || receiptDetailTransaction != nil }
         .onChange(of: detailPath.count) { _, count in
-            isDetailPresented = count > 0
+            isDetailPresented = count > 0 || receiptDetailTransaction != nil
+        }
+        .onChange(of: receiptDetailTransaction?.id) { _, id in
+            isDetailPresented = !detailPath.isEmpty || id != nil
         }
     }
 
@@ -166,7 +171,9 @@ struct HomeView: View {
     private var topControls: some View {
         BillTopControls(
             bookName: selectedBook?.name ?? AppLocalization.string("选择账本"),
-            openBook: presentBookSwitcher,
+            books: activeBooks,
+            selectedBookID: $selectedBookID,
+            manageBooks: { presentation.present(.bookManagement) },
             openSearch: { isBillSearchPresented = true },
             openSettings: { presentation.present(.settings) }
         )
@@ -181,25 +188,6 @@ struct HomeView: View {
         .padding(.horizontal, LedgerLayout.pagePadding)
         .padding(.top, 10)
         .padding(.bottom, RootEntryLayout.scrollContentClearance)
-    }
-
-    private var bookSwitcherOverlay: some View {
-        CenteredGenieCardHost(
-            presentation: $bookSwitcherGenie,
-            maximumWidth: 390,
-            transitionStyle: .floatingCard,
-            onDismissed: presentPendingBookSheet
-        ) {
-            HomeBookSwitcherCard(
-                books: activeBooks,
-                selectedBookID: $selectedBookID,
-                dismiss: { bookSwitcherGenie.requestDismissal() },
-                manageBooks: {
-                    pendingBookSheet = .bookManagement
-                    bookSwitcherGenie.requestDismissal()
-                }
-            )
-        }
     }
 
     private var monthHeader: some View {
@@ -224,19 +212,6 @@ struct HomeView: View {
             attachmentTransactionIDs: Set(attachments.map(\.transactionID)),
             retry: { refreshGeneration += 1 }
         )
-    }
-
-    private func presentBookSwitcher() {
-        let fallback = CGRect(x: 24, y: 54, width: 160, height: LedgerLayout.minimumHitSize)
-        bookSwitcherGenie.present(
-            from: bookSwitcherSourceFrame.isEmpty ? fallback : bookSwitcherSourceFrame
-        )
-    }
-
-    private func presentPendingBookSheet() {
-        guard let destination = pendingBookSheet else { return }
-        pendingBookSheet = nil
-        presentation.present(destination)
     }
 
     private func openBudgetEditor() {
@@ -276,8 +251,6 @@ struct HomeView: View {
         guard !appliedPreviewState else { return }
         appliedPreviewState = true
         switch ProcessInfo.processInfo.environment["HOME_PREVIEW_STATE"] {
-        case "book-switcher":
-            DispatchQueue.main.async { presentation.present(.bookSwitcher) }
         case "previous-month":
             billState.changeMonth(by: -1)
         case "future-month":
@@ -306,9 +279,19 @@ struct HomeView: View {
         presentation.present(.editTransaction(transaction))
     }
 
-    private func openTransaction(_ transaction: LedgerTransaction) {
+    private func openTransaction(_ transaction: LedgerTransaction, sourceFrame: CGRect) {
+        guard receiptDetailTransaction == nil else { return }
         expandedTransactionID = nil
-        detailPath.append(transaction)
+        receiptSourceFrame = sourceFrame
+        receiptDetailTransaction = transaction
+    }
+
+    private func dismissReceiptDetail() {
+        receiptDetailTransaction = nil
+    }
+
+    private func editFromReceiptDetail(_ transaction: LedgerTransaction) {
+        presentation.present(.editTransaction(transaction))
     }
 
     private func requestDelete(_ transaction: LedgerTransaction) {
@@ -342,11 +325,6 @@ struct HomeView: View {
         loadSnapshot()
     }
 
-    private func updateBookSwitcherSourceFrame(_ frames: [String: CGRect]) {
-        if let frame = frames["home-book-switcher"], !frame.isEmpty {
-            bookSwitcherSourceFrame = frame
-        }
-    }
 }
 
 private struct HomeErrorAlertModifier: ViewModifier {
@@ -382,99 +360,6 @@ private struct HomeErrorAlertModifier: ViewModifier {
     }
 }
 
-private struct HomeBookSwitcherCard: View {
-    let books: [LedgerBook]
-    @Binding var selectedBookID: String
-    let dismiss: () -> Void
-    let manageBooks: () -> Void
-
-    var body: some View {
-        CenteredGenieCardSurface {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("切换账本")
-                            .font(.title3.weight(.bold))
-                        Text("选择要查看的账本")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button(action: dismiss) {
-                        Image(systemName: "xmark")
-                            .font(.subheadline.weight(.bold))
-                            .frame(width: 32, height: 32)
-                            .background(Color.primary.opacity(0.07), in: Circle())
-                    }
-                    .buttonStyle(LedgerGlassPressStyle())
-                    .accessibilityLabel("关闭")
-                }
-
-                bookRows
-
-                Button(action: manageBooks) {
-                    Label("管理账本", systemImage: "slider.horizontal.3")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(LedgerGlassPressStyle())
-                .foregroundStyle(HomePalette.accent)
-                .background(HomePalette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-        }
-        .accessibilityIdentifier("home-book-switcher-card")
-    }
-
-    @ViewBuilder
-    private var bookRows: some View {
-        if books.count > 4 {
-            ScrollView {
-                bookRowStack
-            }
-            .frame(maxHeight: 300)
-            .scrollIndicators(.hidden)
-        } else {
-            bookRowStack
-        }
-    }
-
-    private var bookRowStack: some View {
-        VStack(spacing: 8) {
-            ForEach(books) { book in
-                Button {
-                    selectedBookID = book.id.uuidString
-                    dismiss()
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "book.closed.fill")
-                            .foregroundStyle(HomePalette.accent)
-                            .frame(width: 38, height: 38)
-                            .background(HomePalette.accent.opacity(0.12), in: Circle())
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(book.name)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            Text("\(book.accounts.filter { !$0.isHidden }.count) 个资产账户")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if selectedBookID == book.id.uuidString {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.title3)
-                                .foregroundStyle(HomePalette.accent)
-                        }
-                    }
-                    .padding(12)
-                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(LedgerGlassPressStyle())
-            }
-        }
-    }
-}
-
 private struct BillLoadKey: Hashable {
     let bookID: UUID?
     let month: Date
@@ -490,7 +375,6 @@ private struct HomeSheetPresentation: Identifiable {
 private enum HomeSheetDestination {
     case settings
     case addAsset(LedgerBook?)
-    case bookSwitcher
     case bookManagement
     case transactions
     case monthPicker
@@ -538,8 +422,6 @@ private struct HomeSheetPresenter: View {
             SettingsView()
         case .addAsset(let book):
             AddAccountView(book: book)
-        case .bookSwitcher:
-            LedgerBookSwitcherView(selectedBookID: $selectedBookID)
         case .bookManagement:
             LedgerBookManagementView()
         case .transactions:

@@ -806,7 +806,7 @@ private struct TransactionAttachmentManager: View {
     }
 }
 
-private struct TransactionRelationEntryView: View {
+struct TransactionRelationEntryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     let original: LedgerTransaction
