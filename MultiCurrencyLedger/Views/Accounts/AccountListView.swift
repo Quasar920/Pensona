@@ -10,6 +10,8 @@ struct AccountListView: View {
 
     @Query(sort: [SortDescriptor(\LedgerBook.sortOrder), SortDescriptor(\LedgerBook.createdAt)])
     private var books: [LedgerBook]
+    @Query(sort: [SortDescriptor(\Account.sortOrder), SortDescriptor(\Account.createdAt)])
+    private var accounts: [Account]
     @State private var addAccountType: AccountType?
     @State private var editingAccount: Account?
     @State private var detailPath = NavigationPath()
@@ -18,6 +20,9 @@ struct AccountListView: View {
     @State private var selectedModule: AssetModuleKind?
     @State private var refreshGeneration = 0
     @State private var appliedPreviewState = false
+    @State private var pendingBankCardMigration: Account?
+    @AppStorage("reviewedCashAccountBankCardMigrationIDs")
+    private var reviewedCashAccountBankCardMigrationIDs = ""
     @Binding private var isDetailPresented: Bool
 
     init(isDetailPresented: Binding<Bool> = .constant(false)) {
@@ -109,9 +114,27 @@ struct AccountListView: View {
             } message: {
                 Text(alertMessage ?? "")
             }
+            .alert("识别为银行卡", isPresented: Binding(
+                get: { pendingBankCardMigration != nil },
+                set: { if !$0 { pendingBankCardMigration = nil } }
+            )) {
+                Button("改为银行卡") {
+                    if let account = pendingBankCardMigration {
+                        migrateToBankCard(account)
+                    }
+                }
+                Button("保留现金", role: .cancel) {
+                    if let account = pendingBankCardMigration {
+                        markBankCardMigrationReviewed(account)
+                    }
+                }
+            } message: {
+                Text("“\(pendingBankCardMigration?.name ?? "该账户")”当前被保存为现金账户。若它是一张银行卡，改正后即可作为购汇银行卡选择；真实现金账户请选择保留现金。")
+            }
             .onAppear {
                 ensureSelectedBook()
                 applyPreviewStateIfNeeded()
+                presentNextBankCardMigrationIfNeeded()
             }
             .onChange(of: books.count) { _, _ in
                 ensureSelectedBook()
@@ -164,6 +187,52 @@ struct AccountListView: View {
         } catch {
             alertMessage = error.localizedDescription
         }
+    }
+
+    private var bankCardMigrationCandidates: [Account] {
+        accounts.filter { account in
+            guard !account.isArchived, account.type == .cash else { return false }
+            let normalizedName = account.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return normalizedName.contains("银行") || normalizedName.contains("bank")
+        }
+    }
+
+    private var reviewedBankCardMigrationIDs: Set<String> {
+        Set(reviewedCashAccountBankCardMigrationIDs.split(separator: ",").map(String.init))
+    }
+
+    private func presentNextBankCardMigrationIfNeeded() {
+        guard pendingBankCardMigration == nil else { return }
+        pendingBankCardMigration = bankCardMigrationCandidates.first {
+            !reviewedBankCardMigrationIDs.contains($0.id.uuidString)
+        }
+    }
+
+    private func migrateToBankCard(_ account: Account) {
+        do {
+            try AccountService(context: context).update(
+                account,
+                name: account.name,
+                type: .bankCard,
+                note: account.note,
+                sortOrder: account.sortOrder,
+                isHidden: account.isHidden,
+                cardLastFour: AccountCardIdentityStore().lastFour(for: account.id)
+            )
+            pendingBankCardMigration = nil
+            reload()
+            DispatchQueue.main.async { presentNextBankCardMigrationIfNeeded() }
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    private func markBankCardMigrationReviewed(_ account: Account) {
+        var ids = reviewedBankCardMigrationIDs
+        ids.insert(account.id.uuidString)
+        reviewedCashAccountBankCardMigrationIDs = ids.sorted().joined(separator: ",")
+        pendingBankCardMigration = nil
+        DispatchQueue.main.async { presentNextBankCardMigrationIfNeeded() }
     }
 
     private func applyPreviewStateIfNeeded() {

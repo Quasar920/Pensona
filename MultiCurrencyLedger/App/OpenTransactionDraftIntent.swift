@@ -9,7 +9,7 @@ enum ShortcutDraftType: String, AppEnum {
         .expense: "支出",
         .income: "收入",
         .transfer: "转账",
-        .exchange: "换汇",
+        .exchange: "购汇",
         .adjustment: "调整"
     ]
 }

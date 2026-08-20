@@ -122,7 +122,7 @@ struct RootTabView: View {
             appLock.refreshConfiguration()
         }
         .tint(LedgerPalette.accent)
-        .preferredColorScheme(preferences.appearance.colorScheme)
+        .preferredColorScheme(.light)
         .environment(\.locale, preferences.locale)
         .id(preferences.language.rawValue)
         .overlay {

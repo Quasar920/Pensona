@@ -52,10 +52,10 @@ struct EntryExpansionContainer: View {
                 .opacity(contentVisible ? 1 : 0)
             if contentVisible {
                 entryContent(route)
-                    // Keep the transaction-kind selector below the drag
-                    // handle's hit area. Otherwise the handle sits above the
-                    // top row and intercepts taps on 收入 / 转账 / 换汇.
-                    .padding(.top, 44)
+                    // Keep room for the drag handle while moving the editor
+                    // five points closer to the sheet cap than the previous
+                    // 44-point layout.
+                    .padding(.top, 39)
                     .modifier(EntryPreviewDynamicTypeModifier())
                     .transition(.opacity)
             }
@@ -64,19 +64,14 @@ struct EntryExpansionContainer: View {
                     .fill(.secondary.opacity(0.35))
                     .frame(width: 38, height: 5)
                     .padding(.top, 11)
-                    // The gesture hit target must end before the editor's
-                    // first row begins.
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .top)
                     .contentShape(Rectangle())
             }
-                .buttonStyle(.plain)
-                .opacity(contentVisible ? 1 : 0)
-                .accessibilityLabel("拖拽关闭记账")
-                .accessibilityIdentifier("receipt-entry-drag-handle")
-                // Limit sheet-dismiss dragging to its handle. Applying this
-                // as a high-priority gesture to the whole sheet swallowed
-                // taps on the transaction-kind selector and option rows.
-                .highPriorityGesture(topDragGesture(in: proxy))
+            .buttonStyle(.plain)
+            .opacity(contentVisible ? 1 : 0)
+            .accessibilityLabel("拖拽关闭记账")
+            .accessibilityIdentifier("receipt-entry-drag-handle")
+            .highPriorityGesture(topDragGesture(in: proxy))
         }
         .frame(width: expandedWidth, height: expandedHeight)
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))

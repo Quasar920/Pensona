@@ -50,24 +50,19 @@ enum AppLocalization {
     }
 }
 
+/// The first release is intentionally light-only. Keeping this as a persisted
+/// value lets a later dark-mode release add a migration without exposing an
+/// unavailable appearance choice today.
 enum AppAppearance: String, CaseIterable, Identifiable {
-    case system, light, dark
+    case light
 
     var id: String { rawValue }
     var title: String {
-        switch self {
-        case .system: AppLocalization.string("appearance.system")
-        case .light: AppLocalization.string("appearance.light")
-        case .dark: AppLocalization.string("appearance.dark")
-        }
+        AppLocalization.string("appearance.light")
     }
 
     var colorScheme: ColorScheme? {
-        switch self {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
-        }
+        .light
     }
 }
 
@@ -145,9 +140,10 @@ final class AppPreferences {
         regionCode: String? = Locale.current.region?.identifier
     ) {
         self.defaults = defaults
-        appearance = AppAppearance(
-            rawValue: defaults.string(forKey: Self.appearanceKey) ?? ""
-        ) ?? .system
+        // Existing system and dark-mode settings are deliberately migrated to
+        // the sole supported appearance instead of following the device.
+        appearance = .light
+        defaults.set(AppAppearance.light.rawValue, forKey: Self.appearanceKey)
         hapticsEnabled = defaults.object(forKey: Self.hapticsKey) as? Bool ?? true
         amountColorConvention = AmountColorConvention(
             rawValue: defaults.string(forKey: Self.amountColorKey) ?? ""

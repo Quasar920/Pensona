@@ -50,6 +50,17 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
         }
     }
 
+    func testBookSwitcherUsesTapLogStyleMenu() {
+        let switcher = app.buttons["home-book-switcher"]
+        XCTAssertTrue(switcher.waitForExistence(timeout: 3))
+        switcher.tap()
+
+        let travelBook = app.buttons["旅行账本"]
+        XCTAssertTrue(travelBook.waitForExistence(timeout: 3))
+        travelBook.tap()
+        XCTAssertTrue(switcher.label.contains("旅行账本"))
+    }
+
     func testEntryCategorySublayerAndActionPanel() {
         openEntry()
 

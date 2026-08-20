@@ -3,8 +3,22 @@ import Foundation
 struct BillDayGroup: Identifiable {
     let date: Date
     let transactions: [LedgerTransaction]
+    let income: Decimal
+    let expense: Decimal
 
     var id: Date { date }
+
+    init(
+        date: Date,
+        transactions: [LedgerTransaction],
+        income: Decimal = 0,
+        expense: Decimal = 0
+    ) {
+        self.date = date
+        self.transactions = transactions
+        self.income = income
+        self.expense = expense
+    }
 }
 
 struct BillPageSnapshot {

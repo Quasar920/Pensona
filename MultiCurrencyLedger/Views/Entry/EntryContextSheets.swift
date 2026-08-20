@@ -1,5 +1,65 @@
 import SwiftUI
 
+struct ExchangeSourceAccountSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let accounts: [Account]
+    let selectedID: UUID?
+    let select: (Account) -> Void
+    @State private var searchText = ""
+
+    private var filtered: [Account] {
+        guard !searchText.isEmpty else { return accounts }
+        return accounts.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 9) {
+                    ForEach(filtered) { account in
+                        Button {
+                            select(account)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: account.type.symbolName)
+                                    .font(.headline)
+                                    .foregroundStyle(LedgerPalette.accent)
+                                    .frame(width: 36, height: 36)
+                                    .background(LedgerPalette.accent.opacity(0.10), in: Circle())
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(account.name)
+                                        .font(.headline)
+                                    Text(account.enabledWallets.isEmpty
+                                        ? "将使用人民币购汇"
+                                        : account.enabledWallets.map(\.currencyCode).joined(separator: " · "))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if selectedID == account.id {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(LedgerPalette.accent)
+                                }
+                            }
+                            .padding(14)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .ledgerSurface(.functional, cornerRadius: 20)
+                    }
+                }
+                .padding(18)
+            }
+            .ledgerPageBackground()
+            .navigationTitle("选择购汇银行卡")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: "搜索银行卡")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+        }
+    }
+}
+
 struct EntryAccountSheet: View {
     @Environment(\.dismiss) private var dismiss
     let title: String

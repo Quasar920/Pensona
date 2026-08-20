@@ -57,11 +57,12 @@ struct BillQueryService {
                 && budget.categoryID == nil
         }
         let budget = try context.fetch(FetchDescriptor<MonthlyBudget>(predicate: budgetPredicate)).first
-        let summary = MonthlySummaryService(
+        let summaryService = MonthlySummaryService(
             baseCurrencyCode: baseCurrencyCode,
             rates: rates,
             calendar: calendar
-        ).summary(
+        )
+        let summary = summaryService.summary(
             for: monthTransactions,
             month: month,
             budget: budget?.amount,
@@ -70,13 +71,32 @@ struct BillQueryService {
             aaSettlements: settlements
         )
 
+        let allTransactionsByDay = Dictionary(grouping: monthTransactions) {
+            calendar.startOfDay(for: $0.date)
+        }
+        let dayGroups = Dictionary(grouping: transactions) { calendar.startOfDay(for: $0.date) }
+            .map { date, visibleTransactions in
+                let daySummary = summaryService.summary(
+                    for: allTransactionsByDay[date] ?? [],
+                    month: date,
+                    relations: relations,
+                    aaSplits: splits,
+                    aaSettlements: settlements
+                )
+                return BillDayGroup(
+                    date: date,
+                    transactions: visibleTransactions,
+                    income: daySummary.income,
+                    expense: daySummary.expense
+                )
+            }
+            .sorted { $0.date > $1.date }
+
         return BillPageSnapshot(
             bookID: bookID,
             monthInterval: interval,
             transactions: transactions,
-            dayGroups: Dictionary(grouping: transactions) { calendar.startOfDay(for: $0.date) }
-                .map { BillDayGroup(date: $0.key, transactions: $0.value) }
-                .sorted { $0.date > $1.date },
+            dayGroups: dayGroups,
             summary: summary
         )
     }

@@ -1,10 +1,17 @@
 import SwiftUI
 
 enum PensonaDashboardTypography {
-    static let balance = Font.custom("Ioskeley Mono Semibold", size: 36, relativeTo: .title3)
-    static let amount = Font.custom("Ioskeley Mono Semibold", size: 18, relativeTo: .headline)
-    static let compactAmount = Font.custom("Ioskeley Mono", size: 16, relativeTo: .body)
-    static let metadata = Font.custom("Ioskeley Mono", size: 13, relativeTo: .caption)
+    static let balance = LedgerFont.semibold(size: 36, relativeTo: .title3)
+    static let amount = LedgerFont.semibold(size: 18, relativeTo: .headline)
+    static let compactAmount = LedgerFont.regular(size: 16, relativeTo: .body)
+    static let metadata = LedgerFont.regular(size: 13, relativeTo: .caption)
+    static let month = LedgerFont.semibold(size: 27, relativeTo: .title2)
+    static let section = LedgerFont.regular(size: 16, relativeTo: .headline)
+    static let rowTitle = LedgerFont.semibold(size: 18, relativeTo: .headline)
+    static let transactionTypeTitle = LedgerFont.regular(size: 18, relativeTo: .headline)
+    static let rowDetail = LedgerFont.regular(size: 14, relativeTo: .caption)
+    static let rowAmount = LedgerFont.regular(size: 20, relativeTo: .title3)
+    static let exchangeAmount = LedgerFont.regular(size: 17, relativeTo: .headline)
 }
 
 struct OneTsuMonthHeader: View {
@@ -25,7 +32,7 @@ struct OneTsuMonthHeader: View {
             Button(action: openPicker) {
                 HStack(spacing: 7) {
                     Text(selectedMonth.yearMonthText(locale: locale))
-                        .font(.system(size: 27, weight: .semibold, design: .rounded))
+                        .font(PensonaDashboardTypography.month)
                         .contentTransition(reduceMotion ? .identity : .numericText())
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.bold))
@@ -47,7 +54,7 @@ struct OneTsuMonthHeader: View {
     private func monthButton(_ symbol: String, offset: Int) -> some View {
         Button { changeMonth(offset) } label: {
             Image(systemName: symbol)
-                .font(.subheadline.weight(.semibold))
+                .font(LedgerFont.semibold(size: 15, relativeTo: .subheadline))
                 .foregroundStyle(.secondary)
                 .frame(width: LedgerLayout.minimumHitSize, height: LedgerLayout.minimumHitSize)
         }
@@ -72,7 +79,7 @@ struct OneTsuReceiptLedger: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let snapshot {
-                ReceiptBudgetLine(summary: snapshot.summary, currencyCode: currencyCode, openBudget: openBudget)
+                ReceiptNumberDashboard(summary: snapshot.summary, currencyCode: currencyCode, openBudget: openBudget)
                     .padding(.bottom, 18)
 
                 if snapshot.dayGroups.isEmpty {
@@ -115,33 +122,101 @@ struct OneTsuReceiptLedger: View {
     }
 }
 
-private struct ReceiptBudgetLine: View {
+/// A native SwiftUI equivalent of NumberFlow's rolling-number treatment.
+/// `numericText` tracks individual numeric glyphs, so a refreshed month or a
+/// newly saved transaction changes the value by rolling digits instead of
+/// replacing the whole string at once.
+private struct ReceiptNumberDashboard: View {
     let summary: MonthlySummary
     let currencyCode: String
     let openBudget: () -> Void
 
     var body: some View {
         Button(action: openBudget) {
-            HStack(spacing: 8) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.caption.weight(.semibold))
-                Text(budgetText)
-                    .font(.subheadline)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
+            HStack(spacing: 0) {
+                dashboardMetric(title: "收入", amount: summary.income, role: .income)
+                dashboardBudget
+                dashboardMetric(title: "支出", amount: summary.expense, role: .expense)
             }
-            .foregroundStyle(.secondary)
-            .frame(minHeight: 32)
+            .padding(.vertical, 12)
+            .ledgerSurface(.summary, cornerRadius: 20)
         }
         .buttonStyle(LedgerGlassPressStyle())
         .accessibilityHint("打开本月预算设置")
     }
 
-    private var budgetText: String {
-        guard summary.missingCodes.isEmpty else { return "预算暂不可用" }
-        guard let remaining = summary.remainingBudget else { return "设置本月预算" }
-        return "本月预算余 \(MoneyFormatter.compactString(remaining, currencyCode: currencyCode))"
+    private var dashboardBudget: some View {
+        VStack(spacing: 4) {
+            Text("本月剩余预算")
+                .font(PensonaDashboardTypography.metadata)
+                .foregroundStyle(.secondary)
+            if let remainingBudget = summary.remainingBudget, summary.missingCodes.isEmpty {
+                RollingNumberText(
+                    value: remainingBudget,
+                    text: MoneyFormatter.compactString(remainingBudget, currencyCode: currencyCode),
+                    font: PensonaDashboardTypography.amount,
+                    color: LedgerPalette.ink
+                )
+            } else {
+                Text(summary.missingCodes.isEmpty ? "设置预算" : "预算暂不可用")
+                    .font(PensonaDashboardTypography.compactAmount)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func dashboardMetric(
+        title: String,
+        amount: Decimal,
+        role: AmountSemanticRole
+    ) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(PensonaDashboardTypography.metadata)
+                .foregroundStyle(.secondary)
+            RollingNumberText(
+                value: amount,
+                text: MoneyFormatter.compactString(amount, currencyCode: currencyCode),
+                font: PensonaDashboardTypography.compactAmount,
+                color: semanticColor(role)
+            )
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func semanticColor(_ role: AmountSemanticRole) -> Color {
+        let raw = UserDefaults.standard.string(forKey: AppPreferences.amountColorKey) ?? ""
+        let convention = AmountColorConvention(rawValue: raw)
+            ?? .regionalDefault(regionCode: Locale.current.region?.identifier)
+        return AmountSemanticStyle.color(for: role, convention: convention)
+    }
+}
+
+private struct RollingNumberText: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let value: Decimal
+    let text: String
+    let font: Font
+    let color: Color
+
+    private var numericValue: Double {
+        NSDecimalNumber(decimal: value).doubleValue
+    }
+
+    var body: some View {
+        Text(text)
+            .font(font)
+            .monospacedDigit()
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .contentTransition(reduceMotion ? .identity : .numericText(value: numericValue))
+            .animation(reduceMotion ? nil : .smooth(duration: 0.46), value: numericValue)
+            .accessibilityLabel(text)
     }
 }
 
@@ -154,8 +229,6 @@ private struct ReceiptTransactionFramePreferenceKey: PreferenceKey {
 }
 
 private struct ReceiptDaySection: View {
-    @Environment(\.locale) private var locale
-
     let group: BillDayGroup
     let currencyCode: String
     let attachmentTransactionIDs: Set<UUID>
@@ -165,14 +238,19 @@ private struct ReceiptDaySection: View {
     @State private var transactionFrames: [UUID: CGRect] = [:]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(group.date.formatted(.dateTime.month().day()))
-                    .font(.title3.weight(.bold))
+                Text(dayLabel)
+                    .font(PensonaDashboardTypography.section)
                 Spacer()
-                Text("\(group.transactions.count)笔")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    if group.income != 0 {
+                        dayTotal(title: "收入", amount: group.income)
+                    }
+                    if group.expense != 0 {
+                        dayTotal(title: "支出", amount: group.expense)
+                    }
+                }
             }
 
             ForEach(group.transactions) { transaction in
@@ -209,8 +287,27 @@ private struct ReceiptDaySection: View {
         .onPreferenceChange(ReceiptTransactionFramePreferenceKey.self) { frames in
             transactionFrames.merge(frames) { _, latest in latest }
         }
-        .padding(.bottom, 20)
+        .padding(.bottom, 18)
     }
+
+    private var dayLabel: String {
+        Self.dateFormatter.string(from: group.date)
+    }
+
+    private func dayTotal(title: String, amount: Decimal) -> some View {
+        Text("\(title) \(MoneyFormatter.compactString(amount, currencyCode: currencyCode))")
+            .font(PensonaDashboardTypography.metadata)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "MM - dd"
+        return formatter
+    }()
 }
 
 private struct ReceiptTransactionRow: View {
@@ -219,103 +316,118 @@ private struct ReceiptTransactionRow: View {
     let hasAttachment: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            if let category = transaction.category {
-                CategoryIconImage(category: category, size: 36)
-            } else {
-                Image(systemName: transaction.type.symbolName)
-                    .font(.title3)
-                    .foregroundStyle(LedgerPalette.accent)
-                    .frame(width: 36, height: 36)
-            }
+        HStack(spacing: 12) {
+            leadingIcon
+                .frame(width: 38)
+                .frame(maxHeight: .infinity)
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(transaction.receiptTitle)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 6)
-                    VStack(alignment: .trailing, spacing: 2) {
-                        if let originalAmount = transaction.originalAmount,
-                           originalAmount > (transaction.amount ?? 0),
-                           !(transaction.type == .income && transaction.feeAmount != nil) {
-                            Text(MoneyFormatter.compactString(originalAmount, currencyCode: currencyCode))
-                                .font(LedgerTypography.receiptMeta)
-                                .foregroundStyle(.secondary)
-                                .strikethrough()
-                        }
-                        Text(transaction.summaryAmount)
-                            .font(LedgerTypography.amount)
-                            .foregroundStyle(LedgerPalette.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+            rowDetails
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                metadataLine
-
-                if let fundingText = transaction.receiptFundingText {
-                    Label(fundingText, systemImage: transaction.paymentParts.count > 1 ? "rectangle.3.group" : "creditcard")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let offerText = transaction.receiptOfferText(currencyCode: currencyCode) {
-                    Text(offerText)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let tagText = transaction.receiptTagText {
-                    Text(tagText)
-                        .font(.caption2)
-                        .foregroundStyle(LedgerPalette.accent)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            amountPanel
+                .frame(minWidth: transaction.type == .exchange ? 0 : 94, alignment: .trailing)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(LedgerPalette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(LedgerPalette.surface, in: Capsule())
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            Capsule()
                 .stroke(LedgerPalette.hairline, lineWidth: 1)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .contentShape(Capsule())
     }
 
     @ViewBuilder
-    private var metadataLine: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 5) {
-                Text(transaction.homeCategoryTitle)
-                dot
-                Text(transaction.date.formatted(date: .omitted, time: .shortened))
-            }
-            if let note = transaction.receiptSubtitle {
-                Text(note)
-            }
-            HStack(spacing: 5) {
-                if transaction.reimbursementStatus == .pending {
-                    Text("待报销")
-                }
-                if transaction.installmentIndex != nil {
-                    Text("分期")
-                }
-                if hasAttachment {
-                    Image(systemName: "paperclip")
-                }
-            }
+    private var leadingIcon: some View {
+        if transaction.type == .transfer || transaction.type == .exchange {
+            Image(systemName: transaction.type.symbolName)
+                .font(.system(size: 30, weight: .regular))
+                .foregroundStyle(LedgerPalette.ink)
+        } else if let category = transaction.category {
+            CategoryIconImage(category: category, size: 36)
+        } else {
+            Image(systemName: transaction.type.symbolName)
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(LedgerPalette.ink)
         }
-        .font(LedgerTypography.receiptMeta)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var dot: some View {
-        Text("·").foregroundStyle(.tertiary)
+    @ViewBuilder
+    private var rowDetails: some View {
+        switch transaction.type {
+        case .transfer:
+            VStack(alignment: .leading, spacing: 3) {
+                Text(transaction.type.title)
+                    .font(PensonaDashboardTypography.transactionTypeTitle)
+                Text("转入账户")
+                    .font(PensonaDashboardTypography.rowDetail)
+                    .foregroundStyle(.secondary)
+                Text(transferRoute)
+                    .font(PensonaDashboardTypography.rowDetail)
+                    .foregroundStyle(.secondary)
+            }
+        case .exchange:
+            VStack(alignment: .leading, spacing: 3) {
+                Text(transaction.type.title)
+                    .font(PensonaDashboardTypography.transactionTypeTitle)
+                Text("\(transaction.homeCategoryTitle) · \(transaction.date.formatted(date: .omitted, time: .shortened))")
+                    .font(PensonaDashboardTypography.rowDetail)
+                    .foregroundStyle(.secondary)
+                Label(transaction.receiptFundingText ?? transaction.homeAccountName, systemImage: "creditcard")
+                    .font(PensonaDashboardTypography.rowDetail)
+                    .foregroundStyle(.secondary)
+            }
+        default:
+            VStack(alignment: .leading, spacing: 3) {
+                Text(transaction.category?.name ?? transaction.receiptTitle)
+                    .font(PensonaDashboardTypography.rowTitle)
+                Text("\(transaction.homeCategoryTitle) · \(transaction.date.formatted(date: .omitted, time: .shortened))")
+                    .font(PensonaDashboardTypography.rowDetail)
+                    .foregroundStyle(.secondary)
+                Label(transaction.receiptFundingText ?? transaction.homeAccountName, systemImage: "creditcard")
+                    .font(PensonaDashboardTypography.rowDetail)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var amountPanel: some View {
+        if transaction.type == .exchange {
+            VStack(spacing: 1) {
+                Text(exchangeAmount(transaction.sourceAmount ?? transaction.amount ?? 0, currency: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? currencyCode))
+                    .fixedSize(horizontal: true, vertical: false)
+                Image(systemName: "arrow.down")
+                    .font(LedgerFont.regular(size: 14, relativeTo: .caption))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                Text(exchangeAmount(transaction.destinationAmount ?? 0, currency: transaction.destinationCurrencyCode ?? currencyCode))
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .font(PensonaDashboardTypography.exchangeAmount)
+            .foregroundStyle(LedgerPalette.ink)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+        } else {
+            Text(transaction.summaryAmount)
+                .font(PensonaDashboardTypography.rowAmount)
+                .monospacedDigit()
+                .foregroundStyle(amountColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+        }
+    }
+
+    private var transferRoute: String {
+        let source = transaction.sourceAccount?.name ?? "转出账户"
+        let destination = transaction.destinationAccount?.name ?? "转入账户"
+        return "\(source) → \(destination)"
+    }
+
+    private func exchangeAmount(_ amount: Decimal, currency: String) -> String {
+        "\(MoneyFormatter.plain(amount, currencyCode: currency)) \(currency)"
     }
 
     private var amountColor: Color {

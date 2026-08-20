@@ -77,7 +77,7 @@ struct EntryAmountPanel: View {
                 HStack(spacing: 8) {
                     Button { activeTarget = .destination } label: {
                         HStack(spacing: 6) {
-                            Text("买入").foregroundStyle(.secondary)
+                            Text("购入").foregroundStyle(.secondary)
                             Text(destinationWallet?.currencyCode ?? "--")
                                 .font(.caption.monospaced()).foregroundStyle(.secondary)
                             Text(state.destinationAmountText.isEmpty ? "0" : state.destinationAmountText)
@@ -98,7 +98,7 @@ struct EntryAmountPanel: View {
                         .padding(.horizontal, 10)
                         .frame(maxWidth: 125, minHeight: 44)
                         .background(Color.primary.opacity(0.045), in: Capsule())
-                        .accessibilityLabel("换汇汇率")
+                        .accessibilityLabel("购汇汇率")
                 }
                 EntryInlineValidation(message: validation[.destinationAmount])
             } else if isCrossCurrencyCreditRepayment {

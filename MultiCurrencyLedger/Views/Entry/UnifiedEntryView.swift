@@ -137,6 +137,11 @@ private struct EntryLoadedView: View {
         return activeBooks.first { $0.id.uuidString == selectedBookID } ?? activeBooks.first
     }
 
+    private var scopedAccounts: [Account] {
+        guard let bookID = selectedBook?.id else { return [] }
+        return accounts.filter { !$0.isArchived && $0.book?.id == bookID }
+    }
+
     private var allWallets: [CurrencyWallet] {
         guard selectedBook != nil else { return [] }
         return accounts
@@ -146,6 +151,42 @@ private struct EntryLoadedView: View {
                 let left = $0.account?.name ?? ""
                 let right = $1.account?.name ?? ""
                 return left == right ? $0.currencyCode < $1.currencyCode : left < right
+            }
+    }
+
+    /// Newly enabled wallets are immediately usable even while SwiftUI is
+    /// waiting for the account query to refresh.
+    private var entryWallets: [CurrencyWallet] {
+        var wallets = allWallets
+        let pendingWallets = accounts
+            .filter { !$0.isArchived }
+            .flatMap(\.allWallets)
+        for walletID in [form.sourceWalletID, form.destinationWalletID] {
+            guard let walletID,
+                  let wallet = pendingWallets.first(where: { $0.id == walletID }),
+                  !wallets.contains(where: { $0.id == wallet.id }) else { continue }
+            wallets.append(wallet)
+        }
+        return wallets
+    }
+
+    private var exchangeSourceAccounts: [Account] {
+        // 购汇按银行卡账户选择，而不是按已启用的钱包选择。这样即使用户
+        // 只是绑定银行卡、尚未添加币种，也能从列表中选择它。
+        accounts
+            .filter { account in
+                guard !account.isArchived else { return false }
+                return switch account.type {
+                case .bankCard, .savings:
+                    true
+                default:
+                    false
+                }
+            }
+            .sorted {
+                $0.sortOrder == $1.sortOrder
+                    ? $0.createdAt < $1.createdAt
+                    : $0.sortOrder < $1.sortOrder
             }
     }
 
@@ -181,6 +222,8 @@ private struct EntryLoadedView: View {
             }
             if form.kind == .exchange {
                 return candidate.currencyCode != source.currencyCode
+                    && (candidate.account?.id == source.account?.id
+                        || candidate.account?.type == .cash)
             }
             return false
         }
@@ -203,8 +246,12 @@ private struct EntryLoadedView: View {
                 } else {
                     EntryComposerView(
                         state: $form,
-                        wallets: allWallets,
+                        wallets: entryWallets,
+                        exchangeSourceAccounts: exchangeSourceAccounts,
                         categories: scopedCategories,
+                        selectExchangeSource: selectExchangeSource,
+                        exchangeDestinationAvailability: exchangeDestinationAvailability,
+                        selectExchangeDestination: selectExchangeDestination,
                         validation: entrySession.validation,
                         successMessage: successMessage,
                         showsNextEntry: seed == nil && editingTransaction == nil,
@@ -359,7 +406,14 @@ private struct EntryLoadedView: View {
         guard let bookID = selectedBook?.id else { return }
         let recent = selectionStore.selection(bookID: bookID, kind: form.kind)
 
-        if wallet(id: form.sourceWalletID) == nil {
+        if form.kind == .exchange {
+            if !exchangeSourceAccounts.contains(where: { $0.id == wallet(id: form.sourceWalletID)?.account?.id }) {
+                form.sourceWalletID = exchangeSourceAccounts
+                    .first(where: { $0.id == wallet(id: recent.sourceWalletID)?.account?.id })?
+                    .enabledWallets.first?.id
+                    ?? exchangeSourceAccounts.first?.enabledWallets.first?.id
+            }
+        } else if wallet(id: form.sourceWalletID) == nil {
             form.sourceWalletID = wallet(id: recent.sourceWalletID)?.id ?? allWallets.first?.id
         }
 
@@ -383,7 +437,10 @@ private struct EntryLoadedView: View {
     }
 
     private func ensureSeedSelections() {
-        if wallet(id: form.sourceWalletID) == nil {
+        if form.kind == .exchange,
+           !exchangeSourceAccounts.contains(where: { $0.id == wallet(id: form.sourceWalletID)?.account?.id }) {
+            form.sourceWalletID = exchangeSourceAccounts.first?.enabledWallets.first?.id
+        } else if wallet(id: form.sourceWalletID) == nil {
             form.sourceWalletID = allWallets.first?.id
         }
         if (form.kind == .expense || form.kind == .income),
@@ -395,9 +452,16 @@ private struct EntryLoadedView: View {
     }
 
     private func ensureDestinationAndFeeSelections() {
-        if form.kind == .transfer || form.kind == .exchange {
+        if form.kind == .transfer {
             if !destinationOptions.contains(where: { $0.id == form.destinationWalletID }) {
                 form.destinationWalletID = destinationOptions.first?.id
+            }
+            if wallet(id: form.feeWalletID) == nil {
+                form.feeWalletID = form.sourceWalletID
+            }
+        } else if form.kind == .exchange {
+            if !destinationOptions.contains(where: { $0.id == form.destinationWalletID }) {
+                form.destinationWalletID = nil
             }
             if wallet(id: form.feeWalletID) == nil {
                 form.feeWalletID = form.sourceWalletID
@@ -408,17 +472,114 @@ private struct EntryLoadedView: View {
         }
     }
 
+    private func exchangeDestinationAvailability(
+        for currency: SupportedCurrency,
+        purchasesCash: Bool
+    ) -> ExchangeDestinationAvailability {
+        guard let source = wallet(id: form.sourceWalletID),
+              source.currencyCode != currency.rawValue else {
+            return .ready
+        }
+        guard let destinationAccount = exchangeDestinationAccount(
+            sourceWallet: source,
+            purchasesCash: purchasesCash
+        ) else {
+            return .missingCashAccount
+        }
+        if destinationAccount.wallets.contains(where: {
+            $0.currencyCode == currency.rawValue && $0.isEnabled
+        }) {
+            return .ready
+        }
+        return .requiresEnabling(accountName: destinationAccount.name)
+    }
+
+    private func selectExchangeDestination(
+        _ currency: SupportedCurrency,
+        purchasesCash: Bool
+    ) throws {
+        guard let source = wallet(id: form.sourceWalletID) else {
+            throw ValidationError("请选择购汇银行卡")
+        }
+        guard source.currencyCode != currency.rawValue else {
+            throw ValidationError("购入币种需与购汇币种不同")
+        }
+        guard let destinationAccount = exchangeDestinationAccount(
+            sourceWallet: source,
+            purchasesCash: purchasesCash
+        ) else {
+            throw ValidationError("请先创建现金账户，再购入外币现金")
+        }
+
+        let destinationWallet: CurrencyWallet
+        if let existing = destinationAccount.wallets.first(where: {
+            $0.currencyCode == currency.rawValue
+        }) {
+            existing.isEnabled = true
+            existing.updatedAt = .now
+            destinationWallet = existing
+        } else {
+            let created = CurrencyWallet(currency: currency, account: destinationAccount)
+            context.insert(created)
+            destinationWallet = created
+        }
+
+        try context.save()
+        form.destinationWalletID = destinationWallet.id
+        entrySession.validation.set(nil, for: .destinationWallet)
+    }
+
+    private func selectExchangeSource(_ account: Account) throws {
+        guard exchangeSourceAccounts.contains(where: { $0.id == account.id }) else {
+            throw ValidationError("请选择一张银行卡进行购汇")
+        }
+
+        let sourceWallet: CurrencyWallet
+        if let preferred = account.enabledWallets.first(where: {
+            $0.currencyCode == SupportedCurrency.CNY.rawValue
+        }) ?? account.enabledWallets.first {
+            sourceWallet = preferred
+        } else if let disabledCNY = account.allWallets.first(where: {
+            $0.currencyCode == SupportedCurrency.CNY.rawValue
+        }) {
+            disabledCNY.isEnabled = true
+            disabledCNY.updatedAt = .now
+            sourceWallet = disabledCNY
+        } else {
+            let created = CurrencyWallet(currency: .CNY, account: account)
+            context.insert(created)
+            sourceWallet = created
+        }
+
+        try context.save()
+        form.sourceWalletID = sourceWallet.id
+        entrySession.validation.set(nil, for: .sourceWallet)
+        ensureDestinationAndFeeSelections()
+    }
+
+    private func exchangeDestinationAccount(
+        sourceWallet: CurrencyWallet,
+        purchasesCash: Bool
+    ) -> Account? {
+        if purchasesCash {
+            return scopedAccounts.first { $0.type == .cash }
+        }
+        guard sourceWallet.account?.type == .bankCard
+                || sourceWallet.account?.type == .savings else { return nil }
+        return sourceWallet.account
+    }
+
     private func validateAndSave(_ action: EntrySaveAction) {
         guard entrySession.validate(
             form: form,
-            wallets: allWallets,
+            wallets: entryWallets,
             categories: scopedCategories
         ) else { return }
         guard entrySession.beginSubmission(intent: action == .next ? .next : .complete) else { return }
         successMessage = nil
         pendingSaveAction = action
         do {
-            let draft = try form.makeDraft(wallets: allWallets, categories: scopedCategories)
+            let draft = try form.makeDraft(wallets: entryWallets, categories: scopedCategories)
             try ForeignCurrencySettlementService.validate(draft)
             let resolvedAASplit: AASplitDraft?
             if let aaDraft = form.aaSplitDraft {
@@ -608,7 +769,7 @@ private struct EntryLoadedView: View {
 
     private func wallet(id: UUID?) -> CurrencyWallet? {
         guard let id else { return nil }
-        return allWallets.first { $0.id == id }
+        return entryWallets.first { $0.id == id }
     }
 
     private func applyTemplate(_ template: TransactionTemplate) {

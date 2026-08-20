@@ -14,17 +14,18 @@ final class AppPreferencesTests: XCTestCase {
     }
 
     func testRegionalDefaultAndPersistence() {
+        defaults.set("dark", forKey: AppPreferences.appearanceKey)
         let chinese = AppPreferences(defaults: defaults, regionCode: "CN")
+        XCTAssertEqual(chinese.appearance, .light)
         XCTAssertEqual(chinese.amountColorConvention, .expenseGreenIncomeRed)
         XCTAssertTrue(chinese.hapticsEnabled)
 
-        chinese.appearance = .dark
         chinese.hapticsEnabled = false
         chinese.amountColorConvention = .expenseRedIncomeGreen
         chinese.language = .japanese
 
         let restored = AppPreferences(defaults: defaults, regionCode: "CN")
-        XCTAssertEqual(restored.appearance, .dark)
+        XCTAssertEqual(restored.appearance, .light)
         XCTAssertFalse(restored.hapticsEnabled)
         XCTAssertEqual(restored.amountColorConvention, .expenseRedIncomeGreen)
         XCTAssertEqual(restored.language, .japanese)

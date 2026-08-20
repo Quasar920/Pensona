@@ -1,16 +1,52 @@
 import SwiftUI
 
+/// The bill is intentionally lighter than the other workspaces: a stable,
+/// warm-paper canvas makes the individual receipt pills easy to scan.
+struct BillPagePaperBackground: View {
+    var body: some View {
+        Color(
+            red: 245 / 255,
+            green: 244 / 255,
+            blue: 237 / 255
+        )
+        .ignoresSafeArea()
+    }
+}
+
 struct BillTopControls: View {
     let bookName: String
-    let openBook: () -> Void
+    let books: [LedgerBook]
+    @Binding var selectedBookID: String
+    let manageBooks: () -> Void
     let openSearch: () -> Void
     let openSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            Button(action: openBook) {
+            Menu {
+                if books.isEmpty {
+                    Text("暂无可用账本")
+                } else {
+                    ForEach(books) { book in
+                        Button {
+                            selectedBookID = book.id.uuidString
+                        } label: {
+                            Label(
+                                book.name,
+                                systemImage: selectedBookID == book.id.uuidString
+                                    ? "checkmark.circle.fill"
+                                    : "book.closed"
+                            )
+                        }
+                    }
+                }
+                Divider()
+                Button(action: manageBooks) {
+                    Label("管理账本", systemImage: "slider.horizontal.3")
+                }
+            } label: {
                 Label(bookName, systemImage: "book.closed.fill")
-                    .font(.subheadline.weight(.semibold))
+                    .font(LedgerFont.semibold(size: 16, relativeTo: .subheadline))
                     .lineLimit(1)
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 14)
@@ -20,7 +56,6 @@ struct BillTopControls: View {
             .buttonStyle(LedgerGlassPressStyle())
             .accessibilityHint("切换账本")
             .accessibilityIdentifier("home-book-switcher")
-            .centeredGenieSourceFrame(id: "home-book-switcher")
 
             Spacer(minLength: 0)
 

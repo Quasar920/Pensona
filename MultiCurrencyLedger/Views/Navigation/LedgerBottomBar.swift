@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The root navigation is intentionally a four-item control.  The recording
-/// action lives above it so the navigation keeps a stable, equal-width rhythm.
+/// The root navigation is intentionally a four-item control. The recording
+/// action stays centered so the navigation keeps a stable, equal-width rhythm.
 struct LedgerBottomBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency

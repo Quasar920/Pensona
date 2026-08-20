@@ -30,7 +30,7 @@ struct AccountDetailView: View {
             }
 
             Section("账户信息") {
-                LabeledContent("类型", value: account.type.assetGroup.title)
+                LabeledContent("类型", value: account.type.title)
                 if let note = account.note, !note.isEmpty {
                     LabeledContent("备注", value: note)
                 }

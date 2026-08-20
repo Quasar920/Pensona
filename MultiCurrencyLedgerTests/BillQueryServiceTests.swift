@@ -79,6 +79,8 @@ final class BillQueryServiceTests: XCTestCase {
 
         XCTAssertEqual(snapshot.transactions.map(\.id), [coffee.id])
         XCTAssertEqual(snapshot.dayGroups.count, 1)
+        XCTAssertEqual(snapshot.dayGroups.first?.income, 0)
+        XCTAssertEqual(snapshot.dayGroups.first?.expense, 70)
         XCTAssertEqual(snapshot.summary.expense, 70)
         XCTAssertEqual(snapshot.summary.income, 500)
     }

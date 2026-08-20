@@ -86,7 +86,7 @@ struct HomeView: View {
         NavigationStack(path: $detailPath) {
             AnyView(
                 ZStack {
-                    LedgerPageBackground()
+                    BillPagePaperBackground()
 
                     ScrollView(showsIndicators: false) {
                         scrollContent

@@ -15,10 +15,6 @@ struct AppExperienceSettingsView: View {
                 Text("settings.quickLaunch.footer")
             }
             Section("settings.appearance.section") {
-                Picker("settings.appearance.displayMode", selection: $preferences.appearance) {
-                    ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.inline)
                 Toggle("settings.haptics", isOn: $preferences.hapticsEnabled)
                 Picker("settings.amountConvention", selection: $preferences.amountColorConvention) {
                     ForEach(AmountColorConvention.allCases) { Text($0.title).tag($0) }
@@ -42,10 +38,6 @@ struct AppearanceAndAmountSettingsView: View {
         @Bindable var preferences = preferences
         List {
             Section("settings.appearance.section") {
-                Picker("settings.appearance.displayMode", selection: $preferences.appearance) {
-                    ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.inline)
                 Toggle("settings.haptics", isOn: $preferences.hapticsEnabled)
             }
             Section("settings.amountConvention") {

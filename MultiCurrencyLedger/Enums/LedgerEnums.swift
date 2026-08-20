@@ -168,7 +168,10 @@ enum AssetGroup: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .cash: AppLocalization.string( "现金账户")
+        // This is a broad asset container for bank cards, savings accounts
+        // and cash. Calling it “现金账户” made it too easy to classify a
+        // bank account as literal cash.
+        case .cash: AppLocalization.string( "资金账户")
         case .credit: AppLocalization.string( "信用账户")
         case .recharge: AppLocalization.string( "充值账户")
         case .investment: AppLocalization.string( "理财账户")
@@ -213,7 +216,7 @@ enum TransactionKind: String, CaseIterable, Codable, Identifiable {
         case .expense: AppLocalization.string( "支出")
         case .income: AppLocalization.string( "收入")
         case .transfer: AppLocalization.string( "转账")
-        case .exchange: AppLocalization.string( "换汇")
+        case .exchange: AppLocalization.string( "购汇")
         case .adjustment: AppLocalization.string( "调整")
         }
     }

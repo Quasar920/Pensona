@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum LedgerLayout {
     static let pagePadding: CGFloat = 16
@@ -25,10 +26,35 @@ enum LedgerMotion {
 }
 
 enum LedgerTypography {
-    static let amount = Font.custom("Ioskeley Mono Semibold", size: 20, relativeTo: .title3)
-    static let largeAmount = Font.custom("Ioskeley Mono Semibold", size: 34, relativeTo: .title2)
-    static let receiptDate = Font.custom("Ioskeley Mono", size: 30, relativeTo: .title2)
-    static let receiptMeta = Font.custom("Ioskeley Mono", size: 12, relativeTo: .caption)
+    static let amount = LedgerFont.semibold(size: 20, relativeTo: .title3)
+    static let largeAmount = LedgerFont.semibold(size: 34, relativeTo: .title2)
+    static let receiptDate = LedgerFont.regular(size: 30, relativeTo: .title2)
+    static let receiptMeta = LedgerFont.regular(size: 12, relativeTo: .caption)
+}
+
+/// Ioskeley Mono is the ledger's preferred face. PingFang is intentionally
+/// used as the CJK fallback so Chinese copy keeps the same calm, compact
+/// rhythm when the custom face is unavailable.
+enum LedgerFont {
+    static func regular(size: CGFloat, relativeTo style: Font.TextStyle) -> Font {
+        resolved("Ioskeley Mono", fallback: "PingFangSC-Regular", size: size, relativeTo: style)
+    }
+
+    static func semibold(size: CGFloat, relativeTo style: Font.TextStyle) -> Font {
+        resolved("Ioskeley Mono Semibold", fallback: "PingFangSC-Semibold", size: size, relativeTo: style)
+    }
+
+    private static func resolved(
+        _ preferred: String,
+        fallback: String,
+        size: CGFloat,
+        relativeTo style: Font.TextStyle
+    ) -> Font {
+        guard UIFont(name: preferred, size: size) == nil else {
+            return .custom(preferred, size: size, relativeTo: style)
+        }
+        return .custom(fallback, size: size, relativeTo: style)
+    }
 }
 
 enum LedgerPalette {
@@ -257,7 +283,6 @@ extension Color {
 
 #if DEBUG
 private struct LedgerDesignSystemPreview: View {
-    @State private var appearance = AppAppearance.system
     @State private var language = AppLanguage.simplifiedChinese
     @State private var convention = AmountColorConvention.expenseGreenIncomeRed
     @State private var simplifiedGlass = false
@@ -269,9 +294,6 @@ private struct LedgerDesignSystemPreview: View {
                     ForEach(AppLanguage.allCases.filter { $0 != .system }) {
                         Text($0.title).tag($0)
                     }
-                }
-                Picker("preview.appearance", selection: $appearance) {
-                    ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
                 }
                 Picker("preview.amountColors", selection: $convention) {
                     ForEach(AmountColorConvention.allCases) { Text($0.title).tag($0) }
@@ -303,7 +325,7 @@ private struct LedgerDesignSystemPreview: View {
         .ledgerPageBackground()
         .environment(\.locale, language.locale)
         .environment(\.ledgerForceSimplifiedGlass, simplifiedGlass)
-        .preferredColorScheme(appearance.colorScheme)
+        .preferredColorScheme(.light)
     }
 }
 

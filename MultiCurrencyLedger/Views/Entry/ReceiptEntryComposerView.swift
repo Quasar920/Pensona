@@ -6,7 +6,11 @@ import SwiftUI
 struct EntryComposerView: View {
     @Binding var state: TransactionFormState
     let wallets: [CurrencyWallet]
+    let exchangeSourceAccounts: [Account]
     let categories: [LedgerCategory]
+    let selectExchangeSource: (Account) throws -> Void
+    let exchangeDestinationAvailability: (SupportedCurrency, Bool) -> ExchangeDestinationAvailability
+    let selectExchangeDestination: (SupportedCurrency, Bool) throws -> Void
     let validation: EntryValidationState
     let successMessage: String?
     let showsNextEntry: Bool
@@ -19,7 +23,11 @@ struct EntryComposerView: View {
         ReceiptEntryComposerView(
             state: $state,
             wallets: wallets,
+            exchangeSourceAccounts: exchangeSourceAccounts,
             categories: categories,
+            selectExchangeSource: selectExchangeSource,
+            exchangeDestinationAvailability: exchangeDestinationAvailability,
+            selectExchangeDestination: selectExchangeDestination,
             validation: validation,
             successMessage: successMessage,
             showsNextEntry: showsNextEntry,
@@ -35,7 +43,11 @@ private struct ReceiptEntryComposerView: View {
     @Environment(\.locale) private var locale
     @Binding var state: TransactionFormState
     let wallets: [CurrencyWallet]
+    let exchangeSourceAccounts: [Account]
     let categories: [LedgerCategory]
+    let selectExchangeSource: (Account) throws -> Void
+    let exchangeDestinationAvailability: (SupportedCurrency, Bool) -> ExchangeDestinationAvailability
+    let selectExchangeDestination: (SupportedCurrency, Bool) throws -> Void
     let validation: EntryValidationState
     let successMessage: String?
     let showsNextEntry: Bool
@@ -57,6 +69,7 @@ private struct ReceiptEntryComposerView: View {
     @State private var categoryManagementOverlay = false
     @State private var isCategoryPickerExpanded = false
     @State private var appliedInitialCategoryExpansion = false
+    @State private var sourceSelectionError: String?
     @AppStorage(AppPreferences.autoExpandCategoryOnNewEntryKey)
     private var automaticallyExpandCategory = false
 
@@ -207,16 +220,29 @@ private struct ReceiptEntryComposerView: View {
         .environment(\.colorScheme, .light)
         .accessibilityIdentifier("receipt-entry-paper")
         .sheet(isPresented: $showingSourceWallets) {
-            EntryAccountSheet(
-                title: state.kind == .transfer || state.kind == .exchange
-                    ? "选择转出账户"
-                    : "选择账户",
-                wallets: wallets,
-                selectedID: state.sourceWalletID,
-                allowsSkipping: true
-            ) { state.sourceWalletID = $0?.id }
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
+            if state.kind == .exchange {
+                ExchangeSourceAccountSheet(
+                    accounts: exchangeSourceAccounts,
+                    selectedID: sourceWallet?.account?.id
+                ) { account in
+                    do {
+                        try selectExchangeSource(account)
+                    } catch {
+                        sourceSelectionError = error.localizedDescription
+                    }
+                }
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+            } else {
+                EntryAccountSheet(
+                    title: state.kind == .transfer ? "选择转出账户" : "选择账户",
+                    wallets: wallets,
+                    selectedID: state.sourceWalletID,
+                    allowsSkipping: true
+                ) { state.sourceWalletID = $0?.id }
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+            }
         }
         .sheet(isPresented: $showingDestinationWallets) {
             EntryAccountSheet(
@@ -281,6 +307,14 @@ private struct ReceiptEntryComposerView: View {
         }
         .onChange(of: activeAmount) { _, _ in keypadResetID = UUID() }
         .onChange(of: contextPresentation.inputTarget) { _, _ in keypadResetID = UUID() }
+        .alert("无法选择购汇银行卡", isPresented: Binding(
+            get: { sourceSelectionError != nil },
+            set: { if !$0 { sourceSelectionError = nil } }
+        )) {
+            Button("好") {}
+        } message: {
+            Text(sourceSelectionError ?? "未知错误")
+        }
     }
 
     @ViewBuilder
@@ -335,13 +369,15 @@ private struct ReceiptEntryComposerView: View {
             )
             .accessibilityIdentifier("entry-date-time-button")
 
-            ReceiptSettingRow(
-                title: "账户",
-                value: sourceWallet?.account?.name ?? "请选择账户",
-                symbol: "chevron.down",
-                action: { showingSourceWallets = true }
-            )
-            .accessibilityIdentifier("receipt-account-row")
+            if state.kind != .transfer {
+                ReceiptSettingRow(
+                    title: state.kind == .exchange ? "购汇银行卡" : "账户",
+                    value: sourceWallet?.account?.name ?? "请选择账户",
+                    symbol: "chevron.down",
+                    action: { showingSourceWallets = true }
+                )
+                .accessibilityIdentifier("receipt-account-row")
+            }
 
             HStack(spacing: 10) {
                 Text("备注")
@@ -370,6 +406,8 @@ private struct ReceiptEntryComposerView: View {
             amountSection
             ReceiptDashDivider()
             optionsSection
+            // This boundary is intentionally outside the options stack so it
+            // stays directly above the fixed keypad in every editor state.
             ReceiptDashDivider()
         }
     }
@@ -388,7 +426,7 @@ private struct ReceiptEntryComposerView: View {
                 usesCompactReceiptLayout: true
             )
             EntryInlineValidation(message: validation[.category])
-        case .transfer, .exchange:
+        case .transfer:
             ReceiptMovementSection(
                 state: $state,
                 sourceWallet: sourceWallet,
@@ -397,6 +435,14 @@ private struct ReceiptEntryComposerView: View {
                 selectSource: { showingSourceWallets = true },
                 selectDestination: { showingDestinationWallets = true },
                 selectDestinationCurrency: { showingCreditCardRepayment = true }
+            )
+        case .exchange:
+            ReceiptExchangePurchaseSection(
+                sourceWallet: sourceWallet,
+                destinationWallet: destinationWallet,
+                destinationError: validation[.destinationWallet],
+                destinationAvailability: exchangeDestinationAvailability,
+                selectDestination: selectExchangeDestination
             )
         case .adjustment:
             EntryAdjustmentPanel(state: $state, wallet: sourceWallet)
@@ -436,6 +482,7 @@ private struct ReceiptEntryComposerView: View {
                 .accessibilityIdentifier("entry-context-tag-discount")
                 feeRow
             case .exchange:
+                discountRow
                 feeRow
             case .adjustment:
                 EmptyView()
@@ -717,7 +764,7 @@ private struct ReceiptMovementSection: View {
     var body: some View {
         VStack(spacing: 0) {
             ReceiptSettingRow(
-                title: state.kind == .exchange ? "卖出账户" : "转出账户",
+                title: "转出账户",
                 value: walletTitle(sourceWallet),
                 symbol: "chevron.down",
                 action: selectSource
@@ -735,7 +782,7 @@ private struct ReceiptMovementSection: View {
                 Rectangle().fill(ReceiptPalette.border).frame(height: 1)
             }
             ReceiptSettingRow(
-                title: state.kind == .exchange ? "买入账户" : "转入账户",
+                title: "转入账户",
                 value: walletTitle(destinationWallet),
                 symbol: "chevron.down",
                 action: destinationWallet?.account?.type == .creditCard
@@ -759,6 +806,145 @@ private struct ReceiptMovementSection: View {
             state.exchangeRateText = EntryCalculationState.string(
                 EntryCalculationState.round(1 / rate, scale: 8)
             )
+        }
+    }
+}
+
+enum ExchangeDestinationAvailability: Equatable {
+    case ready
+    case requiresEnabling(accountName: String)
+    case missingCashAccount
+}
+
+private struct ReceiptExchangePurchaseSection: View {
+    let sourceWallet: CurrencyWallet?
+    let destinationWallet: CurrencyWallet?
+    let destinationError: String?
+    let destinationAvailability: (SupportedCurrency, Bool) -> ExchangeDestinationAvailability
+    let selectDestination: (SupportedCurrency, Bool) throws -> Void
+
+    @State private var purchasesCash = false
+    @State private var showingCurrencyPicker = false
+    @State private var pendingCurrency: SupportedCurrency?
+    @State private var pendingAccountName = ""
+    @State private var showingEnableConfirmation = false
+    @State private var selectionError: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ReceiptSettingRow(
+                title: "购入币种",
+                value: destinationWallet?.currencyCode ?? "请选择币种",
+                symbol: "chevron.down",
+                action: { showingCurrencyPicker = true }
+            )
+            .accessibilityIdentifier("entry-exchange-currency-row")
+
+            ReceiptToggleRow(title: "购入现金", isOn: $purchasesCash)
+                .accessibilityIdentifier("entry-exchange-cash-toggle")
+
+            EntryInlineValidation(message: destinationError)
+        }
+        .padding(.vertical, 4)
+        .sheet(isPresented: $showingCurrencyPicker) {
+            ReceiptPurchaseCurrencySheet(
+                selectedCode: destinationWallet?.currencyCode,
+                excluding: sourceWallet?.currencyCode,
+                select: { currency in
+                    showingCurrencyPicker = false
+                    selectCurrency(currency)
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .confirmationDialog(
+            "启用购入币种",
+            isPresented: $showingEnableConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("启用并继续") {
+                if let pendingCurrency {
+                    applySelection(pendingCurrency)
+                }
+            }
+            Button("取消", role: .cancel) {
+                purchasesCash = destinationWallet?.account?.type == .cash
+            }
+        } message: {
+            Text("\(pendingAccountName) 尚未启用该币种。继续后会在这个既有账户下启用该币种。")
+        }
+        .alert("无法选择购入币种", isPresented: Binding(
+            get: { selectionError != nil },
+            set: { if !$0 { selectionError = nil } }
+        )) {
+            Button("好") {}
+        } message: {
+            Text(selectionError ?? "未知错误")
+        }
+        .onAppear {
+            purchasesCash = destinationWallet?.account?.type == .cash
+        }
+        .onChange(of: purchasesCash) { _, _ in
+            guard let currency = destinationWallet?.currency else { return }
+            selectCurrency(currency)
+        }
+    }
+
+    private func selectCurrency(_ currency: SupportedCurrency) {
+        switch destinationAvailability(currency, purchasesCash) {
+        case .ready:
+            applySelection(currency)
+        case let .requiresEnabling(accountName):
+            pendingCurrency = currency
+            pendingAccountName = accountName
+            showingEnableConfirmation = true
+        case .missingCashAccount:
+            purchasesCash = false
+            selectionError = "尚未创建现金账户。请先在“资产”中创建现金账户，再购入外币现金。"
+        }
+    }
+
+    private func applySelection(_ currency: SupportedCurrency) {
+        do {
+            try selectDestination(currency, purchasesCash)
+            pendingCurrency = nil
+        } catch {
+            selectionError = error.localizedDescription
+        }
+    }
+}
+
+private struct ReceiptPurchaseCurrencySheet: View {
+    let selectedCode: String?
+    let excluding: String?
+    let select: (SupportedCurrency) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(SupportedCurrency.allCases.filter { $0.rawValue != excluding }) { currency in
+                    Button {
+                        select(currency)
+                    } label: {
+                        HStack {
+                            Text(currency.rawValue)
+                                .font(.headline)
+                            Text(currency.localizedName)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if currency.rawValue == selectedCode {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier("entry-exchange-currency-\(currency.rawValue)")
+                }
+            }
+            .navigationTitle("选择购入币种")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
