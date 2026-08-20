@@ -94,6 +94,51 @@ enum PreviewDataService {
             date: .now.addingTimeInterval(-9_200),
             note: isEnglishPreview ? "Subway commute" : "地铁出行"
         )
+        if ProcessInfo.processInfo.environment["UI_TEST_MODE"] == "1" {
+            _ = try ledger.create(
+                TransactionDraft(
+                    type: .expense,
+                    amount: 3,
+                    sourceWallet: cnyDaily,
+                    date: .now.addingTimeInterval(-2_700),
+                    note: "UI Test Discount Expense",
+                    category: food,
+                    originalAmount: 5,
+                    discountAmount: 2
+                ),
+                bookID: book.id
+            )
+            _ = try ledger.create(
+                TransactionDraft(
+                    type: .transfer,
+                    amount: 100,
+                    sourceWallet: cnyDaily,
+                    destinationWallet: cnySavings,
+                    destinationAmount: 100,
+                    feeAmount: 3,
+                    feeWallet: cnyDaily,
+                    date: .now.addingTimeInterval(-3_300),
+                    note: "UI Test Transfer",
+                    discountAmount: 2,
+                    discountWallet: cnySavings
+                ),
+                bookID: book.id
+            )
+            _ = try ledger.create(
+                TransactionDraft(
+                    type: .exchange,
+                    amount: 700,
+                    sourceWallet: cnyDaily,
+                    destinationWallet: usdDaily,
+                    destinationAmount: 100,
+                    feeAmount: 1,
+                    feeWallet: cnyDaily,
+                    date: .now.addingTimeInterval(-4_200),
+                    note: "UI Test Exchange"
+                ),
+                bookID: book.id
+            )
+        }
         _ = try ledger.createExpense(
             bookID: book.id,
             amount: 268,

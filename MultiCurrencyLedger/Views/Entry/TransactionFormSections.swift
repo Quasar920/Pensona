@@ -858,17 +858,31 @@ private struct ReceiptEntrySettings: View {
                 set: { state.reimbursementStatus = $0 ? .pending : .none }
             ))
             actionRow("AA", value: state.aaSplitDraft == nil ? "不参与 AA" : "已设置", identifier: "entry-context-tag-aa", action: editAA)
-            actionRow("优惠", value: hasDiscount ? "已设置优惠" : "无优惠", identifier: "entry-context-tag-discount", action: editDiscount)
+            actionRow(
+                "优惠",
+                value: formattedAmount(state.discountAmountText, walletID: state.discountWalletID),
+                identifier: "entry-context-tag-discount",
+                action: editDiscount
+            )
             actionRow("组合支付", value: state.usesSplitPayment ? "已设置" : "单独支付", identifier: "entry-context-tag-split-payment", action: editSplitPayment)
-            actionRow("手续费", value: state.includesFee ? "已设置手续费" : "不收取手续费", identifier: "entry-context-tag-fee", action: editFee)
+            actionRow(
+                "手续费",
+                value: formattedAmount(state.includesFee ? state.feeText : "", walletID: state.feeWalletID),
+                identifier: "entry-context-tag-fee",
+                action: editFee
+            )
             toggleRow("不计支出", isOn: $state.excludesFromMonthlyExpense)
             ReceiptDashedDivider()
         }
         .font(.subheadline)
     }
 
-    private var hasDiscount: Bool {
-        DecimalParser.parse(state.discountAmountText).map { $0 > 0 } == true
+    private func formattedAmount(_ text: String, walletID: UUID?) -> String {
+        let amount = DecimalParser.parse(text) ?? 0
+        let currencyCode = wallets.first(where: { $0.id == walletID })?.currencyCode
+            ?? sourceWallet?.currencyCode
+            ?? SupportedCurrency.CNY.rawValue
+        return MoneyFormatter.string(amount, currencyCode: currencyCode)
     }
 
     private func actionRow(_ title: String, value: String, identifier: String, action: @escaping () -> Void) -> some View {

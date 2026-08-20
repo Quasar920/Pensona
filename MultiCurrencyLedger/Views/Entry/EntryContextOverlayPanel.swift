@@ -66,7 +66,6 @@ struct EntryContextOverlayPanel: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier("entry-context-panel-\(kind.rawValue)")
         .onAppear {
             Task { @MainActor in
@@ -289,16 +288,26 @@ struct EntryContextOverlayPanel: View {
     }
 
     private var discountOptions: some View {
-        HStack {
-            Text("优惠金额")
-                .font(.subheadline.weight(.semibold))
-            Spacer()
-            Text(draft.discountAmountText.isEmpty ? "0" : draft.discountAmountText)
-                .font(.title2.weight(.semibold).monospacedDigit())
-                .foregroundStyle(LedgerPalette.accent)
+        VStack(spacing: 10) {
+            HStack {
+                Text("优惠金额")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(draft.discountAmountText.isEmpty ? "0" : draft.discountAmountText)
+                    .font(.title2.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(LedgerPalette.accent)
+            }
+            .padding(14)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            if draft.transactionKind == .transfer {
+                walletSelectionRow(
+                    title: "优惠进入账户",
+                    selection: $draft.discountWalletID,
+                    identifier: "entry-discount-wallet"
+                )
+            }
         }
-        .padding(14)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var feeOptions: some View {
@@ -336,6 +345,15 @@ struct EntryContextOverlayPanel: View {
                 .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
             }
 
+            if draft.transactionKind == .transfer || draft.transactionKind == .exchange {
+                walletSelectionRow(
+                    title: "手续费扣款账户",
+                    selection: $draft.feeWalletID,
+                    identifier: "entry-fee-wallet",
+                    selectionChanged: { draft.feeCurrencyCode = $0.currencyCode }
+                )
+            }
+
             VStack(spacing: 8) {
                 ForEach(feeTemplates) { template in
                     Button {
@@ -370,9 +388,47 @@ struct EntryContextOverlayPanel: View {
     private var canConfirm: Bool {
         switch kind {
         case .aa: draft.hasValidAAPeople
-        case .fee: draft.hasValidFeeInput
+        case .discount: draft.hasValidDiscountSelection
+        case .fee: draft.hasValidFeeSelection
         default: true
         }
+    }
+
+    private func walletSelectionRow(
+        title: String,
+        selection: Binding<UUID?>,
+        identifier: String,
+        selectionChanged: ((CurrencyWallet) -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 8)
+            Menu {
+                ForEach(wallets) { wallet in
+                    Button(walletDisplayName(wallet)) {
+                        selection.wrappedValue = wallet.id
+                        selectionChanged?(wallet)
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(walletDisplayName(wallets.first { $0.id == selection.wrappedValue }))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2.weight(.bold))
+                }
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier(identifier)
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func walletDisplayName(_ wallet: CurrencyWallet?) -> String {
+        guard let wallet else { return "选择账户" }
+        return "\(wallet.account?.name ?? "未知账户") · \(wallet.currencyCode)"
     }
 
     private func walletName(for id: UUID?) -> String {

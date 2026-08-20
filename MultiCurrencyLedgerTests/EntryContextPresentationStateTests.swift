@@ -155,6 +155,90 @@ final class EntryContextPresentationStateTests: XCTestCase {
         XCTAssertEqual(form.sourceWalletID, second.id)
     }
 
+    func testTransferDiscountDefaultsToDestinationAndCommitsWallet() {
+        let source = makeWallet(name: "转出卡")
+        let destination = makeWallet(name: "转入卡")
+        var form = TransactionFormState(kind: .transfer)
+        form.sourceWalletID = source.id
+        form.destinationWalletID = destination.id
+        var presentation = preparedPresentation(
+            kind: .discount,
+            form: form,
+            wallets: [source, destination]
+        )
+
+        XCTAssertEqual(presentation.draft?.discountWalletID, destination.id)
+        presentation.draft?.discountAmountText = "8.5"
+        XCTAssertTrue(presentation.synchronizePendingInput())
+        presentation.beginClosing(intent: .commit)
+        presentation.finishClosing(state: &form)
+
+        XCTAssertEqual(form.discountAmountText, "8.5")
+        XCTAssertEqual(form.discountWalletID, destination.id)
+    }
+
+    func testTransferFeeDefaultsToSourceAndCommitsWallet() {
+        let source = makeWallet(name: "转出卡")
+        let destination = makeWallet(name: "转入卡")
+        var form = TransactionFormState(kind: .transfer)
+        form.sourceWalletID = source.id
+        form.destinationWalletID = destination.id
+        form.amountText = "100"
+        var presentation = preparedPresentation(
+            kind: .fee,
+            form: form,
+            wallets: [source, destination]
+        )
+
+        XCTAssertEqual(presentation.draft?.feeWalletID, source.id)
+        presentation.draft?.feeInputMode = .fixedAmount
+        presentation.draft?.feeInputText = "3"
+        XCTAssertTrue(presentation.synchronizePendingInput())
+        presentation.beginClosing(intent: .commit)
+        presentation.finishClosing(state: &form)
+
+        XCTAssertTrue(form.includesFee)
+        XCTAssertEqual(form.feeText, "3")
+        XCTAssertEqual(form.feeWalletID, source.id)
+    }
+
+    func testEditingPreservesExplicitCrossCurrencyFeeWallet() {
+        let source = makeWallet(name: "转出卡")
+        let destination = makeWallet(name: "转入卡")
+        let feeWallet = makeWallet(name: "美元现金", currency: .USD)
+        var form = TransactionFormState(kind: .transfer)
+        form.sourceWalletID = source.id
+        form.destinationWalletID = destination.id
+        form.feeWalletID = feeWallet.id
+
+        let presentation = preparedPresentation(
+            kind: .fee,
+            form: form,
+            wallets: [source, destination, feeWallet]
+        )
+
+        XCTAssertEqual(presentation.draft?.feeWalletID, feeWallet.id)
+        XCTAssertEqual(presentation.draft?.feeCurrencyCode, SupportedCurrency.USD.rawValue)
+    }
+
+    func testTransferDiscountWithoutWalletCannotCommit() {
+        let source = makeWallet(name: "转出卡")
+        let destination = makeWallet(name: "转入卡")
+        var form = TransactionFormState(kind: .transfer)
+        form.sourceWalletID = source.id
+        form.destinationWalletID = destination.id
+        var presentation = preparedPresentation(
+            kind: .discount,
+            form: form,
+            wallets: [source, destination]
+        )
+
+        presentation.draft?.discountAmountText = "2"
+        presentation.draft?.discountWalletID = nil
+
+        XCTAssertFalse(presentation.synchronizePendingInput())
+    }
+
     func testInputTargetTracksActiveSplitPaymentPart() {
         let first = makeWallet(name: "主卡")
         let second = makeWallet(name: "备用卡")
@@ -231,9 +315,12 @@ final class EntryContextPresentationStateTests: XCTestCase {
         return presentation
     }
 
-    private func makeWallet(name: String) -> CurrencyWallet {
+    private func makeWallet(
+        name: String,
+        currency: SupportedCurrency = .CNY
+    ) -> CurrencyWallet {
         CurrencyWallet(
-            currency: .CNY,
+            currency: currency,
             account: Account(name: name, type: .bankCard)
         )
     }

@@ -91,7 +91,13 @@ struct TransactionFormState {
 
     init(draft: TransactionDraft) {
         kind = draft.type
-        amountText = Self.string(draft.foreignOriginalAmount ?? draft.amount)
+        if draft.type == .expense,
+           let originalAmount = draft.originalAmount,
+           draft.discountAmount.map({ $0 > 0 }) == true {
+            amountText = Self.string(originalAmount)
+        } else {
+            amountText = Self.string(draft.foreignOriginalAmount ?? draft.amount)
+        }
         destinationAmountText = draft.destinationAmount.map(Self.string) ?? ""
         if draft.type == .exchange, draft.amount > 0, let destinationAmount = draft.destinationAmount {
             exchangeRateText = Self.string(destinationAmount / draft.amount)
@@ -303,6 +309,21 @@ struct TransactionFormState {
         }
 
         let resolvedDiscountAmount = discountAmount
+        var resolvedOriginalAmount = originalAmount
+        if kind == .expense {
+            if let resolvedDiscountAmount, resolvedDiscountAmount > 0 {
+                guard resolvedDiscountAmount < amount else {
+                    throw ValidationError("优惠金额必须小于原价")
+                }
+                resolvedOriginalAmount = amount
+                amount = FeeCalculator.rounded(
+                    amount - resolvedDiscountAmount,
+                    currencyCode: resolvedSourceWallet.currencyCode
+                )
+            } else {
+                resolvedOriginalAmount = nil
+            }
+        }
         let resolvedDiscountWallet: CurrencyWallet?
         if kind == .transfer, let resolvedDiscountAmount, resolvedDiscountAmount > 0 {
             guard let selected = wallets.first(where: { $0.id == discountWalletID }) else {
@@ -375,7 +396,7 @@ struct TransactionFormState {
             adjustmentReason: kind == .adjustment
                 ? (cleanAdjustmentReason.isEmpty ? "手动校准" : cleanAdjustmentReason)
                 : nil,
-            originalAmount: originalAmount,
+            originalAmount: resolvedOriginalAmount,
             discountAmount: resolvedDiscountAmount,
             discountWallet: resolvedDiscountWallet,
             recognitionImportID: recognitionImportID,

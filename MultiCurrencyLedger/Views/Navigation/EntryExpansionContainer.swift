@@ -103,6 +103,14 @@ struct EntryExpansionContainer: View {
                 requestDismiss: requestClose,
                 requestSaveDismiss: { collapse(saved: true) }
             )
+        case let .edit(transaction):
+            EntryView(
+                editing: transaction,
+                onSaved: {},
+                hasUnsavedChanges: $hasUnsavedChanges,
+                requestDismiss: requestClose,
+                requestSaveDismiss: { collapse() }
+            )
         }
     }
 

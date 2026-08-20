@@ -43,11 +43,19 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
         let initialTabCenters = [ledger, assets, savings, statistics].map { $0.frame.midX }
         statistics.tap()
         XCTAssertTrue(app.navigationBars["报表"].waitForExistence(timeout: 3))
+        XCTAssertTrue(tapLog.waitForNonExistence(timeout: 2))
 
         let finalTabCenters = [ledger, assets, savings, statistics].map { $0.frame.midX }
         for (initial, final) in zip(initialTabCenters, finalTabCenters) {
             XCTAssertEqual(initial, final, accuracy: 1)
         }
+
+        for tab in [assets, savings, statistics] {
+            tab.tap()
+            XCTAssertFalse(tapLog.exists)
+        }
+        ledger.tap()
+        XCTAssertTrue(tapLog.waitForExistence(timeout: 2))
     }
 
     func testBookSwitcherUsesTapLogStyleMenu() {
@@ -223,6 +231,108 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["日常账户"].waitForExistence(timeout: 3))
     }
 
+    func testBillMovementRowsExposeAccountsAmountsAndCenteredExchangeArrow() {
+        app.buttons["root-tab-ledger"].tap()
+
+        let transfer = app.descendants(matching: .any)["sample-transaction-transfer"].firstMatch
+        let exchange = app.descendants(matching: .any)["sample-transaction-exchange"].firstMatch
+        XCTAssertTrue(transfer.waitForExistence(timeout: 3))
+        XCTAssertTrue(exchange.waitForExistence(timeout: 3))
+
+        XCTAssertTrue(app.descendants(matching: .any)["bill-transfer-source-account"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["bill-transfer-destination-account"].exists)
+        let transferSource = app.descendants(matching: .any)["bill-transfer-source-account"]
+        let transferDestination = app.descendants(matching: .any)["bill-transfer-destination-account"]
+        XCTAssertFalse(transferSource.label.contains("CNY"))
+        XCTAssertFalse(transferDestination.label.contains("CNY"))
+        let transferAmount = app.descendants(matching: .any)["bill-transfer-amount"]
+        XCTAssertTrue(transferAmount.exists)
+        XCTAssertTrue(transferAmount.label.contains("98.00"), "Expected the transfer amount net of discount, got: \(transferAmount.label)")
+        let adjustments = app.descendants(matching: .any)["bill-transfer-adjustments"]
+        XCTAssertTrue(adjustments.exists)
+        XCTAssertTrue(adjustments.label.contains("优惠"))
+        XCTAssertTrue(adjustments.label.contains("手续费"))
+        XCTAssertGreaterThan(adjustments.frame.minY, transferAmount.frame.midY)
+
+        let source = app.descendants(matching: .any)["bill-exchange-source-amount"]
+        let arrow = app.descendants(matching: .any)["bill-exchange-arrow"]
+        let destination = app.descendants(matching: .any)["bill-exchange-destination-amount"]
+        XCTAssertTrue(source.exists)
+        XCTAssertTrue(arrow.exists)
+        XCTAssertTrue(destination.exists)
+        XCTAssertLessThan(source.frame.maxY, arrow.frame.midY)
+        XCTAssertLessThan(arrow.frame.midY, destination.frame.minY)
+        XCTAssertEqual(arrow.frame.midX, source.frame.midX, accuracy: 4)
+        XCTAssertEqual(arrow.frame.midX, destination.frame.midX, accuracy: 4)
+    }
+
+    func testDiscountedExpenseShowsNetAmountAndDiscountBelowIt() {
+        app.buttons["root-tab-ledger"].tap()
+
+        let expense = app.descendants(matching: .any)["sample-transaction-discount-expense"].firstMatch
+        XCTAssertTrue(expense.waitForExistence(timeout: 3))
+        let amount = app.descendants(matching: .any)["bill-discount-expense-amount"].firstMatch
+        let discount = app.descendants(matching: .any)["bill-discount-expense-adjustment"].firstMatch
+        XCTAssertTrue(amount.exists)
+        XCTAssertTrue(discount.exists)
+        XCTAssertTrue(amount.label.contains("3.00"), "Expected net expense amount, got: \(amount.label)")
+        XCTAssertTrue(discount.label.contains("优惠："), "Expected discount detail, got: \(discount.label)")
+        XCTAssertTrue(discount.label.contains("2.00"), "Expected discount amount, got: \(discount.label)")
+        XCTAssertGreaterThan(discount.frame.minY, amount.frame.midY)
+    }
+
+    func testOnlyOneBillRowCanExposeSwipeActionAndEditUsesEntryShell() {
+        app.buttons["root-tab-ledger"].tap()
+        let transfer = app.descendants(matching: .any)["sample-transaction-transfer"].firstMatch
+        let exchange = app.descendants(matching: .any)["sample-transaction-exchange"].firstMatch
+        XCTAssertTrue(transfer.waitForExistence(timeout: 3))
+        XCTAssertTrue(exchange.waitForExistence(timeout: 3))
+
+        dragRight(in: transfer)
+        let transferEdit = app.buttons["bill-edit-sample-transaction-transfer"]
+        XCTAssertTrue(transferEdit.waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["bill-edit-sample-transaction-exchange"].exists)
+        dragRight(in: exchange)
+        let exchangeEdit = app.buttons["bill-edit-sample-transaction-exchange"]
+        XCTAssertTrue(exchangeEdit.waitForExistence(timeout: 2))
+        XCTAssertFalse(transferEdit.exists)
+
+        XCTAssertTrue(exchangeEdit.isHittable)
+        exchangeEdit.tap()
+        let sheet = app.descendants(matching: .any)["receipt-entry-sheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 3))
+        let handle = app.buttons["拖拽关闭记账"]
+        let complete = app.buttons["完成"].firstMatch
+        XCTAssertTrue(handle.waitForExistence(timeout: 2))
+        XCTAssertTrue(complete.exists)
+        XCTAssertLessThanOrEqual(handle.frame.minY, 65)
+        XCTAssertGreaterThanOrEqual(complete.frame.maxY, app.frame.maxY - 35)
+    }
+
+    func testTransferDiscountChoosesDestinationWalletBeforeSaving() {
+        openEntry()
+        app.buttons["receipt-kind-transfer"].tap()
+
+        let discount = app.buttons["entry-context-tag-discount"]
+        scrollTo(discount)
+        XCTAssertTrue(discount.label.contains("0.00"), "Expected a formatted zero amount, got: \(discount.label)")
+        XCTAssertFalse(discount.label.contains("已设置优惠"))
+        discount.tap()
+
+        let wallet = app.buttons["entry-discount-wallet"]
+        XCTAssertTrue(wallet.waitForExistence(timeout: 2))
+        XCTAssertTrue(wallet.label.contains("储蓄账户"))
+        app.buttons["2"].firstMatch.tap()
+        app.buttons["确认"].firstMatch.tap()
+        XCTAssertTrue(wallet.waitForNonExistence(timeout: 2))
+        XCTAssertTrue(discount.label.contains("2.00"))
+
+        app.buttons["1"].firstMatch.tap()
+        app.buttons["完成"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["root-entry-button"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.alerts.staticTexts["请选择优惠进入的钱包"].exists)
+    }
+
     func testBillSearchClosesBackToCollapsedButton() {
         app.buttons["root-tab-ledger"].tap()
         let collapsedSearch = app.buttons["搜索当前月账单"]
@@ -271,6 +381,17 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["币种"].exists)
         XCTAssertTrue(app.buttons["备注"].exists)
         XCTAssertFalse(app.buttons["更多交易操作"].exists)
+    }
+
+    func testBillRowTapOpensReceiptDetail() {
+        app.buttons["root-tab-ledger"].tap()
+
+        let diningTransaction = app.descendants(matching: .any)["sample-transaction-dining"].firstMatch
+        XCTAssertTrue(diningTransaction.waitForExistence(timeout: 3))
+        diningTransaction.tap()
+
+        let receiptDetail = app.descendants(matching: .any)["receipt-transaction-detail"].firstMatch
+        XCTAssertTrue(receiptDetail.waitForExistence(timeout: 3))
     }
 
     func testTransactionNoteEditorFocusesKeyboard() {
@@ -391,6 +512,12 @@ final class MultiCurrencyLedgerSmokeUITests: XCTestCase {
         }
         XCTAssertTrue(element.waitForExistence(timeout: 2))
         XCTAssertTrue(element.isHittable)
+    }
+
+    private func dragRight(in element: XCUIElement) {
+        let start = element.coordinate(withNormalizedOffset: CGVector(dx: 0.22, dy: 0.5))
+        let end = element.coordinate(withNormalizedOffset: CGVector(dx: 0.78, dy: 0.5))
+        start.press(forDuration: 0.08, thenDragTo: end)
     }
 
     private func assertTab(_ identifier: String, marker: XCUIElement) {

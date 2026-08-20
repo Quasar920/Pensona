@@ -3,6 +3,29 @@ import XCTest
 
 @MainActor
 final class TransactionFormStateTests: XCTestCase {
+    func testExpenseDiscountStoresNetPaidAmountAndRestoresOriginalForEditing() throws {
+        let account = Account(name: "工商银行", type: .bankCard)
+        let wallet = CurrencyWallet(currency: .CNY, balance: 100, account: account)
+        var state = TransactionFormState(kind: .expense)
+        state.sourceWalletID = wallet.id
+        state.amountText = "5"
+        state.discountAmountText = "2"
+
+        let draft = try state.makeDraft(wallets: [wallet], categories: [])
+
+        XCTAssertEqual(draft.amount, 3)
+        XCTAssertEqual(draft.originalAmount, 5)
+        XCTAssertEqual(draft.discountAmount, 2)
+        XCTAssertEqual(
+            try TransactionImpactCalculator().deltas(for: draft),
+            [WalletDelta(wallet: wallet, amount: -3)]
+        )
+
+        let editingState = TransactionFormState(draft: draft)
+        XCTAssertEqual(editingState.amountText, "5")
+        XCTAssertEqual(editingState.discountAmountText, "2")
+    }
+
     func testIncomePercentageFeeStoresNetIncomeWithoutFeeWalletImpact() throws {
         let account = Account(name: "闲鱼收款", type: .bankCard)
         let wallet = CurrencyWallet(currency: .CNY, account: account)

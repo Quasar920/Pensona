@@ -14,6 +14,7 @@ struct HomeView: View {
     private var attachments: [TransactionAttachment]
 
     let addTransaction: () -> Void
+    let editTransaction: (LedgerTransaction) -> Void
     let openReports: () -> Void
     @Binding private var isDetailPresented: Bool
 
@@ -35,10 +36,12 @@ struct HomeView: View {
 
     init(
         addTransaction: @escaping () -> Void = {},
+        editTransaction: @escaping (LedgerTransaction) -> Void = { _ in },
         openReports: @escaping () -> Void = {},
         isDetailPresented: Binding<Bool> = .constant(false)
     ) {
         self.addTransaction = addTransaction
+        self.editTransaction = editTransaction
         self.openReports = openReports
         _isDetailPresented = isDetailPresented
     }
@@ -210,6 +213,7 @@ struct HomeView: View {
             deleteTransaction: requestDelete,
             addTransaction: addTransaction,
             attachmentTransactionIDs: Set(attachments.map(\.transactionID)),
+            expandedTransactionID: $expandedTransactionID,
             retry: { refreshGeneration += 1 }
         )
     }
@@ -276,7 +280,7 @@ struct HomeView: View {
 
     private func edit(_ transaction: LedgerTransaction) {
         expandedTransactionID = nil
-        presentation.present(.editTransaction(transaction))
+        editTransaction(transaction)
     }
 
     private func openTransaction(_ transaction: LedgerTransaction, sourceFrame: CGRect) {
@@ -291,7 +295,8 @@ struct HomeView: View {
     }
 
     private func editFromReceiptDetail(_ transaction: LedgerTransaction) {
-        presentation.present(.editTransaction(transaction))
+        receiptDetailTransaction = nil
+        editTransaction(transaction)
     }
 
     private func requestDelete(_ transaction: LedgerTransaction) {
@@ -389,7 +394,6 @@ private enum HomeSheetDestination {
     case calendar
     case smartDraft
     case aaReceivables(UUID)
-    case editTransaction(LedgerTransaction)
 }
 
 @MainActor
@@ -445,8 +449,6 @@ private struct HomeSheetPresenter: View {
             NavigationStack { SmartDraftEntryView() }
         case .aaReceivables(let bookID):
             AAReceivableListView(bookID: bookID)
-        case .editTransaction(let transaction):
-            TransactionEditView(transaction: transaction) {}
         }
     }
 }
@@ -968,10 +970,10 @@ extension LedgerTransaction {
     func receiptOfferText(currencyCode: String) -> String? {
         var details: [String] = []
         if let discountAmount, discountAmount > 0 {
-            details.append("优惠 \(MoneyFormatter.compactString(discountAmount, currencyCode: currencyCode))")
+            details.append("优惠 \(MoneyFormatter.string(discountAmount, currencyCode: discountCurrencyCode ?? currencyCode))")
         }
         if let feeAmount, feeAmount > 0 {
-            details.append("手续费 \(MoneyFormatter.plain(feeAmount, currencyCode: feeCurrencyCode ?? currencyCode))")
+            details.append("手续费 \(MoneyFormatter.string(feeAmount, currencyCode: feeCurrencyCode ?? currencyCode))")
         }
         return details.isEmpty ? nil : details.joined(separator: " · ")
     }

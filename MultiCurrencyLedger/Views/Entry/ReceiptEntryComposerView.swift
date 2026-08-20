@@ -175,6 +175,16 @@ private struct ReceiptEntryComposerView: View {
     }
 
     private var keypadCurrencyCode: String {
+        if contextPresentation.kind == .discount,
+           let walletID = contextPresentation.draft?.discountWalletID,
+           let wallet = wallets.first(where: { $0.id == walletID }) {
+            return wallet.currencyCode
+        }
+        if contextPresentation.kind == .fee,
+           let walletID = contextPresentation.draft?.feeWalletID,
+           let wallet = wallets.first(where: { $0.id == walletID }) {
+            return wallet.currencyCode
+        }
         if activeAmount == .destination {
             return destinationWallet?.currencyCode ?? SupportedCurrency.CNY.rawValue
         }
@@ -473,13 +483,7 @@ private struct ReceiptEntryComposerView: View {
                 commonMoneyOptions
                 ReceiptToggleRow(title: "不计收入", isOn: $state.excludesFromMonthlyIncome)
             case .transfer:
-                ReceiptSettingRow(
-                    title: "优惠",
-                    value: hasDiscount ? "已设置优惠" : "无优惠",
-                    symbol: "chevron.down",
-                    action: { presentContext(.discount) }
-                )
-                .accessibilityIdentifier("entry-context-tag-discount")
+                discountRow
                 feeRow
             case .exchange:
                 discountRow
@@ -528,7 +532,10 @@ private struct ReceiptEntryComposerView: View {
     private var discountRow: some View {
         ReceiptSettingRow(
             title: "优惠",
-            value: hasDiscount ? "已设置优惠" : "无优惠",
+            value: adjustmentAmountText(
+                state.discountAmountText,
+                walletID: state.discountWalletID
+            ),
             symbol: "chevron.down",
             action: { presentContext(.discount) }
         )
@@ -548,7 +555,10 @@ private struct ReceiptEntryComposerView: View {
     private var feeRow: some View {
         ReceiptSettingRow(
             title: "手续费",
-            value: state.includesFee ? "已设置手续费" : "不收取手续费",
+            value: adjustmentAmountText(
+                state.includesFee ? state.feeText : "",
+                walletID: state.feeWalletID
+            ),
             symbol: "chevron.down",
             action: { presentContext(.fee) }
         )
@@ -576,8 +586,12 @@ private struct ReceiptEntryComposerView: View {
         .accessibilityIdentifier("receipt-keypad")
     }
 
-    private var hasDiscount: Bool {
-        DecimalParser.parse(state.discountAmountText).map { $0 > 0 } == true
+    private func adjustmentAmountText(_ amountText: String, walletID: UUID?) -> String {
+        let amount = DecimalParser.parse(amountText) ?? 0
+        let currencyCode = wallets.first(where: { $0.id == walletID })?.currencyCode
+            ?? sourceWallet?.currencyCode
+            ?? SupportedCurrency.CNY.rawValue
+        return MoneyFormatter.string(amount, currencyCode: currencyCode)
     }
 
     private func categoryPath(_ category: LedgerCategory) -> String {
@@ -690,7 +704,8 @@ private struct ReceiptEntryComposerView: View {
     private var canCompleteContextInput: Bool {
         switch contextPresentation.kind {
         case .aa: contextPresentation.draft?.hasValidAAPeople == true
-        case .fee: contextPresentation.draft?.hasValidFeeInput == true
+        case .discount: contextPresentation.draft?.hasValidDiscountSelection == true
+        case .fee: contextPresentation.draft?.hasValidFeeSelection == true
         default: true
         }
     }

@@ -32,16 +32,22 @@ struct EntryView: View {
         self.requestSaveDismiss = requestSaveDismiss
     }
 
-    init(editing transaction: LedgerTransaction, onSaved: @escaping () -> Void) {
+    init(
+        editing transaction: LedgerTransaction,
+        onSaved: @escaping () -> Void,
+        hasUnsavedChanges: Binding<Bool> = .constant(false),
+        requestDismiss: (() -> Void)? = nil,
+        requestSaveDismiss: (() -> Void)? = nil
+    ) {
         seed = nil
         editingTransaction = transaction
         self.onSaved = onSaved
         dismissAfterSave = true
         resetSeedDate = false
         presentationTitle = AppLocalization.string("编辑账单")
-        _hasUnsavedChanges = .constant(false)
-        requestDismiss = nil
-        requestSaveDismiss = nil
+        _hasUnsavedChanges = hasUnsavedChanges
+        self.requestDismiss = requestDismiss
+        self.requestSaveDismiss = requestSaveDismiss
     }
 
     var body: some View {
@@ -158,10 +164,13 @@ private struct EntryLoadedView: View {
     /// waiting for the account query to refresh.
     private var entryWallets: [CurrencyWallet] {
         var wallets = allWallets
-        let pendingWallets = accounts
-            .filter { !$0.isArchived }
-            .flatMap(\.allWallets)
-        for walletID in [form.sourceWalletID, form.destinationWalletID] {
+        let pendingWallets = accounts.flatMap(\.allWallets)
+        for walletID in [
+            form.sourceWalletID,
+            form.destinationWalletID,
+            form.feeWalletID,
+            form.discountWalletID
+        ] {
             guard let walletID,
                   let wallet = pendingWallets.first(where: { $0.id == walletID }),
                   !wallets.contains(where: { $0.id == wallet.id }) else { continue }
@@ -459,6 +468,10 @@ private struct EntryLoadedView: View {
             if wallet(id: form.feeWalletID) == nil {
                 form.feeWalletID = form.sourceWalletID
             }
+            if DecimalParser.parse(form.discountAmountText).map({ $0 > 0 }) == true,
+               wallet(id: form.discountWalletID) == nil {
+                form.discountWalletID = form.destinationWalletID
+            }
         } else if form.kind == .exchange {
             if !destinationOptions.contains(where: { $0.id == form.destinationWalletID }) {
                 form.destinationWalletID = nil
@@ -469,6 +482,7 @@ private struct EntryLoadedView: View {
         } else {
             form.destinationWalletID = nil
             form.feeWalletID = nil
+            form.discountWalletID = nil
         }
     }
 
@@ -697,8 +711,8 @@ private struct EntryLoadedView: View {
         if editingTransaction != nil {
             HapticFeedbackService().notification(.success)
             hasUnsavedChanges = false
-            dismiss()
             onSaved?()
+            requestSaveDismiss?() ?? requestDismiss?() ?? dismiss()
         } else if pendingSaveAction == .complete && dismissAfterSave {
             hasUnsavedChanges = false
             HapticFeedbackService().notification(.success)

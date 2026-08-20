@@ -37,6 +37,7 @@ struct RootTabView: View {
             case .ledger:
                 HomeView(
                     addTransaction: presentation.presentNewEntry,
+                    editTransaction: presentation.presentEdit,
                     openReports: { selection = .statistics },
                     isDetailPresented: $isLedgerDetailPresented
                 )
@@ -58,8 +59,10 @@ struct RootTabView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isRootEntryVisible {
                 VStack(alignment: .trailing, spacing: 6) {
-                    TapLogMenu(templates: scopedTapLogTemplates, record: recordTapLogTemplate)
-                        .padding(.trailing, LedgerLayout.pagePadding)
+                    if selection == .ledger {
+                        TapLogMenu(templates: scopedTapLogTemplates, record: recordTapLogTemplate)
+                            .padding(.trailing, LedgerLayout.pagePadding)
+                    }
 
                     LedgerBottomBar(selection: $selection, addEntry: presentation.presentNewEntry)
                 }
@@ -345,6 +348,7 @@ struct RootEntryPresentation: Identifiable {
     enum Mode {
         case new
         case external(TransactionDraft)
+        case edit(LedgerTransaction)
     }
 
     let id = UUID()
@@ -366,6 +370,11 @@ final class RootPresentationState {
     func presentExternalEntry(_ draft: TransactionDraft) {
         guard entry == nil else { return }
         entry = RootEntryPresentation(mode: .external(draft))
+    }
+
+    func presentEdit(_ transaction: LedgerTransaction) {
+        guard entry == nil else { return }
+        entry = RootEntryPresentation(mode: .edit(transaction))
     }
 
     func finishDismissal() {

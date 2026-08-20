@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum PensonaDashboardTypography {
     static let balance = LedgerFont.semibold(size: 36, relativeTo: .title3)
@@ -74,6 +75,7 @@ struct OneTsuReceiptLedger: View {
     let deleteTransaction: (LedgerTransaction) -> Void
     let addTransaction: () -> Void
     let attachmentTransactionIDs: Set<UUID>
+    @Binding var expandedTransactionID: UUID?
     let retry: () -> Void
 
     var body: some View {
@@ -101,6 +103,7 @@ struct OneTsuReceiptLedger: View {
                             group: group,
                             currencyCode: currencyCode,
                             attachmentTransactionIDs: attachmentTransactionIDs,
+                            expandedTransactionID: $expandedTransactionID,
                             openTransaction: openTransaction,
                             editTransaction: editTransaction,
                             deleteTransaction: deleteTransaction
@@ -232,6 +235,7 @@ private struct ReceiptDaySection: View {
     let group: BillDayGroup
     let currencyCode: String
     let attachmentTransactionIDs: Set<UUID>
+    @Binding var expandedTransactionID: UUID?
     let openTransaction: (LedgerTransaction, CGRect) -> Void
     let editTransaction: (LedgerTransaction) -> Void
     let deleteTransaction: (LedgerTransaction) -> Void
@@ -254,24 +258,18 @@ private struct ReceiptDaySection: View {
             }
 
             ForEach(group.transactions) { transaction in
-                Button { openTransaction(transaction, transactionFrames[transaction.id] ?? .zero) } label: {
-                    ReceiptTransactionRow(
-                        transaction: transaction,
-                        currencyCode: currencyCode,
-                        hasAttachment: attachmentTransactionIDs.contains(transaction.id)
-                    )
-                }
-                .buttonStyle(.plain)
+                ReceiptSwipeableTransactionRow(
+                    transaction: transaction,
+                    currencyCode: currencyCode,
+                    hasAttachment: attachmentTransactionIDs.contains(transaction.id),
+                    expandedTransactionID: $expandedTransactionID,
+                    open: { openTransaction(transaction, transactionFrames[transaction.id] ?? .zero) },
+                    edit: { editTransaction(transaction) },
+                    delete: { deleteTransaction(transaction) }
+                )
                 .contextMenu {
                     Button("编辑交易", systemImage: "square.and.pencil") { editTransaction(transaction) }
                     Button("删除交易", systemImage: "trash", role: .destructive) { deleteTransaction(transaction) }
-                }
-                .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                    Button("编辑", systemImage: "square.and.pencil") { editTransaction(transaction) }
-                        .tint(LedgerPalette.accent)
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button("删除", systemImage: "trash", role: .destructive) { deleteTransaction(transaction) }
                 }
                 .background {
                     GeometryReader { proxy in
@@ -310,6 +308,271 @@ private struct ReceiptDaySection: View {
     }()
 }
 
+private struct ReceiptSwipeableTransactionRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private enum Side { case edit, delete }
+
+    private let revealWidth: CGFloat = 82
+
+    let transaction: LedgerTransaction
+    let currencyCode: String
+    let hasAttachment: Bool
+    @Binding var expandedTransactionID: UUID?
+    let open: () -> Void
+    let edit: () -> Void
+    let delete: () -> Void
+
+    @State private var side: Side?
+    @State private var dragTranslation: CGFloat = 0
+    @State private var isDragging = false
+
+    private var activeSide: Side? {
+        expandedTransactionID == transaction.id ? side : nil
+    }
+
+    private var restingOffset: CGFloat {
+        switch activeSide {
+        case .edit: revealWidth
+        case .delete: -revealWidth
+        case nil: 0
+        }
+    }
+
+    private var horizontalOffset: CGFloat {
+        constrainedOffset(restingOffset + dragTranslation, side: activeSide)
+    }
+
+    private var leadingRevealProgress: CGFloat {
+        max(0, min(1, horizontalOffset / revealWidth))
+    }
+
+    private var trailingRevealProgress: CGFloat {
+        max(0, min(1, -horizontalOffset / revealWidth))
+    }
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                actionButton(
+                    title: "编辑",
+                    symbol: "square.and.pencil",
+                    isExposed: activeSide == .edit && !isDragging,
+                    action: edit
+                )
+                    .frame(width: revealWidth)
+                    .opacity(leadingRevealProgress)
+                    .scaleEffect(0.92 + leadingRevealProgress * 0.08)
+                    .allowsHitTesting(activeSide == .edit && !isDragging)
+                    .accessibilityHidden(activeSide != .edit || isDragging)
+
+                Spacer(minLength: 0)
+
+                actionButton(
+                    title: "删除",
+                    symbol: "trash",
+                    isExposed: activeSide == .delete && !isDragging,
+                    action: delete
+                )
+                    .frame(width: revealWidth)
+                    .opacity(trailingRevealProgress)
+                    .scaleEffect(0.92 + trailingRevealProgress * 0.08)
+                    .allowsHitTesting(activeSide == .delete && !isDragging)
+                    .accessibilityHidden(activeSide != .delete || isDragging)
+            }
+            .frame(maxHeight: .infinity)
+
+            ReceiptTransactionRow(
+                transaction: transaction,
+                currencyCode: currencyCode,
+                hasAttachment: hasAttachment
+            )
+            .gesture(
+                ReceiptHorizontalSwipeGesture(
+                    changed: handleDragChanged,
+                    ended: settleDrag
+                )
+            )
+            .offset(x: horizontalOffset)
+            .compositingGroup()
+            .onTapGesture(perform: handleTap)
+            .accessibilityIdentifier(transactionAccessibilityIdentifier)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .onChange(of: expandedTransactionID) { _, id in
+            guard id != transaction.id else { return }
+            side = nil
+            dragTranslation = 0
+            isDragging = false
+        }
+        .accessibilityAction(named: "编辑交易", edit)
+        .accessibilityAction(named: "删除交易", delete)
+        .accessibilityHint("展开查看账单详情")
+    }
+
+    private func handleDragChanged(_ translation: CGFloat) {
+        isDragging = true
+        if expandedTransactionID != transaction.id {
+            expandedTransactionID = transaction.id
+            side = nil
+        }
+        dragTranslation = translation
+    }
+
+    private func settleDrag(_ translation: CGFloat, _ velocity: CGFloat) {
+        let projection = translation + velocity * 0.12
+        let projectedOffset = constrainedOffset(restingOffset + projection, side: activeSide)
+        let targetSide: Side?
+        switch activeSide {
+        case nil where projectedOffset >= revealWidth * 0.55: targetSide = .edit
+        case nil where projectedOffset <= -revealWidth * 0.55: targetSide = .delete
+        case .edit where projectedOffset <= revealWidth * 0.48: targetSide = nil
+        case .delete where projectedOffset >= -revealWidth * 0.48: targetSide = nil
+        default: targetSide = activeSide
+        }
+
+        let changed = activeSide != targetSide
+        withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical) {
+            dragTranslation = 0
+            isDragging = false
+            side = targetSide
+            expandedTransactionID = targetSide == nil ? nil : transaction.id
+        }
+        if changed { HapticFeedbackService().selection() }
+    }
+
+    private func handleTap() {
+        if activeSide == nil {
+            expandedTransactionID = nil
+            open()
+        } else {
+            withAnimation(reduceMotion ? LedgerMotion.reduced : LedgerMotion.physical) {
+                side = nil
+                expandedTransactionID = nil
+            }
+        }
+    }
+
+    private func constrainedOffset(_ proposed: CGFloat, side: Side?) -> CGFloat {
+        switch side {
+        case .edit: min(revealWidth, max(0, proposed))
+        case .delete: min(0, max(-revealWidth, proposed))
+        case nil: min(revealWidth, max(-revealWidth, proposed))
+        }
+    }
+
+    private func actionButton(
+        title: String,
+        symbol: String,
+        isExposed: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 46, height: 46)
+                    .background(LedgerPalette.ink, in: Circle())
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(
+            isExposed
+                ? "bill-\(title == "编辑" ? "edit" : "delete")-\(transactionAccessibilityIdentifier)"
+                : ""
+        )
+    }
+
+    private var transactionAccessibilityIdentifier: String {
+        if ProcessInfo.processInfo.environment["UI_TEST_MODE"] == "1" {
+            switch transaction.displayNote {
+            case "UI Test Discount Expense": return "sample-transaction-discount-expense"
+            case "UI Test Transfer": return "sample-transaction-transfer"
+            case "UI Test Exchange": return "sample-transaction-exchange"
+            default: break
+            }
+        }
+        if transaction.id == PreviewDataService.sampleDiningTransactionID
+            || (ProcessInfo.processInfo.environment["UI_TEST_MODE"] == "1"
+                && ["星巴克", "Starbucks"].contains(transaction.displayNote)) {
+            return "sample-transaction-dining"
+        }
+        return "transaction-\(transaction.id.uuidString)"
+    }
+}
+
+/// A native pan can fail before recognition when the intent is vertical. That
+/// keeps the surrounding ScrollView fluid without weakening horizontal swipes.
+private struct ReceiptHorizontalSwipeGesture: UIGestureRecognizerRepresentable {
+    var changed: (CGFloat) -> Void
+    var ended: (CGFloat, CGFloat) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator(changed: changed, ended: ended)
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
+        recognizer.maximumNumberOfTouches = 1
+        recognizer.cancelsTouchesInView = false
+        recognizer.delaysTouchesBegan = false
+        recognizer.delaysTouchesEnded = false
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        context.coordinator.changed = changed
+        context.coordinator.ended = ended
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let translation = context.converter.localTranslation?.x
+            ?? recognizer.translation(in: recognizer.view).x
+        switch recognizer.state {
+        case .began, .changed:
+            context.coordinator.changed(translation)
+        case .ended:
+            let velocity = context.converter.localVelocity?.x
+                ?? recognizer.velocity(in: recognizer.view).x
+            context.coordinator.ended(translation, velocity)
+        case .cancelled, .failed:
+            context.coordinator.ended(translation, 0)
+        default:
+            break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var changed: (CGFloat) -> Void
+        var ended: (CGFloat, CGFloat) -> Void
+
+        init(changed: @escaping (CGFloat) -> Void, ended: @escaping (CGFloat, CGFloat) -> Void) {
+            self.changed = changed
+            self.ended = ended
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y) * 1.05
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+    }
+}
+
 private struct ReceiptTransactionRow: View {
     let transaction: LedgerTransaction
     let currencyCode: String
@@ -335,6 +598,7 @@ private struct ReceiptTransactionRow: View {
                 .stroke(LedgerPalette.hairline, lineWidth: 1)
         }
         .contentShape(Capsule())
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -359,12 +623,14 @@ private struct ReceiptTransactionRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(transaction.type.title)
                     .font(PensonaDashboardTypography.transactionTypeTitle)
-                Text("转入账户")
+                Text("转出 · \(transferWalletTitle(transaction.sourceWallet))")
                     .font(PensonaDashboardTypography.rowDetail)
                     .foregroundStyle(.secondary)
-                Text(transferRoute)
+                    .accessibilityIdentifier("bill-transfer-source-account")
+                Text("转入 · \(transferWalletTitle(transaction.destinationWallet))")
                     .font(PensonaDashboardTypography.rowDetail)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("bill-transfer-destination-account")
             }
         case .exchange:
             VStack(alignment: .leading, spacing: 3) {
@@ -397,12 +663,15 @@ private struct ReceiptTransactionRow: View {
             VStack(spacing: 1) {
                 Text(exchangeAmount(transaction.sourceAmount ?? transaction.amount ?? 0, currency: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? currencyCode))
                     .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityIdentifier("bill-exchange-source-amount")
                 Image(systemName: "arrow.down")
                     .font(LedgerFont.regular(size: 14, relativeTo: .caption))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
+                    .accessibilityIdentifier("bill-exchange-arrow")
                 Text(exchangeAmount(transaction.destinationAmount ?? 0, currency: transaction.destinationCurrencyCode ?? currencyCode))
                     .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityIdentifier("bill-exchange-destination-amount")
             }
             .fixedSize(horizontal: true, vertical: false)
             .font(PensonaDashboardTypography.exchangeAmount)
@@ -410,20 +679,121 @@ private struct ReceiptTransactionRow: View {
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.72)
+        } else if transaction.type == .transfer {
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(transferPrimaryAmount)
+                    .font(PensonaDashboardTypography.rowAmount)
+                    .monospacedDigit()
+                    .foregroundStyle(amountColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+                    .accessibilityIdentifier("bill-transfer-amount")
+
+                if let adjustments = transferAdjustments {
+                    Text(adjustments)
+                        .font(PensonaDashboardTypography.rowDetail)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityIdentifier("bill-transfer-adjustments")
+                }
+            }
         } else {
-            Text(transaction.summaryAmount)
-                .font(PensonaDashboardTypography.rowAmount)
-                .monospacedDigit()
-                .foregroundStyle(amountColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.70)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(standardPrimaryAmount)
+                    .font(PensonaDashboardTypography.rowAmount)
+                    .monospacedDigit()
+                    .foregroundStyle(amountColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+                    .accessibilityIdentifier(
+                        transaction.displayNote == "UI Test Discount Expense"
+                            ? "bill-discount-expense-amount"
+                            : "bill-amount"
+                    )
+
+                if let adjustments = standardAdjustments {
+                    Text(adjustments)
+                        .font(PensonaDashboardTypography.rowDetail)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityIdentifier(
+                            transaction.displayNote == "UI Test Discount Expense"
+                                ? "bill-discount-expense-adjustment"
+                                : "bill-adjustments"
+                        )
+                }
+            }
         }
     }
 
-    private var transferRoute: String {
-        let source = transaction.sourceAccount?.name ?? "转出账户"
-        let destination = transaction.destinationAccount?.name ?? "转入账户"
-        return "\(source) → \(destination)"
+    private func transferWalletTitle(_ wallet: CurrencyWallet?) -> String {
+        wallet?.account?.name ?? "未指定账户"
+    }
+
+    private var transferPrimaryAmount: String {
+        let sourceCurrency = transaction.sourceCurrencyCode ?? currencyCode
+        let original = transaction.sourceAmount ?? transaction.amount ?? 0
+        let discount = transaction.discountAmount ?? 0
+        let discountCurrency = transaction.discountCurrencyCode
+            ?? transaction.discountWallet?.currencyCode
+            ?? sourceCurrency
+        let canApplyDiscount = discount > 0 && discountCurrency == sourceCurrency
+        let netAmount = canApplyDiscount ? max(0, original - discount) : original
+        return MoneyFormatter.string(netAmount, currencyCode: sourceCurrency)
+    }
+
+    private var transferAdjustments: String? {
+        var details: [String] = []
+        if let discount = transaction.discountAmount, discount > 0 {
+            let code = transaction.discountCurrencyCode
+                ?? transaction.discountWallet?.currencyCode
+                ?? transaction.sourceCurrencyCode
+                ?? currencyCode
+            details.append("优惠 \(MoneyFormatter.string(discount, currencyCode: code))")
+        }
+        if let fee = transaction.feeAmount, fee > 0 {
+            let code = transaction.feeCurrencyCode
+                ?? transaction.feeWallet?.currencyCode
+                ?? transaction.sourceCurrencyCode
+                ?? currencyCode
+            details.append("手续费 \(MoneyFormatter.string(fee, currencyCode: code))")
+        }
+        return details.isEmpty ? nil : details.joined(separator: " · ")
+    }
+
+    private var standardPrimaryAmount: String {
+        guard transaction.type == .expense,
+              transaction.originalAmount == nil,
+              let discount = transaction.discountAmount,
+              discount > 0 else {
+            return transaction.summaryAmount
+        }
+        let code = transaction.sourceCurrencyCode ?? transaction.currencyCode ?? currencyCode
+        let original = transaction.sourceAmount ?? transaction.amount ?? 0
+        return "−" + MoneyFormatter.string(max(0, original - discount), currencyCode: code)
+    }
+
+    private var standardAdjustments: String? {
+        var details: [String] = []
+        if let discount = transaction.discountAmount, discount > 0 {
+            let code = transaction.discountCurrencyCode
+                ?? transaction.sourceCurrencyCode
+                ?? transaction.currencyCode
+                ?? currencyCode
+            details.append("优惠：\(MoneyFormatter.string(discount, currencyCode: code))")
+        }
+        if let fee = transaction.feeAmount, fee > 0 {
+            let code = transaction.feeCurrencyCode
+                ?? transaction.sourceCurrencyCode
+                ?? transaction.currencyCode
+                ?? currencyCode
+            details.append("手续费：\(MoneyFormatter.string(fee, currencyCode: code))")
+        }
+        return details.isEmpty ? nil : details.joined(separator: " · ")
     }
 
     private func exchangeAmount(_ amount: Decimal, currency: String) -> String {

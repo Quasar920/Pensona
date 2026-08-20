@@ -41,7 +41,10 @@ enum EntryContextInputTarget: Equatable {
 }
 
 struct EntryContextDraft: Equatable {
+    var transactionKind: TransactionKind
     var selectedWalletID: UUID?
+    var discountWalletID: UUID?
+    var feeWalletID: UUID?
     var aaPeople: Int
     var aaPeopleText: String
     var aaNote: String?
@@ -57,7 +60,12 @@ struct EntryContextDraft: Equatable {
         state: TransactionFormState,
         wallets: [CurrencyWallet]
     ) {
+        transactionKind = state.kind
         selectedWalletID = state.sourceWalletID
+        discountWalletID = state.discountWalletID
+            ?? (state.kind == .transfer ? state.destinationWalletID : nil)
+        feeWalletID = state.feeWalletID
+            ?? ((state.kind == .transfer || state.kind == .exchange) ? state.sourceWalletID : nil)
         aaPeople = max(2, (state.aaSplitDraft?.otherPeopleCount ?? 1) + 1)
         aaPeopleText = String(aaPeople)
         aaNote = state.aaSplitDraft?.note
@@ -69,7 +77,8 @@ struct EntryContextDraft: Equatable {
             NSDecimalNumber(decimal: $0).stringValue
         } ?? state.feeText
         feeTemplateName = state.feeTemplateName
-        feeCurrencyCode = wallets.first(where: { $0.id == state.sourceWalletID })?.currencyCode
+        feeCurrencyCode = wallets.first(where: { $0.id == state.feeWalletID })?.currencyCode
+            ?? wallets.first(where: { $0.id == state.sourceWalletID })?.currencyCode
             ?? SupportedCurrency.CNY.rawValue
 
         if kind == .splitPayment, (!state.usesSplitPayment || state.paymentParts.count < 2) {
@@ -92,6 +101,17 @@ struct EntryContextDraft: Equatable {
 
     var hasValidFeeInput: Bool {
         DecimalParser.parse(feeInputText).map { $0 > 0 } == true
+    }
+
+    var hasValidDiscountSelection: Bool {
+        guard DecimalParser.parse(discountAmountText).map({ $0 > 0 }) == true else { return true }
+        return transactionKind != .transfer || discountWalletID != nil
+    }
+
+    var hasValidFeeSelection: Bool {
+        guard hasValidFeeInput else { return false }
+        return transactionKind != .transfer && transactionKind != .exchange
+            || feeWalletID != nil
     }
 
     mutating func setAAPeople(_ value: Int) {
@@ -128,13 +148,20 @@ struct EntryContextDraft: Equatable {
             state.paymentParts = paymentParts
         case .discount:
             state.discountAmountText = discountAmountText
+            state.discountWalletID = DecimalParser.parse(discountAmountText).map({ $0 > 0 }) == true
+                && state.kind == .transfer
+                ? discountWalletID
+                : nil
         case .fee:
-            _ = state.applyFee(
+            let applied = state.applyFee(
                 inputText: feeInputText,
                 mode: feeInputMode,
                 currencyCode: feeCurrencyCode,
                 templateName: feeTemplateName
             )
+            if applied, (state.kind == .transfer || state.kind == .exchange) {
+                state.feeWalletID = feeWalletID ?? state.sourceWalletID
+            }
         case .foreignExpense:
             break
         }
@@ -276,7 +303,10 @@ struct EntryContextPresentationState: Equatable {
             return draft?.synchronizeAAPeopleInput() == true
         }
         if kind == .fee {
-            return draft?.hasValidFeeInput == true
+            return draft?.hasValidFeeSelection == true
+        }
+        if kind == .discount {
+            return draft?.hasValidDiscountSelection == true
         }
         return true
     }
