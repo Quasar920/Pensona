@@ -124,7 +124,11 @@ struct ReceiptTransactionDetailView: View {
             TransactionRelationEntryView(
                 original: transaction,
                 kind: .refund,
-                wallets: refundWallets
+                wallets: refundWallets,
+                onSaved: {
+                    showingRefund = false
+                    dismiss()
+                }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)

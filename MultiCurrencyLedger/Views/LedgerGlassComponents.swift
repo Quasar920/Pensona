@@ -26,15 +26,17 @@ enum LedgerMotion {
 }
 
 enum LedgerTypography {
-    static let amount = LedgerFont.semibold(size: 20, relativeTo: .title3)
-    static let largeAmount = LedgerFont.semibold(size: 34, relativeTo: .title2)
-    static let receiptDate = LedgerFont.regular(size: 30, relativeTo: .title2)
+    static let body = LedgerFont.regular(size: 14, relativeTo: .body)
+    static let label = LedgerFont.regular(size: 12, relativeTo: .caption)
+    static let amount = LedgerFont.semibold(size: 17, relativeTo: .headline)
+    static let largeAmount = LedgerFont.semibold(size: 29, relativeTo: .title2)
+    static let receiptDate = LedgerFont.regular(size: 24, relativeTo: .title2)
     static let receiptMeta = LedgerFont.regular(size: 12, relativeTo: .caption)
 }
 
-/// Ioskeley Mono is the ledger's preferred face. PingFang is intentionally
-/// used as the CJK fallback so Chinese copy keeps the same calm, compact
-/// rhythm when the custom face is unavailable.
+/// Ioskeley Mono remains the primary face for numerals and Latin text. iOS
+/// automatically falls back to PingFang for Simplified/Traditional Chinese
+/// and its native Japanese font for Japanese glyphs.
 enum LedgerFont {
     static func regular(size: CGFloat, relativeTo style: Font.TextStyle) -> Font {
         resolved("Ioskeley Mono", fallback: "PingFangSC-Regular", size: size, relativeTo: style)

@@ -120,7 +120,9 @@ struct ReportQueryService {
     ) -> ReportResult {
         let valuation = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
         let byID = Dictionary(uniqueKeysWithValues: transactions.map { ($0.id, $0) })
-        let relationByRelatedID = Dictionary(uniqueKeysWithValues: relations.map { ($0.relatedTransactionID, $0) })
+        let relationByRelatedID = Dictionary(uniqueKeysWithValues: relations
+            .filter { $0.amount > 0 }
+            .map { ($0.relatedTransactionID, $0) })
         let aaSplitByOriginalID = Dictionary(uniqueKeysWithValues: aaSplits.map {
             ($0.originalTransactionID, $0)
         })

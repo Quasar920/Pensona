@@ -38,6 +38,35 @@ final class DataDeletionProtectionTests: XCTestCase {
         XCTAssertEqual(wallet.balance, 80)
     }
 
+    func testDeletingRefundAlsoDeletesItsGeneratedRefundIncome() throws {
+        let book = LedgerBook(name: "日常")
+        let account = Account(name: "现金", type: .cash)
+        let wallet = CurrencyWallet(currency: .CNY, balance: 100, account: account)
+        let refundIncome = LedgerCategory(
+            name: "退款收入",
+            type: .income,
+            symbolName: "arrow.uturn.backward.circle",
+            sortOrder: 0,
+            isSystem: true,
+            systemLocalizationKey: "category.income.other.refund-income"
+        )
+        context.insert(book); context.insert(account); context.insert(wallet); context.insert(refundIncome)
+        let original = try LedgerService(context: context).createExpense(
+            bookID: book.id, amount: 10, wallet: wallet, category: nil, date: .now, note: nil
+        )
+        let refund = try TransactionRelationService(context: context).record(
+            kind: .refund, original: original, amount: 12, wallet: wallet
+        )
+
+        try LedgerService(context: context).deleteTransaction(refund)
+
+        let transactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        XCTAssertEqual(transactions.count, 1)
+        XCTAssertEqual(transactions.first?.id, original.id)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TransactionRelation>()), 0)
+        XCTAssertEqual(wallet.balance, 90)
+    }
+
     func testEmptyBookCanBeDeletedEvenWhenItIsTheOnlyBook() throws {
         let book = LedgerBook(name: "日常")
         context.insert(book)

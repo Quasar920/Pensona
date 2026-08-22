@@ -20,11 +20,13 @@ struct BillSearchService {
         }
         let sorted = matched.sorted { sort($0, $1, mode: query.sortMode) }
         let relatedByOriginal = Dictionary(grouping: relations, by: \.originalTransactionID)
-        let relatedByIncome = Dictionary(uniqueKeysWithValues: relations.map { ($0.relatedTransactionID, $0) })
+        let relatedByIncome = Dictionary(uniqueKeysWithValues: relations
+            .filter { $0.amount > 0 }
+            .map { ($0.relatedTransactionID, $0) })
         let collectionByTransaction = Dictionary(uniqueKeysWithValues: settlements.map {
             ($0.recoveryTransactionID, $0.amount)
         })
-        let incomeIDs = Set(relations.map(\.relatedTransactionID))
+        let incomeIDs = Set(relations.filter { $0.amount > 0 }.map(\.relatedTransactionID))
         let splitByOriginalTransaction = Dictionary(uniqueKeysWithValues: aaSplits.map {
             ($0.originalTransactionID, $0)
         })
@@ -84,7 +86,9 @@ struct BillSearchService {
         settlements: [AASettlement]
     ) -> [LedgerTransaction] {
         let relatedByOriginal = Dictionary(grouping: relations, by: \.originalTransactionID)
-        let relatedByIncome = Dictionary(uniqueKeysWithValues: relations.map { ($0.relatedTransactionID, $0) })
+        let relatedByIncome = Dictionary(uniqueKeysWithValues: relations
+            .filter { $0.amount > 0 }
+            .map { ($0.relatedTransactionID, $0) })
         let collectionByTransaction = Dictionary(uniqueKeysWithValues: settlements.map {
             ($0.recoveryTransactionID, $0.amount)
         })
@@ -108,7 +112,7 @@ struct BillSearchService {
         let contributions = dynamicContributions(
             transaction: transaction,
             relationsForOriginal: relations.filter { $0.originalTransactionID == transaction.id },
-            relatedIncome: relations.first { $0.relatedTransactionID == transaction.id },
+            relatedIncome: relations.first { $0.amount > 0 && $0.relatedTransactionID == transaction.id },
             collectionAmount: settlements.first { $0.recoveryTransactionID == transaction.id }?.amount
         )
         return contributions.first { $0.category == category }?.amount

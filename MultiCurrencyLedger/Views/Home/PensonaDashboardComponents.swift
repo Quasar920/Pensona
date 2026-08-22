@@ -2,17 +2,17 @@ import SwiftUI
 import UIKit
 
 enum PensonaDashboardTypography {
-    static let balance = LedgerFont.semibold(size: 36, relativeTo: .title3)
-    static let amount = LedgerFont.semibold(size: 18, relativeTo: .headline)
-    static let compactAmount = LedgerFont.regular(size: 16, relativeTo: .body)
-    static let metadata = LedgerFont.regular(size: 13, relativeTo: .caption)
-    static let month = LedgerFont.semibold(size: 27, relativeTo: .title2)
-    static let section = LedgerFont.regular(size: 16, relativeTo: .headline)
-    static let rowTitle = LedgerFont.semibold(size: 18, relativeTo: .headline)
-    static let transactionTypeTitle = LedgerFont.regular(size: 18, relativeTo: .headline)
-    static let rowDetail = LedgerFont.regular(size: 14, relativeTo: .caption)
-    static let rowAmount = LedgerFont.regular(size: 20, relativeTo: .title3)
-    static let exchangeAmount = LedgerFont.regular(size: 17, relativeTo: .headline)
+    static let balance = LedgerFont.semibold(size: 30, relativeTo: .title3)
+    static let amount = LedgerFont.semibold(size: 16, relativeTo: .headline)
+    static let compactAmount = LedgerFont.regular(size: 14, relativeTo: .body)
+    static let metadata = LedgerFont.regular(size: 12, relativeTo: .caption)
+    static let month = LedgerFont.semibold(size: 24, relativeTo: .title2)
+    static let section = LedgerFont.regular(size: 14, relativeTo: .headline)
+    static let rowTitle = LedgerFont.regular(size: 16, relativeTo: .headline)
+    static let transactionTypeTitle = LedgerFont.regular(size: 16, relativeTo: .headline)
+    static let rowDetail = LedgerFont.regular(size: 12, relativeTo: .caption)
+    static let rowAmount = LedgerFont.regular(size: 17, relativeTo: .headline)
+    static let exchangeAmount = LedgerFont.regular(size: 15, relativeTo: .headline)
 }
 
 struct OneTsuMonthHeader: View {
@@ -137,9 +137,9 @@ private struct ReceiptNumberDashboard: View {
     var body: some View {
         Button(action: openBudget) {
             HStack(spacing: 0) {
-                dashboardMetric(title: "收入", amount: summary.income, role: .income)
+                dashboardMetric(title: "收入", amount: summary.income, tone: .light)
                 dashboardBudget
-                dashboardMetric(title: "支出", amount: summary.expense, role: .expense)
+                dashboardMetric(title: "支出", amount: summary.expense, tone: .dark)
             }
             .padding(.vertical, 12)
             .ledgerSurface(.summary, cornerRadius: 20)
@@ -158,7 +158,7 @@ private struct ReceiptNumberDashboard: View {
                     value: remainingBudget,
                     text: MoneyFormatter.compactString(remainingBudget, currencyCode: currencyCode),
                     font: PensonaDashboardTypography.amount,
-                    color: LedgerPalette.ink
+                color: LedgerPalette.ink
                 )
             } else {
                 Text(summary.missingCodes.isEmpty ? "设置预算" : "预算暂不可用")
@@ -174,7 +174,7 @@ private struct ReceiptNumberDashboard: View {
     private func dashboardMetric(
         title: String,
         amount: Decimal,
-        role: AmountSemanticRole
+        tone: DashboardMetricTone
     ) -> some View {
         VStack(spacing: 4) {
             Text(title)
@@ -184,17 +184,22 @@ private struct ReceiptNumberDashboard: View {
                 value: amount,
                 text: MoneyFormatter.compactString(amount, currencyCode: currencyCode),
                 font: PensonaDashboardTypography.compactAmount,
-                color: semanticColor(role)
+                color: tone.color
             )
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func semanticColor(_ role: AmountSemanticRole) -> Color {
-        let raw = UserDefaults.standard.string(forKey: AppPreferences.amountColorKey) ?? ""
-        let convention = AmountColorConvention(rawValue: raw)
-            ?? .regionalDefault(regionCode: Locale.current.region?.identifier)
-        return AmountSemanticStyle.color(for: role, convention: convention)
+    private enum DashboardMetricTone {
+        case light
+        case dark
+
+        var color: Color {
+            switch self {
+            case .light: LedgerPalette.ink.opacity(0.56)
+            case .dark: LedgerPalette.ink.opacity(0.90)
+            }
+        }
     }
 }
 
@@ -262,6 +267,8 @@ private struct ReceiptDaySection: View {
                     transaction: transaction,
                     currencyCode: currencyCode,
                     hasAttachment: attachmentTransactionIDs.contains(transaction.id),
+                    refundDisplay: group.refundDisplays[transaction.id],
+                    refundIncome: group.refundIncomeDisplays[transaction.id],
                     expandedTransactionID: $expandedTransactionID,
                     open: { openTransaction(transaction, transactionFrames[transaction.id] ?? .zero) },
                     edit: { editTransaction(transaction) },
@@ -279,7 +286,7 @@ private struct ReceiptDaySection: View {
                         )
                     }
                 }
-                .accessibilityHint("展开查看账单详情")
+                .accessibilityHint(group.refundIncomeDisplays[transaction.id] == nil ? "展开查看账单详情" : "展开退款关联操作")
             }
         }
         .onPreferenceChange(ReceiptTransactionFramePreferenceKey.self) { frames in
@@ -308,6 +315,90 @@ private struct ReceiptDaySection: View {
     }()
 }
 
+private struct RefundIncomeReceiptRow: View {
+    let display: RefundIncomeDisplay
+    var isGrouped = false
+
+    var body: some View {
+        content
+            .background {
+                if !isGrouped {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(LedgerPalette.surface)
+                }
+            }
+            .overlay {
+                if !isGrouped {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(LedgerPalette.hairline, lineWidth: 1)
+                }
+            }
+            .accessibilityElement(children: .combine)
+    }
+
+    private var content: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "yensign.arrow.circlepath")
+                .font(.system(size: 23, weight: .regular))
+                .foregroundStyle(LedgerPalette.ink)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("退款收入")
+                    .font(PensonaDashboardTypography.rowTitle)
+                Text("\(display.date.formatted(date: .omitted, time: .shortened)) · \(display.merchant)")
+                    .font(PensonaDashboardTypography.rowDetail)
+                    .foregroundStyle(.secondary)
+                Label(display.accountName, systemImage: "creditcard")
+                    .font(PensonaDashboardTypography.rowDetail)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("+" + MoneyFormatter.string(display.amount, currencyCode: display.currencyCode))
+                .font(PensonaDashboardTypography.rowAmount)
+                .monospacedDigit()
+                .foregroundStyle(LedgerPalette.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+}
+
+private struct RefundLinkedReceiptCard: View {
+    let income: RefundIncomeDisplay
+    let refund: LedgerTransaction
+    let currencyCode: String
+    let hasAttachment: Bool
+    let refundDisplay: RefundDisplaySummary?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            RefundIncomeReceiptRow(display: income, isGrouped: true)
+
+            Divider()
+                .padding(.leading, 58)
+                .padding(.trailing, 14)
+
+            ReceiptTransactionRow(
+                transaction: refund,
+                currencyCode: currencyCode,
+                hasAttachment: hasAttachment,
+                refundDisplay: refundDisplay,
+                isGrouped: true
+            )
+        }
+        .background(LedgerPalette.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(LedgerPalette.hairline, lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
 private struct ReceiptSwipeableTransactionRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -318,6 +409,8 @@ private struct ReceiptSwipeableTransactionRow: View {
     let transaction: LedgerTransaction
     let currencyCode: String
     let hasAttachment: Bool
+    let refundDisplay: RefundDisplaySummary?
+    let refundIncome: RefundIncomeDisplay?
     @Binding var expandedTransactionID: UUID?
     let open: () -> Void
     let edit: () -> Void
@@ -326,6 +419,7 @@ private struct ReceiptSwipeableTransactionRow: View {
     @State private var side: Side?
     @State private var dragTranslation: CGFloat = 0
     @State private var isDragging = false
+    @State private var suppressNextTap = false
 
     private var activeSide: Side? {
         expandedTransactionID == transaction.id ? side : nil
@@ -382,11 +476,7 @@ private struct ReceiptSwipeableTransactionRow: View {
             }
             .frame(maxHeight: .infinity)
 
-            ReceiptTransactionRow(
-                transaction: transaction,
-                currencyCode: currencyCode,
-                hasAttachment: hasAttachment
-            )
+            rowCard
             .gesture(
                 ReceiptHorizontalSwipeGesture(
                     changed: handleDragChanged,
@@ -398,7 +488,7 @@ private struct ReceiptSwipeableTransactionRow: View {
             .onTapGesture(perform: handleTap)
             .accessibilityIdentifier(transactionAccessibilityIdentifier)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .onChange(of: expandedTransactionID) { _, id in
             guard id != transaction.id else { return }
             side = nil
@@ -410,7 +500,30 @@ private struct ReceiptSwipeableTransactionRow: View {
         .accessibilityHint("展开查看账单详情")
     }
 
+    @ViewBuilder
+    private var rowCard: some View {
+        if let refundIncome {
+            RefundLinkedReceiptCard(
+                income: refundIncome,
+                refund: transaction,
+                currencyCode: currencyCode,
+                hasAttachment: hasAttachment,
+                refundDisplay: refundDisplay
+            )
+        } else {
+            ReceiptTransactionRow(
+                transaction: transaction,
+                currencyCode: currencyCode,
+                hasAttachment: hasAttachment,
+                refundDisplay: refundDisplay
+            )
+        }
+    }
+
     private func handleDragChanged(_ translation: CGFloat) {
+        if abs(translation) > 2 {
+            suppressNextTap = true
+        }
         isDragging = true
         if expandedTransactionID != transaction.id {
             expandedTransactionID = transaction.id
@@ -442,6 +555,11 @@ private struct ReceiptSwipeableTransactionRow: View {
     }
 
     private func handleTap() {
+        if suppressNextTap {
+            suppressNextTap = false
+            return
+        }
+
         if activeSide == nil {
             expandedTransactionID = nil
             open()
@@ -577,11 +695,31 @@ private struct ReceiptTransactionRow: View {
     let transaction: LedgerTransaction
     let currencyCode: String
     let hasAttachment: Bool
+    let refundDisplay: RefundDisplaySummary?
+    var isGrouped = false
 
     var body: some View {
+        content
+            .background {
+                if !isGrouped {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(LedgerPalette.surface)
+                }
+            }
+            .overlay {
+                if !isGrouped {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(LedgerPalette.hairline, lineWidth: 1)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .accessibilityElement(children: .contain)
+    }
+
+    private var content: some View {
         HStack(spacing: 12) {
             leadingIcon
-                .frame(width: 38)
+                .frame(width: 32)
                 .frame(maxHeight: .infinity)
 
             rowDetails
@@ -592,26 +730,19 @@ private struct ReceiptTransactionRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(LedgerPalette.surface, in: Capsule())
-        .overlay {
-            Capsule()
-                .stroke(LedgerPalette.hairline, lineWidth: 1)
-        }
-        .contentShape(Capsule())
-        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
     private var leadingIcon: some View {
         if transaction.type == .transfer || transaction.type == .exchange {
             Image(systemName: transaction.type.symbolName)
-                .font(.system(size: 30, weight: .regular))
+                .font(.system(size: 23, weight: .regular))
                 .foregroundStyle(LedgerPalette.ink)
         } else if let category = transaction.category {
-            CategoryIconImage(category: category, size: 36)
+            CategoryIconImage(category: category, size: 32)
         } else {
             Image(systemName: transaction.type.symbolName)
-                .font(.system(size: 28, weight: .regular))
+                .font(.system(size: 23, weight: .regular))
                 .foregroundStyle(LedgerPalette.ink)
         }
     }
@@ -645,7 +776,7 @@ private struct ReceiptTransactionRow: View {
             }
         default:
             VStack(alignment: .leading, spacing: 3) {
-                Text(transaction.category?.name ?? transaction.receiptTitle)
+                Text(transaction.homeCategoryTitle)
                     .font(PensonaDashboardTypography.rowTitle)
                 Text("\(transaction.homeCategoryTitle) · \(transaction.date.formatted(date: .omitted, time: .shortened))")
                     .font(PensonaDashboardTypography.rowDetail)
@@ -701,17 +832,34 @@ private struct ReceiptTransactionRow: View {
             }
         } else {
             VStack(alignment: .trailing, spacing: 3) {
-                Text(standardPrimaryAmount)
-                    .font(PensonaDashboardTypography.rowAmount)
-                    .monospacedDigit()
-                    .foregroundStyle(amountColor)
+                if refundDisplay?.isFullyOffset == true {
+                    HStack(spacing: 8) {
+                        Text(refundedOriginalAmount)
+                            .font(PensonaDashboardTypography.rowDetail)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .strikethrough()
+                        Text("−" + MoneyFormatter.string(0, currencyCode: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? currencyCode))
+                            .font(PensonaDashboardTypography.rowAmount)
+                            .monospacedDigit()
+                            .foregroundStyle(amountColor)
+                    }
                     .lineLimit(1)
                     .minimumScaleFactor(0.70)
-                    .accessibilityIdentifier(
-                        transaction.displayNote == "UI Test Discount Expense"
-                            ? "bill-discount-expense-amount"
-                            : "bill-amount"
-                    )
+                    .accessibilityIdentifier("bill-fully-refunded-expense-amount")
+                } else {
+                    Text(transaction.isSystemRefundDeposit ? refundDepositAmount : standardPrimaryAmount)
+                        .font(PensonaDashboardTypography.rowAmount)
+                        .monospacedDigit()
+                        .foregroundStyle(amountColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.70)
+                        .accessibilityIdentifier(
+                            transaction.displayNote == "UI Test Discount Expense"
+                                ? "bill-discount-expense-amount"
+                                : "bill-amount"
+                        )
+                }
 
                 if let adjustments = standardAdjustments {
                     Text(adjustments)
@@ -779,6 +927,10 @@ private struct ReceiptTransactionRow: View {
 
     private var standardAdjustments: String? {
         var details: [String] = []
+        if let excess = refundDisplay?.excessIncomeAmount, excess > 0 {
+            let code = transaction.sourceCurrencyCode ?? transaction.currencyCode ?? currencyCode
+            details.append("退款差额 \(MoneyFormatter.string(excess, currencyCode: code))")
+        }
         if let discount = transaction.discountAmount, discount > 0 {
             let code = transaction.discountCurrencyCode
                 ?? transaction.sourceCurrencyCode
@@ -796,15 +948,30 @@ private struct ReceiptTransactionRow: View {
         return details.isEmpty ? nil : details.joined(separator: " · ")
     }
 
+    private var refundedOriginalAmount: String {
+        let code = transaction.sourceCurrencyCode ?? transaction.currencyCode ?? currencyCode
+        if let originalAmount = transaction.originalAmount, originalAmount > 0 {
+            return "−" + MoneyFormatter.string(originalAmount, currencyCode: code)
+        }
+        return "−" + MoneyFormatter.string(
+            transaction.sourceAmount ?? transaction.amount ?? 0,
+            currencyCode: code
+        )
+    }
+
+    private var refundDepositAmount: String {
+        MoneyFormatter.string(
+            transaction.sourceAmount ?? transaction.amount ?? 0,
+            currencyCode: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? currencyCode
+        )
+    }
+
     private func exchangeAmount(_ amount: Decimal, currency: String) -> String {
         "\(MoneyFormatter.plain(amount, currencyCode: currency)) \(currency)"
     }
 
     private var amountColor: Color {
-        let raw = UserDefaults.standard.string(forKey: AppPreferences.amountColorKey) ?? ""
-        let convention = AmountColorConvention(rawValue: raw)
-            ?? .regionalDefault(regionCode: Locale.current.region?.identifier)
-        return AmountSemanticStyle.color(for: AmountSemanticStyle.role(for: transaction.type), convention: convention)
+        LedgerPalette.ink
     }
 }
 
@@ -1057,22 +1224,22 @@ private struct PensonaDashboardTransactionRow: View {
     var body: some View {
         HStack(spacing: 12) {
             if let category = transaction.category {
-                CategoryIconImage(category: category, size: 42)
+                CategoryIconImage(category: category, size: 32)
             } else {
                 Image(systemName: transaction.type.symbolName)
-                    .font(.headline)
+                    .font(.system(size: 20, weight: .regular))
                     .foregroundStyle(HomePalette.accent)
-                    .frame(width: 42, height: 42)
+                    .frame(width: 32, height: 32)
                     .background(HomePalette.accent.opacity(0.10), in: Circle())
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(transaction.homeCategoryTitle)
-                    .font(.subheadline.weight(.semibold))
+                .font(PensonaDashboardTypography.rowTitle)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text("\(transaction.date.formatted(date: .abbreviated, time: .omitted)) · \(transaction.homeAccountName)")
-                    .font(.caption)
+                .font(PensonaDashboardTypography.rowDetail)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -1080,7 +1247,7 @@ private struct PensonaDashboardTransactionRow: View {
             Spacer(minLength: 8)
 
             Text(transaction.summaryAmount)
-                .font(PensonaDashboardTypography.compactAmount)
+                .font(PensonaDashboardTypography.rowAmount)
                 .monospacedDigit()
                 .foregroundStyle(amountColor)
                 .lineLimit(1)
@@ -1092,13 +1259,7 @@ private struct PensonaDashboardTransactionRow: View {
     }
 
     private var amountColor: Color {
-        let raw = UserDefaults.standard.string(forKey: AppPreferences.amountColorKey) ?? ""
-        let convention = AmountColorConvention(rawValue: raw)
-            ?? .regionalDefault(regionCode: Locale.current.region?.identifier)
-        return AmountSemanticStyle.color(
-            for: AmountSemanticStyle.role(for: transaction.type),
-            convention: convention
-        )
+        LedgerPalette.ink
     }
 }
 

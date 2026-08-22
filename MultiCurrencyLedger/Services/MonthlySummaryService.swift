@@ -75,7 +75,9 @@ struct MonthlySummaryService {
         var income = Decimal.zero
         var expense = Decimal.zero
         var missingCodes = Set<String>()
-        let relatedIncomeIDs = Set(relations.map(\.relatedTransactionID))
+        let relationByRelatedIncomeID = Dictionary(uniqueKeysWithValues: relations
+            .filter { $0.amount > 0 || ($0.kind == .refund && $0.excessIncomeTransactionID == nil) }
+            .map { ($0.relatedTransactionID, $0) })
         let aaRecoveryIDs = Set(aaSettlements.map(\.recoveryTransactionID))
         let aaSplitByOriginalID = Dictionary(uniqueKeysWithValues: aaSplits.map {
             ($0.originalTransactionID, $0)
@@ -84,7 +86,9 @@ struct MonthlySummaryService {
         for transaction in transactions
         where transaction.date >= monthStart && transaction.date < monthEnd {
             let exclusion = MonthlySummaryExclusionStore.exclusion(for: transaction.id)
-            let principal = transaction.sourceAmount ?? transaction.amount ?? 0
+            let principal = transaction.type == .expense
+                ? transaction.netExpenseAmount
+                : transaction.sourceAmount ?? transaction.amount ?? 0
             let principalCode = transaction.sourceCurrencyCode
                 ?? transaction.currencyCode
                 ?? baseCurrencyCode
@@ -95,14 +99,26 @@ struct MonthlySummaryService {
                     break
                 } else if aaRecoveryIDs.contains(transaction.id) {
                     break
-                } else if relatedIncomeIDs.contains(transaction.id) {
+                } else if let relation = relationByRelatedIncomeID[transaction.id] {
                     add(
-                        -principal,
+                        -relation.amount,
                         currencyCode: principalCode,
                         to: &expense,
                         missingCodes: &missingCodes,
                         valuation: valuation
                     )
+                    if relation.kind == .refund,
+                       relation.excessIncomeTransactionID == nil,
+                       let excess = relation.excessIncomeAmount,
+                       excess > 0 {
+                        add(
+                            excess,
+                            currencyCode: principalCode,
+                            to: &income,
+                            missingCodes: &missingCodes,
+                            valuation: valuation
+                        )
+                    }
                 } else {
                     add(
                         principal,

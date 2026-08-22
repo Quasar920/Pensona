@@ -6,7 +6,7 @@ struct BackupSettings: Codable, Equatable {
 }
 
 struct LedgerBackupDocument: Codable {
-    static let currentVersion = 9
+    static let currentVersion = 10
 
     var version: Int
     var exportedAt: Date
@@ -220,7 +220,46 @@ struct TransactionBackup: Codable {
 }
 struct RelationBackup: Codable {
     var id: UUID; var kind: String; var originalTransactionID: UUID; var relatedTransactionID: UUID
-    var amount: Decimal; var createdAt: Date
+    var amount: Decimal; var excessIncomeTransactionID: UUID?; var excessIncomeAmount: Decimal?; var createdAt: Date
+
+    init(
+        id: UUID,
+        kind: String,
+        originalTransactionID: UUID,
+        relatedTransactionID: UUID,
+        amount: Decimal,
+        excessIncomeTransactionID: UUID? = nil,
+        excessIncomeAmount: Decimal? = nil,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.kind = kind
+        self.originalTransactionID = originalTransactionID
+        self.relatedTransactionID = relatedTransactionID
+        self.amount = amount
+        self.excessIncomeTransactionID = excessIncomeTransactionID
+        self.excessIncomeAmount = excessIncomeAmount
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, originalTransactionID, relatedTransactionID, amount
+        case excessIncomeTransactionID, excessIncomeAmount, createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try values.decode(UUID.self, forKey: .id),
+            kind: try values.decode(String.self, forKey: .kind),
+            originalTransactionID: try values.decode(UUID.self, forKey: .originalTransactionID),
+            relatedTransactionID: try values.decode(UUID.self, forKey: .relatedTransactionID),
+            amount: try values.decode(Decimal.self, forKey: .amount),
+            excessIncomeTransactionID: try values.decodeIfPresent(UUID.self, forKey: .excessIncomeTransactionID),
+            excessIncomeAmount: try values.decodeIfPresent(Decimal.self, forKey: .excessIncomeAmount),
+            createdAt: try values.decode(Date.self, forKey: .createdAt)
+        )
+    }
 }
 struct AASplitBackup: Codable {
     var id: UUID; var originalTransactionID: UUID; var otherPeopleCount: Int
@@ -401,7 +440,9 @@ enum BackupService {
             transactions: try context.fetch(FetchDescriptor<LedgerTransaction>()).map(transactionBackup),
             relations: try context.fetch(FetchDescriptor<TransactionRelation>()).map {
                 RelationBackup(id: $0.id, kind: $0.kindRawValue, originalTransactionID: $0.originalTransactionID,
-                               relatedTransactionID: $0.relatedTransactionID, amount: $0.amount, createdAt: $0.createdAt)
+                               relatedTransactionID: $0.relatedTransactionID, amount: $0.amount,
+                               excessIncomeTransactionID: $0.excessIncomeTransactionID,
+                               excessIncomeAmount: $0.excessIncomeAmount, createdAt: $0.createdAt)
             },
             attachments: attachments,
             templates: try context.fetch(FetchDescriptor<TransactionTemplate>()).map {
@@ -753,9 +794,16 @@ enum BackupService {
                 throw BackupServiceError.brokenReference("流水 \(transaction.id) 的分期计划不存在")
             }
         }
-        for relation in document.relations where
-            !transactionIDs.contains(relation.originalTransactionID) || !transactionIDs.contains(relation.relatedTransactionID) {
-            throw BackupServiceError.brokenReference("退款或报销关系指向不存在的流水")
+        for relation in document.relations {
+            guard transactionIDs.contains(relation.originalTransactionID),
+                  transactionIDs.contains(relation.relatedTransactionID),
+                  relation.amount >= 0,
+                  (relation.excessIncomeTransactionID == nil) == (relation.excessIncomeAmount == nil),
+                  relation.excessIncomeTransactionID.map(transactionIDs.contains) ?? true,
+                  relation.excessIncomeAmount.map({ $0 > 0 }) ?? true
+            else {
+                throw BackupServiceError.brokenReference("退款或报销关系指向不存在的流水")
+            }
         }
         let recoveryOriginalIDs = Set(document.relations.map(\.originalTransactionID))
         for split in document.aaSplits {
@@ -1048,7 +1096,10 @@ private extension BackupService {
             context.insert(TransactionRelation(id: item.id, kind: kind,
                                                originalTransactionID: item.originalTransactionID,
                                                relatedTransactionID: item.relatedTransactionID,
-                                               amount: item.amount, createdAt: item.createdAt))
+                                               amount: item.amount,
+                                               excessIncomeTransactionID: item.excessIncomeTransactionID,
+                                               excessIncomeAmount: item.excessIncomeAmount,
+                                               createdAt: item.createdAt))
         }
         for item in document.aaSplits {
             guard let mode = AASplitCalculationMode(rawValue: item.calculationMode) else {

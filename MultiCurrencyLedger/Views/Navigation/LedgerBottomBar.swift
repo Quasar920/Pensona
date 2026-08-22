@@ -55,7 +55,7 @@ struct LedgerBottomBar: View {
                     }
 
                     Image(systemName: tab.symbolName)
-                        .font(.system(size: 22, weight: .medium))
+                        .font(.system(size: 19, weight: .medium))
                         .symbolRenderingMode(.monochrome)
                         .foregroundStyle(isSelected ? LedgerPalette.ink : .secondary)
                         .scaleEffect(reduceMotion || !isSelected ? 1 : 0.98)
@@ -63,7 +63,7 @@ struct LedgerBottomBar: View {
                 .frame(width: 36, height: 30)
 
                 Text(tab.title)
-                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                    .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? LedgerPalette.ink : .secondary)
                     .lineLimit(1)
             }
@@ -80,7 +80,7 @@ struct LedgerBottomBar: View {
     private var entryButton: some View {
         Button(action: addEntry) {
             Image(systemName: "plus")
-                .font(.system(size: 21, weight: .semibold))
+                .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(LedgerPalette.invertedInk)
                 .frame(width: 52, height: 52)
                 .contentShape(Circle())

@@ -70,6 +70,15 @@ struct BillQueryService {
             aaSplits: splits,
             aaSettlements: settlements
         )
+        let transactionsByID = Dictionary(uniqueKeysWithValues: monthTransactions.map { ($0.id, $0) })
+        let refundDisplays = refundDisplaySummaries(
+            relations: relations,
+            transactionsByID: transactionsByID
+        )
+        let refundIncomeDisplays = refundIncomeDisplays(
+            relations: relations,
+            transactionsByID: transactionsByID
+        )
 
         let allTransactionsByDay = Dictionary(grouping: monthTransactions) {
             calendar.startOfDay(for: $0.date)
@@ -87,7 +96,13 @@ struct BillQueryService {
                     date: date,
                     transactions: visibleTransactions,
                     income: daySummary.income,
-                    expense: daySummary.expense
+                    expense: daySummary.expense,
+                    refundDisplays: refundDisplays.filter { display in
+                        visibleTransactions.contains { $0.id == display.key }
+                    },
+                    refundIncomeDisplays: refundIncomeDisplays.filter { display in
+                        visibleTransactions.contains { $0.id == display.key }
+                    }
                 )
             }
             .sorted { $0.date > $1.date }
@@ -115,5 +130,53 @@ struct BillQueryService {
             .compactMap { $0 }
             .contains { $0.localizedCaseInsensitiveContains(needle) }
         }
+    }
+
+    private func refundDisplaySummaries(
+        relations: [TransactionRelation],
+        transactionsByID: [UUID: LedgerTransaction]
+    ) -> [UUID: RefundDisplaySummary] {
+        var recoveredByOriginal: [UUID: Decimal] = [:]
+        var excessByOriginal: [UUID: Decimal] = [:]
+        for relation in relations where relation.kind == .refund {
+            recoveredByOriginal[relation.originalTransactionID, default: 0] += relation.amount
+            excessByOriginal[relation.originalTransactionID, default: 0] += relation.excessIncomeAmount ?? 0
+        }
+        return recoveredByOriginal.reduce(into: [:]) { result, item in
+            guard let original = transactionsByID[item.key] else { return }
+            result[item.key] = RefundDisplaySummary(
+                recoveredAmount: item.value,
+                excessIncomeAmount: excessByOriginal[item.key, default: 0],
+                originalNetAmount: original.netExpenseAmount
+            )
+        }
+    }
+
+    private func refundIncomeDisplays(
+        relations: [TransactionRelation],
+        transactionsByID: [UUID: LedgerTransaction]
+    ) -> [UUID: RefundIncomeDisplay] {
+        Dictionary(uniqueKeysWithValues: relations.compactMap { relation in
+            guard relation.kind == .refund,
+                  relation.excessIncomeTransactionID == nil,
+                  let excess = relation.excessIncomeAmount,
+                  excess > 0,
+                  let deposit = transactionsByID[relation.relatedTransactionID],
+                  let original = transactionsByID[relation.originalTransactionID]
+            else { return nil }
+            let code = deposit.sourceCurrencyCode ?? deposit.currencyCode ?? "CNY"
+            let merchant = original.merchantOrCounterparty
+                ?? original.displayNote
+                ?? AppLocalization.string("原支出")
+            return (deposit.id, RefundIncomeDisplay(
+                id: relation.id,
+                refundDepositTransactionID: deposit.id,
+                amount: excess,
+                currencyCode: code,
+                date: deposit.date,
+                merchant: merchant,
+                accountName: deposit.receiptFundingText ?? deposit.homeAccountName
+            ))
+        })
     }
 }

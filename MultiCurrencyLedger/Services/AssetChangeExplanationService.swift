@@ -31,7 +31,7 @@ struct AssetChangeExplanationService {
         let current = AssetSummaryService(baseCurrencyCode: baseCurrencyCode, rates: rates)
             .summary(for: accounts).ownerEquity
         let valuation = ValuationService(baseCurrencyCode: baseCurrencyCode, rates: rates)
-        let relationByRelatedID = Dictionary(uniqueKeysWithValues: relations.map {
+        let relationByRelatedID = Dictionary(uniqueKeysWithValues: relations.filter { $0.amount > 0 }.map {
             ($0.relatedTransactionID, $0)
         })
         var income = Decimal.zero

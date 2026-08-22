@@ -297,17 +297,32 @@ final class LedgerService {
         configureBeforeSave: () throws -> Void = {}
     ) throws {
         guard !transactions.isEmpty else { return }
+        let allRelations = try context.fetch(FetchDescriptor<TransactionRelation>())
+        var transactions = transactions
+        let selectedIDs = Set(transactions.map(\.id))
+        let companionIncomeIDs = allRelations.flatMap { relation -> [UUID] in
+            guard selectedIDs.contains(relation.relatedTransactionID)
+                    || relation.excessIncomeTransactionID.map(selectedIDs.contains) == true
+            else { return [] }
+            return [relation.relatedTransactionID, relation.excessIncomeTransactionID].compactMap { $0 }
+        }
+        let allTransactions = try context.fetch(FetchDescriptor<LedgerTransaction>())
+        for incomeID in companionIncomeIDs where !selectedIDs.contains(incomeID) {
+            if let companion = allTransactions.first(where: { $0.id == incomeID }) {
+                transactions.append(companion)
+            }
+        }
         for bookID in Set(transactions.compactMap(\.bookID)) {
             try requireBook(bookID)
         }
         let snapshots = snapshots(for: transactions)
         var attachmentPaths: [String] = []
         do {
-            let allRelations = try context.fetch(FetchDescriptor<TransactionRelation>())
             let transactionIDs = Set(transactions.map(\.id))
             if allRelations.contains(where: {
                 transactionIDs.contains($0.originalTransactionID)
-                    && !transactionIDs.contains($0.relatedTransactionID)
+                    && (!transactionIDs.contains($0.relatedTransactionID)
+                        || ($0.excessIncomeTransactionID.map { !transactionIDs.contains($0) } ?? false))
             }) {
                 throw LedgerError.relatedTransactionExists
             }
@@ -331,7 +346,8 @@ final class LedgerService {
 
             for relation in allRelations where
                 transactionIDs.contains(relation.originalTransactionID)
-                    || transactionIDs.contains(relation.relatedTransactionID) {
+                    || transactionIDs.contains(relation.relatedTransactionID)
+                    || relation.excessIncomeTransactionID.map(transactionIDs.contains) == true {
                 context.delete(relation)
             }
             let deletedSplitIDs = Set(allSplits.filter {

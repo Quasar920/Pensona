@@ -224,6 +224,54 @@ enum LedgerSchemaV2: VersionedSchema {
 enum LedgerSchemaV3: VersionedSchema {
     static let versionIdentifier = Schema.Version(4, 0, 0)
 
+    /// The V3 relation is intentionally frozen here. The live
+    /// `TransactionRelation` gained the excess-income fields in V4; reusing
+    /// it in both schema versions gives SwiftData two identical checksums and
+    /// crashes before the model container can open.
+    @Model
+    final class TransactionRelation {
+        @Attribute(.unique) var id: UUID
+        var kindRawValue: String
+        var originalTransactionID: UUID
+        var relatedTransactionID: UUID
+        var amount: Decimal
+        var createdAt: Date
+
+        init(
+            id: UUID = UUID(),
+            kindRawValue: String,
+            originalTransactionID: UUID,
+            relatedTransactionID: UUID,
+            amount: Decimal,
+            createdAt: Date = .now
+        ) {
+            self.id = id
+            self.kindRawValue = kindRawValue
+            self.originalTransactionID = originalTransactionID
+            self.relatedTransactionID = relatedTransactionID
+            self.amount = amount
+            self.createdAt = createdAt
+        }
+    }
+
+    static var models: [any PersistentModel.Type] {
+        [
+            LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
+            LedgerTransaction.self, TransactionTag.self, TransactionAttachment.self,
+            TransactionTemplate.self, TransactionPaymentPart.self, TransactionRelation.self,
+            AASplit.self, AASettlement.self,
+            RecurringSchedule.self, RecurringOccurrence.self, InstallmentPlan.self,
+            InstallmentOccurrence.self, RecognitionImportRecord.self, ExchangeRate.self,
+            MonthlyBudget.self, SavingsGoal.self, SavingsAllocation.self, RepaymentReminder.self,
+            TransactionImportBatch.self, TransactionImportFingerprint.self,
+            CloudSyncTombstone.self, CloudSyncConflictCopy.self
+        ]
+    }
+}
+
+enum LedgerSchemaV4: VersionedSchema {
+    static let versionIdentifier = Schema.Version(5, 0, 0)
+
     static var models: [any PersistentModel.Type] {
         [
             LedgerBook.self, Account.self, CurrencyWallet.self, LedgerCategory.self,
@@ -243,7 +291,7 @@ enum LedgerMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [
             LedgerSchemaLegacy.self, LedgerSchemaV1.self, LedgerSchemaV2.self,
-            LedgerSchemaV3.self
+            LedgerSchemaV3.self, LedgerSchemaV4.self
         ]
     }
 
@@ -251,7 +299,8 @@ enum LedgerMigrationPlan: SchemaMigrationPlan {
         [
             .lightweight(fromVersion: LedgerSchemaLegacy.self, toVersion: LedgerSchemaV1.self),
             .lightweight(fromVersion: LedgerSchemaV1.self, toVersion: LedgerSchemaV2.self),
-            .lightweight(fromVersion: LedgerSchemaV2.self, toVersion: LedgerSchemaV3.self)
+            .lightweight(fromVersion: LedgerSchemaV2.self, toVersion: LedgerSchemaV3.self),
+            .lightweight(fromVersion: LedgerSchemaV3.self, toVersion: LedgerSchemaV4.self)
         ]
     }
 }

@@ -217,7 +217,7 @@ struct BudgetStatisticsService {
                 add(
                     max(
                         0,
-                        (transaction.sourceAmount ?? transaction.amount ?? 0)
+                        transaction.netExpenseAmount
                             - (aaSplitByOriginalID[transaction.id]?.othersOwedAmount ?? 0)
                     ),
                     code: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? baseCurrencyCode,
@@ -242,7 +242,7 @@ struct BudgetStatisticsService {
         }
 
         let byID = Dictionary(uniqueKeysWithValues: transactions.map { ($0.id, $0) })
-        for relation in relations {
+        for relation in relations where relation.amount > 0 {
             guard let original = byID[relation.originalTransactionID],
                   let related = byID[relation.relatedTransactionID],
                   serviceInterval.contains(related.date),

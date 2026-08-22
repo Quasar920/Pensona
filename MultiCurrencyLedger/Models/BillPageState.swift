@@ -1,10 +1,36 @@
 import Foundation
 
+/// Display-only refund state for the original expense row. The accounting
+/// records remain separate transactions; this lets the receipt view show the
+/// same fully-offset presentation as the reference app.
+struct RefundDisplaySummary: Equatable {
+    let recoveredAmount: Decimal
+    let excessIncomeAmount: Decimal
+    let originalNetAmount: Decimal
+
+    var isFullyOffset: Bool { recoveredAmount >= originalNetAmount && originalNetAmount > 0 }
+}
+
+/// A system-generated ledger line derived from a refund relation. It is kept
+/// balance-neutral because the cash itself is already represented by the
+/// linked "退款" transaction.
+struct RefundIncomeDisplay: Identifiable, Equatable {
+    let id: UUID
+    let refundDepositTransactionID: UUID
+    let amount: Decimal
+    let currencyCode: String
+    let date: Date
+    let merchant: String
+    let accountName: String
+}
+
 struct BillDayGroup: Identifiable {
     let date: Date
     let transactions: [LedgerTransaction]
     let income: Decimal
     let expense: Decimal
+    let refundDisplays: [UUID: RefundDisplaySummary]
+    let refundIncomeDisplays: [UUID: RefundIncomeDisplay]
 
     var id: Date { date }
 
@@ -12,12 +38,16 @@ struct BillDayGroup: Identifiable {
         date: Date,
         transactions: [LedgerTransaction],
         income: Decimal = 0,
-        expense: Decimal = 0
+        expense: Decimal = 0,
+        refundDisplays: [UUID: RefundDisplaySummary] = [:],
+        refundIncomeDisplays: [UUID: RefundIncomeDisplay] = [:]
     ) {
         self.date = date
         self.transactions = transactions
         self.income = income
         self.expense = expense
+        self.refundDisplays = refundDisplays
+        self.refundIncomeDisplays = refundIncomeDisplays
     }
 }
 

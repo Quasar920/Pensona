@@ -70,6 +70,7 @@ enum DefaultCategoryCatalog {
             isRetiredCatalogKey($0.systemLocalizationKey)
         }
         if hasCurrentCatalogKey && !hasRetiredCatalogKey {
+            try ensureRefundIncomeCategory(in: &categories, context: context)
             normalizeCustomOrdering(categories)
             try context.save()
             return
@@ -175,6 +176,27 @@ enum DefaultCategoryCatalog {
         for category in categories where retiredIDs.contains(category.id) {
             context.delete(category)
         }
+    }
+
+    /// Refunds are regular income records, not a second linked accounting
+    /// entry. Existing installations already have the current catalog marker,
+    /// so add this one newly introduced system child without reseeding any
+    /// categories a person deliberately removed.
+    @MainActor
+    private static func ensureRefundIncomeCategory(
+        in categories: inout [LedgerCategory],
+        context: ModelContext
+    ) throws {
+        let key = "category.income.other.refund-income"
+        guard !categories.contains(where: { $0.systemLocalizationKey == key }),
+              let descriptor = descriptor(localizationKey: key),
+              let parent = categories.first(where: {
+                  $0.systemLocalizationKey == "category.income.other"
+              })
+        else { return }
+        let category = insert(descriptor, parentID: parent.id, context: context)
+        apply(descriptor, to: category, parentID: parent.id)
+        categories.append(category)
     }
 
     @MainActor
@@ -537,6 +559,7 @@ enum DefaultCategoryCatalog {
             children: [
                 ("lottery", n("彩票", "彩票", "Lottery", "宝くじ")),
                 ("red-packet", n("红包", "紅包", "Red Packet", "お年玉")),
+                ("refund-income", n("退款收入", "退款收入", "Refund income", "返金収入")),
                 ("fallback", n("其他收入兜底", "其他收入兜底", "Other-income catch-all", "その他収入その他"))
             ]
         )

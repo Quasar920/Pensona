@@ -159,6 +159,21 @@ final class LedgerTransaction {
         get { TransferPurpose(rawValue: transferPurposeRawValue) ?? .standard }
         set { transferPurposeRawValue = newValue.rawValue }
     }
+
+    /// Older discounted expenses stored the sticker price in `sourceAmount`
+    /// and left `originalAmount` empty. Newer entries store the paid amount
+    /// and keep the sticker price in `originalAmount`. Refund calculations
+    /// must use the amount actually paid in both representations.
+    var netExpenseAmount: Decimal {
+        let principal = sourceAmount ?? amount ?? 0
+        guard type == .expense,
+              originalAmount == nil,
+              let discountAmount,
+              discountAmount > 0,
+              (discountCurrencyCode == nil || discountCurrencyCode == sourceCurrencyCode || discountCurrencyCode == currencyCode)
+        else { return principal }
+        return max(0, principal - discountAmount)
+    }
     var foreignSettlementMode: ForeignCurrencySettlementMode? {
         get { foreignSettlementModeRawValue.flatMap(ForeignCurrencySettlementMode.init(rawValue:)) }
         set { foreignSettlementModeRawValue = newValue?.rawValue }

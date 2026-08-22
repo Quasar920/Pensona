@@ -134,28 +134,44 @@ final class RichTransactionFeatureTests: XCTestCase {
         XCTAssertEqual(transaction.sourceWallet?.id, wallet.id)
     }
 
-    func testRefundAndReimbursementShareOneRecoveryLimit() throws {
+    func testRefundSplitsRecoveryAndExcessRefundIncome() throws {
         let book = LedgerBook(name: "日常")
         let account = Account(name: "卡", type: .bankCard, book: book)
         let wallet = CurrencyWallet(currency: .CNY, balance: 1_000, account: account)
         context.insert(book)
         context.insert(account)
         context.insert(wallet)
-        let original = try LedgerService(context: context).createExpense(
-            bookID: book.id, amount: 100, wallet: wallet, category: nil, date: .now, note: nil
+        let original = try LedgerService(context: context).create(
+            TransactionDraft(
+                type: .expense,
+                amount: 3,
+                sourceWallet: wallet,
+                originalAmount: 5,
+                discountAmount: 2
+            ),
+            bookID: book.id
         )
         let service = TransactionRelationService(context: context)
-        let refund = try service.record(kind: .refund, original: original, amount: 60, wallet: wallet)
-        let reimbursement = try service.record(
-            kind: .reimbursement, original: original, amount: 40, wallet: wallet
-        )
+        let refund = try service.record(kind: .refund, original: original, amount: 10, wallet: wallet)
 
         XCTAssertEqual(refund.bookID, original.bookID)
-        XCTAssertEqual(reimbursement.bookID, original.bookID)
-        XCTAssertEqual(try service.summary(for: original).remaining, 0)
-        XCTAssertThrowsError(try service.record(
-            kind: .refund, original: original, amount: 1, wallet: wallet
-        )) { XCTAssertEqual($0 as? TransactionRelationError, .exceedsOriginalAmount) }
+        XCTAssertEqual(wallet.balance, 1_007)
+        XCTAssertEqual(refund.type, .income)
+        XCTAssertEqual(refund.sourceAmount, 10)
+        XCTAssertNil(refund.category)
+        XCTAssertEqual(refund.homeCategoryTitle, "退款")
+
+        let relations = try service.relations(for: original)
+        XCTAssertEqual(relations.count, 1)
+        XCTAssertEqual(relations[0].kind, .refund)
+        XCTAssertEqual(relations[0].amount, 3)
+        XCTAssertEqual(relations[0].excessIncomeAmount, 7)
+        XCTAssertNil(relations[0].excessIncomeTransactionID)
+
+        let monthly = MonthlySummaryService(baseCurrencyCode: "CNY", rates: [])
+            .summary(for: [original, refund], month: .now, relations: relations)
+        XCTAssertEqual(monthly.expense, 0)
+        XCTAssertEqual(monthly.income, 7)
     }
 
     func testAttachmentUsesTransactionBookInsteadOfAccountsLegacyBook() throws {

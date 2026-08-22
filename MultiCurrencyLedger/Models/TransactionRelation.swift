@@ -18,6 +18,12 @@ final class TransactionRelation {
     var originalTransactionID: UUID
     var relatedTransactionID: UUID
     var amount: Decimal
+    /// When one refund/reimbursement exceeds the recoverable balance, the
+    /// excess is persisted as a normal "Other Income" transaction. Keeping
+    /// its identifier here makes the two system-generated rows auditable and
+    /// lets deletion treat them as one operation.
+    var excessIncomeTransactionID: UUID?
+    var excessIncomeAmount: Decimal?
     var createdAt: Date
 
     init(
@@ -26,6 +32,8 @@ final class TransactionRelation {
         originalTransactionID: UUID,
         relatedTransactionID: UUID,
         amount: Decimal,
+        excessIncomeTransactionID: UUID? = nil,
+        excessIncomeAmount: Decimal? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
@@ -33,6 +41,8 @@ final class TransactionRelation {
         self.originalTransactionID = originalTransactionID
         self.relatedTransactionID = relatedTransactionID
         self.amount = amount
+        self.excessIncomeTransactionID = excessIncomeTransactionID
+        self.excessIncomeAmount = excessIncomeAmount
         self.createdAt = createdAt
     }
 

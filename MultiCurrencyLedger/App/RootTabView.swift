@@ -125,6 +125,8 @@ struct RootTabView: View {
             appLock.refreshConfiguration()
         }
         .tint(LedgerPalette.accent)
+        .font(LedgerTypography.body)
+        .dynamicTypeSize(.xSmall ... .medium)
         .preferredColorScheme(.light)
         .environment(\.locale, preferences.locale)
         .id(preferences.language.rawValue)

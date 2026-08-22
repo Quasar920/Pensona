@@ -459,18 +459,18 @@ private struct BillTransactionRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             if let category = transaction.category {
-                CategoryIconImage(category: category, size: 40)
+                CategoryIconImage(category: category, size: 32)
             } else {
                 Image(systemName: transaction.type.symbolName)
-                    .font(.title3.weight(.medium))
+                    .font(.system(size: 20, weight: .regular))
                     .foregroundStyle(HomePalette.accent)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 32, height: 32)
                     .background(HomePalette.accent.opacity(0.10), in: Circle())
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(transaction.homeCategoryTitle)
-                    .font(.subheadline.weight(.semibold))
+                    .font(PensonaDashboardTypography.rowTitle)
                     .fixedSize(horizontal: false, vertical: true)
                 if let note = transaction.displayNote {
                     Text(note)
@@ -493,7 +493,7 @@ private struct BillTransactionRow: View {
             }
             Spacer(minLength: 8)
             Text(transaction.summaryAmount)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .font(PensonaDashboardTypography.rowAmount.monospacedDigit())
                 .foregroundStyle(amountColor)
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
@@ -504,12 +504,6 @@ private struct BillTransactionRow: View {
     }
 
     private var amountColor: Color {
-        let raw = UserDefaults.standard.string(forKey: AppPreferences.amountColorKey) ?? ""
-        let convention = AmountColorConvention(rawValue: raw)
-            ?? .regionalDefault(regionCode: Locale.current.region?.identifier)
-        return AmountSemanticStyle.color(
-            for: AmountSemanticStyle.role(for: transaction.type),
-            convention: convention
-        )
+        LedgerPalette.ink
     }
 }

@@ -44,15 +44,17 @@ final class PersistentStoreSnapshotServiceTests: XCTestCase {
         XCTAssertEqual(LedgerSchemaV1.versionIdentifier, .init(2, 0, 0))
         XCTAssertEqual(LedgerSchemaV2.versionIdentifier, .init(3, 0, 0))
         XCTAssertEqual(LedgerSchemaV3.versionIdentifier, .init(4, 0, 0))
+        XCTAssertEqual(LedgerSchemaV4.versionIdentifier, .init(5, 0, 0))
         XCTAssertEqual(LedgerSchemaLegacy.models.count, 8)
         XCTAssertEqual(LedgerSchemaV1.models.count, 23)
         XCTAssertEqual(LedgerSchemaV2.models.count, 25)
         XCTAssertEqual(LedgerSchemaV3.models.count, 26)
-        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == LedgerTransaction.self })
-        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == CloudSyncConflictCopy.self })
-        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == AASplit.self })
-        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == AASettlement.self })
-        XCTAssertTrue(LedgerSchemaV3.models.contains { $0 == RepaymentReminder.self })
+        XCTAssertEqual(LedgerSchemaV4.models.count, 26)
+        XCTAssertTrue(LedgerSchemaV4.models.contains { $0 == LedgerTransaction.self })
+        XCTAssertTrue(LedgerSchemaV4.models.contains { $0 == CloudSyncConflictCopy.self })
+        XCTAssertTrue(LedgerSchemaV4.models.contains { $0 == AASplit.self })
+        XCTAssertTrue(LedgerSchemaV4.models.contains { $0 == AASettlement.self })
+        XCTAssertTrue(LedgerSchemaV4.models.contains { $0 == RepaymentReminder.self })
     }
 
     @MainActor
@@ -61,7 +63,7 @@ final class PersistentStoreSnapshotServiceTests: XCTestCase {
             .appendingPathComponent("legacy-migration-\(UUID()).store")
         try createLegacyStore(at: storeURL)
 
-        let currentSchema = Schema(versionedSchema: LedgerSchemaV3.self)
+        let currentSchema = Schema(versionedSchema: LedgerSchemaV4.self)
         let configuration = ModelConfiguration(
             "MigrationTest",
             schema: currentSchema,

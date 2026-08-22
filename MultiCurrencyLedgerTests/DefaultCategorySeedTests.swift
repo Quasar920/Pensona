@@ -19,9 +19,9 @@ final class DefaultCategorySeedTests: XCTestCase {
         XCTAssertEqual(DefaultCategoryCatalog.expenseRoots.count, 16)
         XCTAssertEqual(DefaultCategoryCatalog.incomeRoots.count, 3)
         XCTAssertEqual(DefaultCategoryCatalog.expense.count, 64)
-        XCTAssertEqual(DefaultCategoryCatalog.income.count, 12)
-        XCTAssertEqual(Set(DefaultCategoryCatalog.all.map(\.id)).count, 76)
-        XCTAssertEqual(Set(DefaultCategoryCatalog.all.map(\.localizationKey)).count, 76)
+        XCTAssertEqual(DefaultCategoryCatalog.income.count, 13)
+        XCTAssertEqual(Set(DefaultCategoryCatalog.all.map(\.id)).count, 77)
+        XCTAssertEqual(Set(DefaultCategoryCatalog.all.map(\.localizationKey)).count, 77)
         for descriptor in DefaultCategoryCatalog.all {
             XCTAssertFalse(descriptor.names.value(for: Locale(identifier: "zh-Hans")).isEmpty)
             XCTAssertFalse(descriptor.names.value(for: Locale(identifier: "zh-Hant")).isEmpty)
@@ -69,7 +69,7 @@ final class DefaultCategorySeedTests: XCTestCase {
         let expectedChildren: [String: [String]] = [
             "主动收入-工资": ["工资", "副业收入", "主动收入兜底"],
             "被动收入": ["投资", "变现", "被动收入兜底"],
-            "其他收入": ["彩票", "红包", "其他收入兜底"]
+            "其他收入": ["彩票", "红包", "退款收入", "其他收入兜底"]
         ]
 
         XCTAssertEqual(DefaultCategoryCatalog.incomeRoots.map(\.fallbackName), expectedRoots)
@@ -85,14 +85,14 @@ final class DefaultCategorySeedTests: XCTestCase {
     func testFreshSeedCreatesCompleteTwoLevelCatalogAndIsIdempotent() throws {
         try InitialDataService.seedIfNeeded(context: context)
         var categories = try context.fetch(FetchDescriptor<LedgerCategory>())
-        XCTAssertEqual(categories.count, 76)
+        XCTAssertEqual(categories.count, 77)
         XCTAssertEqual(categories.count { $0.type == .expense && $0.parentID == nil }, 16)
         XCTAssertEqual(categories.count { $0.type == .income && $0.parentID == nil }, 3)
         XCTAssertTrue(categories.allSatisfy { $0.bookID == nil })
 
         try InitialDataService.seedIfNeeded(context: context)
         categories = try context.fetch(FetchDescriptor<LedgerCategory>())
-        XCTAssertEqual(categories.count, 76)
+        XCTAssertEqual(categories.count, 77)
     }
 
     func testIntentionalPostUpgradeDeletionIsNotReseeded() throws {
@@ -108,7 +108,7 @@ final class DefaultCategorySeedTests: XCTestCase {
         try InitialDataService.seedIfNeeded(context: context)
 
         let categories = try context.fetch(FetchDescriptor<LedgerCategory>())
-        XCTAssertEqual(categories.count, 75)
+        XCTAssertEqual(categories.count, 76)
         XCTAssertFalse(categories.contains { $0.systemLocalizationKey == "category.expense.food.fallback" })
     }
 

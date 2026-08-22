@@ -753,31 +753,31 @@ struct HomeTransactionRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 13) {
             if let category = transaction.category {
-                CategoryIconImage(category: category, size: 40)
+                CategoryIconImage(category: category, size: 32)
             } else {
                 Image(systemName: transaction.type.symbolName)
-                    .font(.system(size: 28, weight: .medium))
+                    .font(.system(size: 20, weight: .regular))
                     .foregroundStyle(HomePalette.accent)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 32, height: 32)
             }
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack(alignment: .top, spacing: 5) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(transaction.homeCategoryTitle)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(PensonaDashboardTypography.rowTitle)
                         .foregroundStyle(.primary)
                         Text(transaction.figmaHomeTimestamp)
-                            .font(.system(size: 11, weight: .regular))
+                            .font(PensonaDashboardTypography.rowDetail)
                             .foregroundStyle(.secondary)
                     }
 
                     Spacer(minLength: 6)
 
                     Text(transaction.summaryAmount)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(PensonaDashboardTypography.rowAmount)
                         .monospacedDigit()
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(LedgerPalette.ink)
                         .multilineTextAlignment(.trailing)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -792,7 +792,7 @@ struct HomeTransactionRow: View {
                         Text(tagText)
                     }
                 }
-                .font(.system(size: 11))
+                .font(PensonaDashboardTypography.rowDetail)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -902,6 +902,10 @@ private struct PressableGlassButtonStyle: ButtonStyle {
 }
 
 extension LedgerTransaction {
+    var isSystemRefundDeposit: Bool {
+        merchantOrCounterparty == TransactionSystemPresentation.refundDepositTitleMarker
+    }
+
     var displayNote: String? {
         guard let note else { return nil }
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -909,7 +913,22 @@ extension LedgerTransaction {
     }
 
     var homeCategoryTitle: String {
-        category?.localizedName(locale: AppLocalization.locale) ?? type.title
+        if isSystemRefundDeposit {
+            return AppLocalization.string("退款")
+        }
+        // Builds released before the dedicated refund-income category wrote
+        // split refunds as a category-less income plus the fallback category.
+        // Keep those historical rows legible without touching the user's
+        // original transaction or losing the relation audit trail.
+        if type == .income, let note = displayNote {
+            if note.hasPrefix("关联退款超额") {
+                return AppLocalization.string("退款收入")
+            }
+            if note.hasPrefix("关联退款") {
+                return AppLocalization.string("退款")
+            }
+        }
+        return category?.localizedName(locale: AppLocalization.locale) ?? type.title
     }
 
     var homeDetailText: String {
@@ -920,6 +939,9 @@ extension LedgerTransaction {
     /// record. The ledger book itself is intentionally absent here because the
     /// page-level book selector already defines the scope.
     var receiptTitle: String {
+        if isSystemRefundDeposit {
+            return AppLocalization.string("退款")
+        }
         let merchant = merchantOrCounterparty?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let merchant, !merchant.isEmpty { return merchant }
         if let displayNote { return displayNote }
@@ -996,6 +1018,12 @@ extension LedgerTransaction {
         )
     }
 
+}
+
+/// Marker used only by system-created refund recovery rows. The category stays
+/// empty so the normal refund is not mistaken for an ordinary income category.
+enum TransactionSystemPresentation {
+    static let refundDepositTitleMarker = "__system_refund__"
 }
 
 extension Date {

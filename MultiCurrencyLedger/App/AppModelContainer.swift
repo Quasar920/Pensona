@@ -4,7 +4,7 @@ import SwiftData
 enum AppModelContainer {
     @MainActor
     static func make() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: LedgerSchemaV3.self)
+        let schema = Schema(versionedSchema: LedgerSchemaV4.self)
         #if PERFORMANCE_TESTING
         let isStoredInMemoryOnly = true
         #else

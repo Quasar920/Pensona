@@ -6,7 +6,7 @@ import XCTest
 final class LedgerSchemaMigrationTests: XCTestCase {
     func testDataScopeMigrationBackfillsEveryLegacyShapeAndIsIdempotent() throws {
         let container = try ModelContainer(
-            for: Schema(versionedSchema: LedgerSchemaV3.self),
+            for: Schema(versionedSchema: LedgerSchemaV4.self),
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let context = container.mainContext
@@ -84,7 +84,7 @@ final class LedgerSchemaMigrationTests: XCTestCase {
 
     func testMigrationCreatesDefaultBookWhenStoreIsEmpty() throws {
         let container = try ModelContainer(
-            for: Schema(versionedSchema: LedgerSchemaV3.self),
+            for: Schema(versionedSchema: LedgerSchemaV4.self),
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let defaults = UserDefaults(suiteName: "DataScopeEmptyMigrationTests-\(UUID())")!
@@ -99,7 +99,7 @@ final class LedgerSchemaMigrationTests: XCTestCase {
         XCTAssertEqual(result.defaultBookID, books.first?.id)
     }
 
-    func testV2FileStoreMigratesToV3AndAddsReminderModel() throws {
+    func testV2FileStoreMigratesToCurrentSchemaAndAddsReminderModel() throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("v2-to-v3-\(UUID()).store")
         do {
@@ -113,8 +113,8 @@ final class LedgerSchemaMigrationTests: XCTestCase {
             try oldContainer.mainContext.save()
         }
 
-        let currentSchema = Schema(versionedSchema: LedgerSchemaV3.self)
-        let configuration = ModelConfiguration("V3", schema: currentSchema, url: storeURL)
+        let currentSchema = Schema(versionedSchema: LedgerSchemaV4.self)
+        let configuration = ModelConfiguration("V4", schema: currentSchema, url: storeURL)
         let migrated = try ModelContainer(
             for: currentSchema,
             migrationPlan: LedgerMigrationPlan.self,

@@ -11,7 +11,7 @@ final class TransactionBookScopeTests: XCTestCase {
 
     override func setUpWithError() throws {
         container = try ModelContainer(
-            for: Schema(versionedSchema: LedgerSchemaV3.self),
+            for: Schema(versionedSchema: LedgerSchemaV4.self),
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         context = container.mainContext

@@ -234,12 +234,23 @@ struct TransactionDetailView: View {
                     if !relations.isEmpty {
                         TransactionDetailGlassSection(title: AppLocalization.string("退款与报销"), symbol: "arrow.uturn.backward.circle") {
                             ForEach(relations) { relation in
-                                HStack(spacing: 10) {
-                                    Circle().fill(transaction.type.color).frame(width: 8, height: 8)
-                                    Text(relation.kind.title)
-                                    Spacer()
-                                    Text(MoneyFormatter.string(relation.amount, currencyCode: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? "CNY"))
-                                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                                if relation.amount > 0 {
+                                    HStack(spacing: 10) {
+                                        Circle().fill(transaction.type.color).frame(width: 8, height: 8)
+                                        Text(relation.kind.title)
+                                        Spacer()
+                                        Text(MoneyFormatter.string(relation.amount, currencyCode: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? "CNY"))
+                                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                                    }
+                                }
+                                if let excessIncomeAmount = relation.excessIncomeAmount, excessIncomeAmount > 0 {
+                                    HStack(spacing: 10) {
+                                        Circle().fill(transaction.type.color).frame(width: 8, height: 8)
+                                        Text(relation.kind == .refund ? "退款收入" : "自动其他收入")
+                                        Spacer()
+                                        Text(MoneyFormatter.string(excessIncomeAmount, currencyCode: transaction.sourceCurrencyCode ?? transaction.currencyCode ?? "CNY"))
+                                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                                    }
                                 }
                             }
                         }
@@ -340,7 +351,12 @@ struct TransactionDetailView: View {
             TransactionRelationEntryView(
                 original: transaction,
                 kind: kind,
-                wallets: relationWallets
+                wallets: relationWallets,
+                onSaved: {
+                    guard kind == .refund else { return }
+                    relationKind = nil
+                    dismiss()
+                }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -812,12 +828,23 @@ struct TransactionRelationEntryView: View {
     let original: LedgerTransaction
     let kind: TransactionRelationKind
     let wallets: [CurrencyWallet]
+    let onSaved: (() -> Void)?
     @State private var amountText = ""
     @State private var walletID: UUID?
     @State private var date = Date.now
     @State private var note = ""
     @State private var remaining: Decimal = 0
     @State private var errorMessage: String?
+
+    private var enteredAmount: Decimal {
+        DecimalParser.parse(amountText) ?? 0
+    }
+
+    private var automaticOtherIncomeAmount: Decimal {
+        max(0, enteredAmount - remaining)
+    }
+
+    private var isRefund: Bool { kind == .refund }
 
     var body: some View {
         NavigationStack {
@@ -838,9 +865,20 @@ struct TransactionRelationEntryView: View {
                                     .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
                                     .multilineTextAlignment(.trailing)
                             }
-                            Text("最多可记录 \(MoneyFormatter.string(remaining, currencyCode: original.sourceCurrencyCode ?? original.currencyCode ?? "CNY"))")
+                            Text(isRefund
+                                ? "尚可记为退款 \(MoneyFormatter.string(remaining, currencyCode: original.sourceCurrencyCode ?? original.currencyCode ?? "CNY"))"
+                                : "尚可冲减原支出 \(MoneyFormatter.string(remaining, currencyCode: original.sourceCurrencyCode ?? original.currencyCode ?? "CNY"))"
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            if automaticOtherIncomeAmount > 0 {
+                                Text(isRefund
+                                    ? "其中 \(MoneyFormatter.string(automaticOtherIncomeAmount, currencyCode: original.sourceCurrencyCode ?? original.currencyCode ?? "CNY")) 将自动记为其他收入 > 退款收入"
+                                    : "其中 \(MoneyFormatter.string(automaticOtherIncomeAmount, currencyCode: original.sourceCurrencyCode ?? original.currencyCode ?? "CNY")) 将自动记为其他收入 > 其他收入兜底"
+                                )
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(HomePalette.accent)
+                            }
                         }
                         .padding(18)
                         .ledgerGlassCard(cornerRadius: 24)
@@ -915,6 +953,9 @@ struct TransactionRelationEntryView: View {
                 note: note
             )
             dismiss()
+            if kind == .refund {
+                DispatchQueue.main.async { onSaved?() }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
